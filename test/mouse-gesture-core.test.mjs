@@ -133,3 +133,18 @@ test("mouse gesture core expires stale sessions", async () => {
   assert.equal(core.isMouseGestureSessionExpired(session, 1899), false);
   assert.equal(core.isMouseGestureSessionExpired(session, 1901), true);
 });
+
+test("mouse gesture core suppresses redundant gesture starts after a primary fire", async () => {
+  const core = await loadMouseGestureCoreModule();
+  const fired = new Set([0]);
+
+  assert.equal(core.shouldSuppressRedundantGestureStart("pointerdown", 0, fired), false);
+  assert.equal(core.shouldSuppressRedundantGestureStart("mousedown", 0, fired), false);
+
+  assert.equal(core.shouldSuppressRedundantGestureStart("click", 0, fired), true);
+  assert.equal(core.shouldSuppressRedundantGestureStart("auxclick", 1, fired), false);
+  assert.equal(core.shouldSuppressRedundantGestureStart("contextmenu", 2, fired), false);
+
+  assert.equal(core.shouldSuppressRedundantGestureStart("click", 0, new Set()), false);
+  assert.equal(core.shouldSuppressRedundantGestureStart("auxclick", 1, new Set([1])), true);
+});

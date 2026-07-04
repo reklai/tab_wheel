@@ -25,6 +25,7 @@ import {
   resolveMouseGesturePolicy as resolveMouseGesturePolicyByButton,
   shouldFinishMouseGestureSession as shouldFinishCoreMouseGestureSession,
   shouldRunMouseGestureSession as shouldRunCoreMouseGestureSession,
+  shouldSuppressRedundantGestureStart,
 } from "../core/tabWheel/mouseGestureCore";
 import type {
   TabWheelMouseGestureAction,
@@ -348,6 +349,7 @@ export function initApp(): void {
   let areSettingsLoaded = false;
   let mouseGestureSession: TabWheelMouseGestureSession | null = null;
   let mouseGesturePolicies: readonly TabWheelMouseGesturePolicy[] = MOUSE_GESTURE_POLICIES;
+  const gestureFiredButtons = new Set<number>();
 
   void loadTabWheelSettings()
     .then((loadedSettings) => {
@@ -515,6 +517,7 @@ export function initApp(): void {
   function resetInputGestureState(): void {
     resetWheelGestureState();
     finishMouseGestureSession();
+    gestureFiredButtons.clear();
   }
 
   function getActiveMouseGestureSession(event: MouseEvent): TabWheelMouseGestureSession | null {
@@ -529,6 +532,7 @@ export function initApp(): void {
   function runMouseGestureSession(session: TabWheelMouseGestureSession): void {
     if (session.hasRun) return;
     session.hasRun = true;
+    gestureFiredButtons.add(session.policy.button);
     runMouseGestureAction(session.policy.action);
   }
 
@@ -667,6 +671,10 @@ export function initApp(): void {
     suppressPageEvent(event);
 
     if (isMouseGestureSessionStartEvent(event)) {
+      if (shouldSuppressRedundantGestureStart(event.type, event.button, gestureFiredButtons)) {
+        return;
+      }
+      gestureFiredButtons.delete(event.button);
       mouseGestureSession = createCoreMouseGestureSession(policy, Date.now());
       if (shouldRunCoreMouseGestureSession(mouseGestureSession, event.type)) {
         runMouseGestureSession(mouseGestureSession);

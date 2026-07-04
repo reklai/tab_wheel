@@ -105,6 +105,15 @@ export function isMouseGestureSessionStartEventType(eventType: string): boolean 
     || eventType === "auxclick";
 }
 
+export function shouldSuppressRedundantGestureStart(
+  eventType: string,
+  button: number,
+  firedButtons: ReadonlySet<number>,
+): boolean {
+  if (isMouseGestureStartEventType(eventType)) return false;
+  return firedButtons.has(button);
+}
+
 export function createMouseGestureSession(
   policy: TabWheelMouseGesturePolicy,
   startedAt: number,

@@ -96,6 +96,10 @@ test("content script implements modifier-wheel and left/middle/right click actio
   assert.match(source, /function resolvePanelSuppressedMouseGesturePolicy\(event: MouseEvent\): TabWheelMouseGesturePolicy \| null[\s\S]*event\.type === "contextmenu"[\s\S]*mouseGesturePolicies\.find\(\(policy\) => policy\.runPhase === "contextmenu"\)[\s\S]*resolveMouseGesturePolicyByButton\(event\.button,\s*mouseGesturePolicies\)/);
   assert.match(source, /function shouldSuppressPanelMouseShortcut\(event: MouseEvent\): boolean[\s\S]*isTabWheelPanelOpen\(\)[\s\S]*event\.button === 0 && event\.type !== "contextmenu"[\s\S]*isTabWheelModifier\(event,\s*settings\.gestureModifier,\s*settings\.gestureWithShift\)[\s\S]*resolvePanelSuppressedMouseGesturePolicy\(event\) !== null/);
   assert.match(source, /function mouseGestureHandler\(event: MouseEvent\): void[\s\S]*shouldSuppressPanelMouseShortcut\(event\)[\s\S]*suppressPageEvent\(event\)[\s\S]*return[\s\S]*const activeSession = getActiveMouseGestureSession\(event\)/);
+  assert.match(source, /gestureFiredButtons\.delete\(event\.button\)[\s\S]*mouseGestureSession = createCoreMouseGestureSession\(policy,\s*Date\.now\(\)\)/);
+  assert.match(source, /shouldSuppressRedundantGestureStart\(event\.type,\s*event\.button,\s*gestureFiredButtons\)/);
+  assert.match(source, /gestureFiredButtons\.add\(session\.policy\.button\)/);
+  assert.match(source, /gestureFiredButtons\.clear\(\)/);
   assert.match(source, /isWheelGestureBlockedTarget\(event\.target\)[\s\S]*return null[\s\S]*resolveMouseGesturePolicyByButton\(event\.button,\s*mouseGesturePolicies\)/);
   assert.match(source, /normalizeWheelDelta\(event,\s*window\.innerHeight,\s*window\.innerWidth,\s*settings\.horizontalWheel\)/);
   assert.match(source, /wheelAccumulator \+= wheelDelta/);
