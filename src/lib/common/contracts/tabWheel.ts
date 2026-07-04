@@ -1,4 +1,15 @@
+// Shared TabWheel contract: storage keys, setting defaults, and normalizers.
+// Every surface (background, content script, popup, options) passes settings
+// through the normalizers here, so stored values stay valid even when they
+// were written by an older version or changed outside the extension.
+
 import browser from "webextension-polyfill";
+import {
+  DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
+  TABWHEEL_CLICK_ACTIONS,
+} from "../../core/tabWheel/mouseGestureCore";
+
+export { TABWHEEL_CLICK_ACTIONS };
 
 export const MAX_SCROLL_MEMORY_ENTRIES = 300;
 export const MAX_MRU_TABS = 100;
@@ -64,10 +75,11 @@ export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   gestureModifier: "alt",
   gestureWithShift: false,
   allowGesturesInEditableFields: true,
-  openNativeNewTabOnLeftClick: false,
+  ...DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
   cycleScope: "general",
   skipPinnedTabs: false,
   skipRestrictedPages: true,
+  skipHiddenTabs: false,
   wrapAround: true,
   wheelPreset: "balanced",
   wheelSensitivity: 1,
@@ -90,6 +102,15 @@ function normalizeModifierKey(
 
 function normalizeShiftRequirement(value: unknown): boolean {
   return value === true;
+}
+
+function normalizeClickAction(
+  value: unknown,
+  fallback: TabWheelClickAction,
+): TabWheelClickAction {
+  return TABWHEEL_CLICK_ACTIONS.includes(value as TabWheelClickAction)
+    ? value as TabWheelClickAction
+    : fallback;
 }
 
 function normalizeEnabledFlag(value: unknown, fallback: boolean): boolean {
@@ -183,9 +204,19 @@ export function normalizeTabWheelSettings(
       settings.allowGesturesInEditableFields,
       DEFAULT_TABWHEEL_SETTINGS.allowGesturesInEditableFields,
     ),
-    openNativeNewTabOnLeftClick: normalizeEnabledFlag(
-      settings.openNativeNewTabOnLeftClick,
-      DEFAULT_TABWHEEL_SETTINGS.openNativeNewTabOnLeftClick,
+    leftClickAction: normalizeClickAction(
+      settings.leftClickAction,
+      (value as Record<string, unknown>).openNativeNewTabOnLeftClick === true
+        ? "nativeNewTab"
+        : DEFAULT_TABWHEEL_SETTINGS.leftClickAction,
+    ),
+    middleClickAction: normalizeClickAction(
+      settings.middleClickAction,
+      DEFAULT_TABWHEEL_SETTINGS.middleClickAction,
+    ),
+    rightClickAction: normalizeClickAction(
+      settings.rightClickAction,
+      DEFAULT_TABWHEEL_SETTINGS.rightClickAction,
     ),
     cycleScope: normalizeTabWheelCycleScope(settings.cycleScope),
     skipPinnedTabs: normalizeEnabledFlag(
@@ -195,6 +226,10 @@ export function normalizeTabWheelSettings(
     skipRestrictedPages: normalizeEnabledFlag(
       settings.skipRestrictedPages,
       DEFAULT_TABWHEEL_SETTINGS.skipRestrictedPages,
+    ),
+    skipHiddenTabs: normalizeEnabledFlag(
+      settings.skipHiddenTabs,
+      DEFAULT_TABWHEEL_SETTINGS.skipHiddenTabs,
     ),
     wrapAround: normalizeEnabledFlag(
       settings.wrapAround,
@@ -248,6 +283,80 @@ export function formatTabWheelModifierKey(modifier: TabWheelModifierKey): string
   if (modifier === "ctrl") return "Ctrl / Control";
   if (modifier === "meta") return "Meta / Command";
   return "Alt / Option";
+}
+
+export function formatTabWheelPresetLabel(preset: TabWheelPreset): string {
+  if (preset === "precise") return "Precise";
+  if (preset === "fast") return "Fast";
+  if (preset === "custom") return "Custom";
+  return "Balanced";
+}
+
+export function formatTabWheelCycleScopeLabel(scope: TabWheelCycleScope): string {
+  return scope === "mru" ? "Most Recently Used" : "Left-To-Right";
+}
+
+const TABWHEEL_CLICK_ACTION_TEXT: Record<TabWheelClickAction, {
+  label: string;
+  description: string;
+  summary: string | null;
+}> = {
+  search: {
+    label: "TabWheel Search",
+    description: "opens the in-page search launcher",
+    summary: "opens TabWheel search",
+  },
+  nativeNewTab: {
+    label: "Browser Default New Tab",
+    description: "opens the browser's normal new tab page",
+    summary: "opens new tab",
+  },
+  recentTab: {
+    label: "Most Recent Tab",
+    description: "jumps to the most recently used tab",
+    summary: "opens most recent tab",
+  },
+  closeToRecent: {
+    label: "Close Tab",
+    description: "closes this tab; returns to the most recently used tab first when available",
+    summary: "closes current tab",
+  },
+  duplicateTab: {
+    label: "Duplicate Tab",
+    description: "duplicates the current tab",
+    summary: "duplicates tab",
+  },
+  openSettings: {
+    label: "Open Settings",
+    description: "opens the TabWheel settings page",
+    summary: "opens settings",
+  },
+  none: {
+    label: "Off (native click)",
+    description: "keeps the browser's native click behavior",
+    summary: null,
+  },
+};
+
+function getClickActionText(action: TabWheelClickAction): typeof TABWHEEL_CLICK_ACTION_TEXT[TabWheelClickAction] {
+  return TABWHEEL_CLICK_ACTION_TEXT[action] ?? TABWHEEL_CLICK_ACTION_TEXT.search;
+}
+
+export function formatTabWheelClickActionLabel(action: TabWheelClickAction): string {
+  return getClickActionText(action).label;
+}
+
+export function describeTabWheelClickAction(action: TabWheelClickAction): string {
+  return getClickActionText(action).description;
+}
+
+export function describeTabWheelClickActionSentence(action: TabWheelClickAction): string {
+  const description = describeTabWheelClickAction(action);
+  return `${description.charAt(0).toUpperCase()}${description.slice(1)}.`;
+}
+
+export function summarizeTabWheelClickAction(action: TabWheelClickAction): string | null {
+  return getClickActionText(action).summary;
 }
 
 export function formatTabWheelModifierCombo(

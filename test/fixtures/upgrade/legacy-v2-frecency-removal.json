@@ -31,12 +31,14 @@
     ]
   },
   "expected": {
-    "storageSchemaVersion": 12,
+    "storageSchemaVersion": 13,
     "tabWheelSettings": {
       "allowGesturesInEditableFields": true,
       "cycleScope": "general",
       "skipRestrictedPages": true,
-      "openNativeNewTabOnLeftClick": false,
+      "leftClickAction": "search",
+      "middleClickAction": "recentTab",
+      "rightClickAction": "closeToRecent",
       "wheelPreset": "balanced",
       "horizontalWheel": true,
       "overshootGuard": true,

@@ -40,7 +40,7 @@ test("core architecture keeps promise mechanisms explicit", () => {
   assert.match(appInit, /mouseGestureSession/);
   assert.match(appInit, /applyScrollRestoreAttempt/);
   assert.match(appInit, /cancelScrollRestore/);
-  assert.match(domain, /runSerializedCycle/);
+  assert.match(domain, /runSerializedWindowTask/);
   assert.match(domain, /resolveMruCycleSessionTabs/);
   assert.match(domain, /windowTabsCacheByWindowId/);
   assert.match(domain, /scrollMemorySaveResolvers/);

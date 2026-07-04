@@ -31,6 +31,78 @@ test("mouse gesture core resolves button policies", async () => {
   assert.equal(core.resolveMouseGesturePolicy(3), null);
 });
 
+test("mouse gesture core preserves physical button mechanics separately from actions", async () => {
+  const core = await loadMouseGestureCoreModule();
+
+  assert.deepEqual(core.MOUSE_GESTURE_BUTTON_MECHANICS, [
+    { button: 0, runPhase: "sessionStart", finishEvents: ["click"] },
+    { button: 1, runPhase: "auxclick", finishEvents: ["auxclick"] },
+    { button: 2, runPhase: "contextmenu", finishEvents: ["click", "auxclick", "contextmenu"] },
+  ]);
+});
+
+test("mouse gesture core default policies match the legacy button table", async () => {
+  const core = await loadMouseGestureCoreModule();
+
+  assert.deepEqual(core.MOUSE_GESTURE_POLICIES, [
+    { action: "search", button: 0, runPhase: "sessionStart", finishEvents: ["click"] },
+    { action: "recentTab", button: 1, runPhase: "auxclick", finishEvents: ["auxclick"] },
+    { action: "closeToRecent", button: 2, runPhase: "contextmenu", finishEvents: ["click", "auxclick", "contextmenu"] },
+  ]);
+});
+
+test("mouse gesture core omits disabled click actions", async () => {
+  const core = await loadMouseGestureCoreModule();
+  const policies = core.buildMouseGesturePolicies({
+    leftClickAction: "none",
+    middleClickAction: "recentTab",
+    rightClickAction: "none",
+  });
+
+  assert.deepEqual(policies, [
+    { action: "recentTab", button: 1, runPhase: "auxclick", finishEvents: ["auxclick"] },
+  ]);
+});
+
+test("mouse gesture core keeps right-click contextmenu mechanics when remapped", async () => {
+  const core = await loadMouseGestureCoreModule();
+  const policies = core.buildMouseGesturePolicies({
+    leftClickAction: "search",
+    middleClickAction: "recentTab",
+    rightClickAction: "nativeNewTab",
+  });
+  const policy = core.resolveMouseGesturePolicy(2, policies);
+
+  assert.deepEqual(policy, {
+    action: "nativeNewTab",
+    button: 2,
+    runPhase: "contextmenu",
+    finishEvents: ["click", "auxclick", "contextmenu"],
+  });
+});
+
+test("mouse gesture core keeps middle-click auxclick mechanics when remapped to duplicate", async () => {
+  const core = await loadMouseGestureCoreModule();
+  const policies = core.buildMouseGesturePolicies({
+    leftClickAction: "openSettings",
+    middleClickAction: "duplicateTab",
+    rightClickAction: "closeToRecent",
+  });
+
+  assert.deepEqual(core.resolveMouseGesturePolicy(0, policies), {
+    action: "openSettings",
+    button: 0,
+    runPhase: "sessionStart",
+    finishEvents: ["click"],
+  });
+  assert.deepEqual(core.resolveMouseGesturePolicy(1, policies), {
+    action: "duplicateTab",
+    button: 1,
+    runPhase: "auxclick",
+    finishEvents: ["auxclick"],
+  });
+});
+
 test("mouse gesture core claims middle click until auxclick", async () => {
   const core = await loadMouseGestureCoreModule();
   const policy = core.resolveMouseGesturePolicy(1);

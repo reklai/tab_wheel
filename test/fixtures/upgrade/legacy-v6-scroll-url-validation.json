@@ -27,7 +27,7 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 12,
+    "storageSchemaVersion": 13,
     "tabWheelScrollMemory": {
       "8": {
         "tabId": 8,
@@ -41,7 +41,9 @@
     "tabWheelSettings": {
       "cycleScope": "general",
       "skipRestrictedPages": true,
-      "openNativeNewTabOnLeftClick": false,
+      "leftClickAction": "search",
+      "middleClickAction": "recentTab",
+      "rightClickAction": "closeToRecent",
       "wheelPreset": "balanced",
       "horizontalWheel": true,
       "overshootGuard": true,

@@ -36,6 +36,7 @@ type TabWheelModifierKey = "alt" | "ctrl" | "meta";
 type TabWheelCycleScope = "general" | "mru";
 type TabWheelPreset = "precise" | "balanced" | "fast" | "custom";
 type TabWheelContentScriptStatus = "ready" | "unavailable";
+type TabWheelClickAction = "search" | "nativeNewTab" | "recentTab" | "closeToRecent" | "duplicateTab" | "openSettings" | "none";
 
 type TabWheelMruState = Record<string, number[]>;
 
@@ -44,10 +45,13 @@ interface TabWheelSettings {
   gestureModifier: TabWheelModifierKey;
   gestureWithShift: boolean;
   allowGesturesInEditableFields: boolean;
-  openNativeNewTabOnLeftClick: boolean;
+  leftClickAction: TabWheelClickAction;
+  middleClickAction: TabWheelClickAction;
+  rightClickAction: TabWheelClickAction;
   cycleScope: TabWheelCycleScope;
   skipPinnedTabs: boolean;
   skipRestrictedPages: boolean;
+  skipHiddenTabs: boolean;
   wrapAround: boolean;
   wheelPreset: TabWheelPreset;
   wheelSensitivity: number;

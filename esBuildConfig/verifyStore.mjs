@@ -56,7 +56,7 @@ if (!summaryMatch) {
   }
 }
 
-const requiredPermissionDocs = ["tabs", "storage", "search", "scripting", "<all_urls>"];
+const requiredPermissionDocs = ["tabs", "storage", "search", "scripting", "tabGroups", "<all_urls>"];
 for (const permission of requiredPermissionDocs) {
   if (!store.includes(permission)) {
     errors.push(`STORE.md must document permission: ${permission}`);

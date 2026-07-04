@@ -1,3 +1,8 @@
+// Pure wheel-cycling math — no browser APIs. Covers direction resolution,
+// cycle target indices, wheel-delta normalization, sensitivity/acceleration
+// trigger distances, and page-scroll delta scaling. Side-effect free so unit
+// tests can exercise gesture behavior without a browser.
+
 export function resolveWheelDirection(
   wheelDeltaY: number,
   invertScroll: boolean,

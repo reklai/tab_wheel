@@ -19,6 +19,7 @@ export type BackgroundRuntimeMessage =
   | { type: "TABWHEEL_OPEN_NATIVE_NEW_TAB"; windowId?: number }
   | { type: "TABWHEEL_ACTIVATE_MOST_RECENT_TAB"; windowId?: number }
   | { type: "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT"; windowId?: number }
+  | { type: "TABWHEEL_DUPLICATE_TAB"; windowId?: number }
   | ({ type: "TABWHEEL_SAVE_SCROLL_POSITION" } & ScrollData)
   | { type: "TABWHEEL_OPEN_HELP" }
   | { type: "TABWHEEL_OPEN_OPTIONS" };

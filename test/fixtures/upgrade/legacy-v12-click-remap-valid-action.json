@@ -1,0 +1,51 @@
+{
+  "input": {
+    "storageSchemaVersion": 12,
+    "tabWheelSettings": {
+      "leftClickAction": "recentTab",
+      "middleClickAction": "closeToRecent",
+      "openNativeNewTabOnLeftClick": true,
+      "invertScroll": false,
+      "gestureModifier": "alt",
+      "gestureWithShift": false,
+      "allowGesturesInEditableFields": true,
+      "cycleScope": "general",
+      "skipPinnedTabs": false,
+      "skipRestrictedPages": true,
+      "wrapAround": true,
+      "wheelPreset": "balanced",
+      "wheelSensitivity": 1,
+      "wheelCooldownMs": 160,
+      "pageScrollSpeedMultiplier": 1,
+      "pageScrollViewportCapRatio": 1,
+      "wheelAcceleration": false,
+      "horizontalWheel": true,
+      "overshootGuard": true
+    }
+  },
+  "expected": {
+    "storageSchemaVersion": 13,
+    "tabWheelSettings": {
+      "leftClickAction": "recentTab",
+      "middleClickAction": "closeToRecent",
+      "rightClickAction": "closeToRecent",
+      "invertScroll": false,
+      "gestureModifier": "alt",
+      "gestureWithShift": false,
+      "allowGesturesInEditableFields": true,
+      "cycleScope": "general",
+      "skipPinnedTabs": false,
+      "skipRestrictedPages": true,
+      "wrapAround": true,
+      "wheelPreset": "balanced",
+      "wheelSensitivity": 1,
+      "wheelCooldownMs": 160,
+      "pageScrollSpeedMultiplier": 1,
+      "pageScrollViewportCapRatio": 1,
+      "wheelAcceleration": false,
+      "horizontalWheel": true,
+      "overshootGuard": true
+    }
+  },
+  "expectedChanged": true
+}

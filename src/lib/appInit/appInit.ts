@@ -1,4 +1,8 @@
-// App init - wires TabWheel wheel cycling, click gestures, scroll memory, and content messages.
+// Content-script application: wheel cycling, click gestures, the in-page
+// scroll filter, scroll-memory snapshots, and background message handling.
+// initApp() runs once per frame and is safe to re-run — it first calls the
+// previous instance's window.__tabWheelCleanup, which is how re-injecting from
+// code (installs, updates, popup refresh) avoids stacking listeners.
 
 import browser from "webextension-polyfill";
 import {
@@ -9,8 +13,10 @@ import {
   TABWHEEL_STORAGE_KEYS,
 } from "../common/contracts/tabWheel";
 import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
+import { sleep } from "../common/utils/asyncFlow";
 import { dismissPanel } from "../common/utils/panelHost";
 import {
+  buildMouseGesturePolicies,
   createMouseGestureSession as createCoreMouseGestureSession,
   isMouseGestureEventForSession,
   isMouseGestureSessionExpired,
@@ -38,7 +44,9 @@ import {
   activateMostRecentTabWheelTab,
   closeCurrentTabWheelTabAndActivateRecent,
   cycleTabWheel,
+  duplicateCurrentTabWheelTab,
   openNativeNewTabWheelTab,
+  openTabWheelOptions,
   saveTabWheelScrollPosition,
 } from "../adapters/runtime/tabWheelApi";
 import { openTabWheelHelpOverlay } from "../ui/panels/help/help";
@@ -303,10 +311,6 @@ async function waitForLayoutStability(shouldContinue: () => boolean): Promise<bo
   return shouldContinue();
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 function suppressPageEvent(event: Event): void {
   event.preventDefault();
   event.stopPropagation();
@@ -343,10 +347,12 @@ export function initApp(): void {
   let wheelBurstCount = 0;
   let areSettingsLoaded = false;
   let mouseGestureSession: TabWheelMouseGestureSession | null = null;
+  let mouseGesturePolicies: readonly TabWheelMouseGesturePolicy[] = MOUSE_GESTURE_POLICIES;
 
   void loadTabWheelSettings()
     .then((loadedSettings) => {
       settings = loadedSettings;
+      mouseGesturePolicies = buildMouseGesturePolicies(settings);
     })
     .finally(() => {
       areSettingsLoaded = true;
@@ -471,22 +477,25 @@ export function initApp(): void {
     if (!event.isTrusted) return null;
     if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return null;
     if (isWheelGestureBlockedTarget(event.target)) return null;
-    return resolveMouseGesturePolicyByButton(event.button, MOUSE_GESTURE_POLICIES);
+    return resolveMouseGesturePolicyByButton(event.button, mouseGesturePolicies);
   }
 
   function resolvePanelSuppressedMouseGesturePolicy(event: MouseEvent): TabWheelMouseGesturePolicy | null {
     if (event.type === "contextmenu") {
-      return MOUSE_GESTURE_POLICIES.find((policy) => policy.action === "closeToRecent") || null;
+      return mouseGesturePolicies.find((policy) => policy.runPhase === "contextmenu") || null;
     }
-    return resolveMouseGesturePolicyByButton(event.button, MOUSE_GESTURE_POLICIES);
+    return resolveMouseGesturePolicyByButton(event.button, mouseGesturePolicies);
   }
 
   function shouldSuppressPanelMouseShortcut(event: MouseEvent): boolean {
     if (!areSettingsLoaded) return false;
     if (!isTabWheelPanelOpen()) return false;
     if (!event.isTrusted) return false;
+    // Primary-button clicks are how the user operates the panel itself. Only the
+    // non-primary gesture buttons (and the context menu) need swallowing.
+    if (event.button === 0 && event.type !== "contextmenu") return false;
     if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return false;
-    return resolvePanelSuppressedMouseGesturePolicy(event)?.action === "closeToRecent";
+    return resolvePanelSuppressedMouseGesturePolicy(event) !== null;
   }
 
   function isMouseGestureSessionStartEvent(event: MouseEvent): boolean {
@@ -523,28 +532,44 @@ export function initApp(): void {
     runMouseGestureAction(session.policy.action);
   }
 
-  function runMouseGestureAction(action: TabWheelMouseGestureAction): void {
-    if (action === "search") {
-      if (settings.openNativeNewTabOnLeftClick) {
-        void openNativeNewTabWheelTab()
-          .then((result) => {
-            if (!result.ok) showStatus(result.reason || "New tab unavailable");
-          })
-          .catch(() => showStatus("New tab unavailable"));
-        return;
-      }
-      void openTabWheelSearchLauncher().catch(() => showStatus("Search unavailable"));
-      return;
-    }
-    if (action === "recentTab") {
-      void activateMostRecentTabWheelTab().catch(() => showStatus("Recent tab unavailable"));
-      return;
-    }
-    void closeCurrentTabWheelTabAndActivateRecent()
+  function runGestureActionWithStatus(
+    task: () => Promise<TabWheelActionResult>,
+    failureStatus: string,
+  ): void {
+    void task()
       .then((result) => {
-        if (!result.ok) showStatus(result.reason || "Close tab failed");
+        if (!result.ok) showStatus(result.reason || failureStatus);
       })
-      .catch(() => showStatus("Close tab failed"));
+      .catch(() => showStatus(failureStatus));
+  }
+
+  function runMouseGestureAction(action: TabWheelMouseGestureAction): void {
+    switch (action) {
+      case "search":
+        void openTabWheelSearchLauncher().catch(() => showStatus("Search unavailable"));
+        return;
+      case "recentTab":
+        runGestureActionWithStatus(() => activateMostRecentTabWheelTab(), "Recent tab unavailable");
+        return;
+      case "nativeNewTab":
+        runGestureActionWithStatus(() => openNativeNewTabWheelTab(), "New tab unavailable");
+        return;
+      case "duplicateTab":
+        runGestureActionWithStatus(() => duplicateCurrentTabWheelTab(), "Duplicate unavailable");
+        return;
+      case "openSettings":
+        runGestureActionWithStatus(() => openTabWheelOptions(), "Settings unavailable");
+        return;
+      case "closeToRecent":
+        runGestureActionWithStatus(() => closeCurrentTabWheelTabAndActivateRecent(), "Close tab failed");
+        return;
+      default: {
+        // Compile-time exhaustiveness: a new action must be wired here explicitly
+        // rather than falling through to a destructive default.
+        const unhandled: never = action;
+        void unhandled;
+      }
+    }
   }
 
   function getTabCycleWheelDelta(event: WheelEvent): number {
@@ -579,6 +604,9 @@ export function initApp(): void {
     if (!isTopFrameContext) return false;
     if (!areSettingsLoaded || !event.isTrusted || event.defaultPrevented) return false;
     if (hasAnyWheelModifier(event)) return false;
+    // If an overlay is open, it owns plain wheel input — its own listener locks
+    // the page. Filtering here would scroll the page underneath.
+    if (isTabWheelPanelOpen()) return false;
     if (shouldUseNativePageScroll(settings.pageScrollSpeedMultiplier, settings.pageScrollViewportCapRatio)) return false;
     if (event.deltaY === 0) return false;
     if (isPageScrollFilterBlockedTarget(event.target)) return false;
@@ -657,6 +685,7 @@ export function initApp(): void {
     const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
     if (settingsChange) {
       settings = normalizeTabWheelSettings(settingsChange.newValue);
+      mouseGesturePolicies = buildMouseGesturePolicies(settings);
       resetInputGestureState();
     }
   }
@@ -709,15 +738,7 @@ export function initApp(): void {
   window.addEventListener("click", mouseGestureHandler, true);
   window.addEventListener("auxclick", mouseGestureHandler, true);
   window.addEventListener("contextmenu", mouseGestureHandler, true);
-  document.addEventListener("pointerdown", mouseGestureHandler, true);
-  document.addEventListener("mousedown", mouseGestureHandler, true);
-  document.addEventListener("pointerup", mouseGestureHandler, true);
-  document.addEventListener("mouseup", mouseGestureHandler, true);
-  document.addEventListener("click", mouseGestureHandler, true);
-  document.addEventListener("auxclick", mouseGestureHandler, true);
-  document.addEventListener("contextmenu", mouseGestureHandler, true);
   window.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
-  document.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
   document.addEventListener("visibilitychange", visibilityHandler);
   browser.storage.onChanged.addListener(storageChangedHandler);
 
@@ -736,15 +757,7 @@ export function initApp(): void {
     window.removeEventListener("click", mouseGestureHandler, true);
     window.removeEventListener("auxclick", mouseGestureHandler, true);
     window.removeEventListener("contextmenu", mouseGestureHandler, true);
-    document.removeEventListener("pointerdown", mouseGestureHandler, true);
-    document.removeEventListener("mousedown", mouseGestureHandler, true);
-    document.removeEventListener("pointerup", mouseGestureHandler, true);
-    document.removeEventListener("mouseup", mouseGestureHandler, true);
-    document.removeEventListener("click", mouseGestureHandler, true);
-    document.removeEventListener("auxclick", mouseGestureHandler, true);
-    document.removeEventListener("contextmenu", mouseGestureHandler, true);
     window.removeEventListener("wheel", wheelHandler, true);
-    document.removeEventListener("wheel", wheelHandler, true);
     document.removeEventListener("visibilitychange", visibilityHandler);
     browser.storage.onChanged.removeListener(storageChangedHandler);
     if (isTopFrameContext) {

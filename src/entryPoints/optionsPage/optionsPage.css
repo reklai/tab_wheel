@@ -43,11 +43,13 @@ body {
   height: 12px;
   border-radius: 50%;
   border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .dot-close { background: #ff5f57; }
-.dot-minimize { background: #febc2e; }
-.dot-maximize { background: #28c840; }
+.dot-close:hover { filter: brightness(1.15); }
+.dot-close:focus-visible { outline: 2px solid rgba(10,132,255,0.6); outline-offset: 2px; }
 
 .titlebar-text {
   flex: 1;
@@ -202,6 +204,40 @@ body {
 
 .status-bar.visible {
   transform: translateY(0);
+}
+
+.settings-section {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.settings-section legend {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(10,132,255,0.82);
+  padding: 4px 10px;
+  margin-left: 8px;
+}
+
+.reset-button {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 6px;
+  background: transparent;
+  color: #a0a0a0;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.reset-button:hover {
+  background: rgba(255,255,255,0.06);
+  color: #e0e0e0;
 }
 
 @media (max-width: 620px) {

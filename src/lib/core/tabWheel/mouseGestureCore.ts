@@ -1,4 +1,9 @@
-export type TabWheelMouseGestureAction = "search" | "recentTab" | "closeToRecent";
+// Pure click-gesture model with no browser APIs: the remappable click-action
+// catalog, per-button event rules (which DOM event starts and finishes each
+// gesture), and session timing. appInit.ts uses this to convert raw mouse
+// events into actions; keeping it pure lets tests cover the mapping directly.
+
+export type TabWheelMouseGestureAction = Exclude<TabWheelClickAction, "none">;
 export type TabWheelMouseGestureRunPhase = "sessionStart" | "auxclick" | "contextmenu";
 export type TabWheelMouseGestureEventType = "click" | "auxclick" | "contextmenu";
 
@@ -7,6 +12,14 @@ export interface TabWheelMouseGesturePolicy {
   button: number;
   runPhase: TabWheelMouseGestureRunPhase;
   finishEvents: readonly TabWheelMouseGestureEventType[];
+}
+
+export type TabWheelMouseGestureButtonMechanics = Omit<TabWheelMouseGesturePolicy, "action">;
+
+export interface TabWheelClickActionSettings {
+  leftClickAction: TabWheelClickAction;
+  middleClickAction: TabWheelClickAction;
+  rightClickAction: TabWheelClickAction;
 }
 
 export interface TabWheelMouseGestureSession {
@@ -22,26 +35,57 @@ export interface TabWheelMouseGestureEvent {
 
 export const MOUSE_GESTURE_CLAIM_MS = 900;
 
-export const MOUSE_GESTURE_POLICIES: readonly TabWheelMouseGesturePolicy[] = [
+export const TABWHEEL_CLICK_ACTIONS: readonly TabWheelClickAction[] = [
+  "search",
+  "nativeNewTab",
+  "recentTab",
+  "closeToRecent",
+  "duplicateTab",
+  "openSettings",
+  "none",
+];
+
+export const DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS: TabWheelClickActionSettings = {
+  leftClickAction: "search",
+  middleClickAction: "recentTab",
+  rightClickAction: "closeToRecent",
+};
+
+export const MOUSE_GESTURE_BUTTON_MECHANICS: readonly TabWheelMouseGestureButtonMechanics[] = [
   {
-    action: "search",
     button: 0,
     runPhase: "sessionStart",
     finishEvents: ["click"],
   },
   {
-    action: "recentTab",
     button: 1,
     runPhase: "auxclick",
     finishEvents: ["auxclick"],
   },
   {
-    action: "closeToRecent",
     button: 2,
     runPhase: "contextmenu",
     finishEvents: ["click", "auxclick", "contextmenu"],
   },
 ];
+
+export function buildMouseGesturePolicies(
+  clickActions: TabWheelClickActionSettings,
+): readonly TabWheelMouseGesturePolicy[] {
+  const clickActionsByButton: readonly TabWheelClickAction[] = [
+    clickActions.leftClickAction,
+    clickActions.middleClickAction,
+    clickActions.rightClickAction,
+  ];
+  return MOUSE_GESTURE_BUTTON_MECHANICS.flatMap((mechanics) => {
+    const clickAction = clickActionsByButton[mechanics.button];
+    if (clickAction === "none") return [];
+    return [{ action: clickAction, ...mechanics }];
+  });
+}
+
+export const MOUSE_GESTURE_POLICIES: readonly TabWheelMouseGesturePolicy[] =
+  buildMouseGesturePolicies(DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS);
 
 export function resolveMouseGesturePolicy(
   button: number,

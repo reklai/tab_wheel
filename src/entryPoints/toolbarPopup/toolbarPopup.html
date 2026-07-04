@@ -8,9 +8,7 @@
   <div class="tabwheel-popup">
     <div class="titlebar">
       <div class="traffic-lights">
-        <span class="dot dot-close"></span>
-        <span class="dot dot-minimize"></span>
-        <span class="dot dot-maximize"></span>
+        <button class="dot dot-close" id="closePopupBtn" type="button" title="Close" aria-label="Close popup"></button>
       </div>
       <span class="titlebar-text" id="titlebarText">__EXTENSION_NAME__</span>
       <button class="titlebar-button" id="refreshTabWheelBtn" type="button" title="Refresh TabWheel on this tab">Refresh</button>
@@ -43,14 +41,24 @@
         <button id="nextTabBtn" type="button">Next tab</button>
       </div>
 
-      <section class="cycle-mode-panel" aria-label="Left click action">
+      <section class="cycle-mode-panel" aria-label="Click actions">
         <div class="mode-heading">
-          <span>Browser New Tab Page Mode</span>
-          <strong id="leftClickActionLabel">Tabwheel</strong>
+          <span>Click Actions</span>
+          <strong id="leftClickActionLabel">TabWheel Search</strong>
         </div>
-        <div class="mode-pill" role="group" aria-label="Change left click action">
-          <button id="leftClickSearchBtn" data-native-new-tab="false" type="button">Tabwheel</button>
-          <button id="leftClickNativeBtn" data-native-new-tab="true" type="button">Browser Default</button>
+        <div class="click-action-grid" role="group" aria-label="Change click actions">
+          <label class="control-row" title="Choose what modifier + left click does, including Tabwheel search or the Browser Default new tab page.">
+            <span><strong>Left click</strong></span>
+            <select id="leftClickAction"></select>
+          </label>
+          <label class="control-row" title="Choose what modifier + middle click does.">
+            <span><strong>Middle click</strong></span>
+            <select id="middleClickAction"></select>
+          </label>
+          <label class="control-row" title="Choose what modifier + right click does.">
+            <span><strong>Right click</strong></span>
+            <select id="rightClickAction"></select>
+          </label>
         </div>
       </section>
 
@@ -88,6 +96,10 @@
         <label class="control-row" title="Skip browser UI, extension pages, stores, PDF viewers, and other unsupported pages when cycling.">
           <span><strong>Skip restricted</strong><small>Leave unsupported pages out of wheel cycling</small></span>
           <input id="skipRestrictedPages" type="checkbox" />
+        </label>
+        <label class="control-row" title="Skip tabs in collapsed tab groups or hidden panes when cycling.">
+          <span><strong>Skip hidden</strong><small>Leave collapsed-group and hidden-pane tabs out of cycling</small></span>
+          <input id="skipHiddenTabs" type="checkbox" />
         </label>
         <label class="control-row" title="At the first or last tab, continue from the opposite edge.">
           <span><strong>Wrap around</strong><small>Continue from last to first tab</small></span>

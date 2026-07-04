@@ -50,11 +50,13 @@ body {
   height: 12px;
   border-radius: 50%;
   border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .dot-close { background: #ff5f57; }
-.dot-minimize { background: #febc2e; }
-.dot-maximize { background: #28c840; }
+.dot-close:hover { filter: brightness(1.15); }
+.dot-close:focus-visible { outline: 2px solid rgba(10,132,255,0.6); outline-offset: 2px; }
 
 .titlebar-text {
   min-width: 0;
@@ -300,6 +302,21 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   background: rgba(255,255,255,0.04);
+}
+
+.click-action-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: rgba(255,255,255,0.04);
+}
+
+.click-action-grid .control-row {
+  min-height: 44px;
+}
+
+.click-action-grid select {
+  width: 168px;
 }
 
 .control-row {

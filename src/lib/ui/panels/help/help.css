@@ -27,6 +27,7 @@
 .ht-help-body {
   flex: 1; overflow-y: auto; padding: 8px 0;
   scroll-behavior: auto;
+  overscroll-behavior: contain;
 }
 .ht-help-section { margin-bottom: 4px; }
 .ht-help-header {

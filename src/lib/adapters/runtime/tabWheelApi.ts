@@ -1,3 +1,7 @@
+// Typed wrappers around every TabWheel runtime message. UI surfaces and the
+// content script call these instead of building message objects by hand, so
+// the message contract has one place to check on the sending side.
+
 import { sendRuntimeMessage, sendRuntimeMessageWithRetry, RuntimeRetryPolicy } from "./runtimeClient";
 import { normalizeSearchQuery } from "../../common/contracts/tabWheel";
 
@@ -76,6 +80,13 @@ export function activateMostRecentTabWheelTab(windowId?: number): Promise<TabWhe
 export function closeCurrentTabWheelTabAndActivateRecent(windowId?: number): Promise<TabWheelActionResult> {
   return sendRuntimeMessage<TabWheelActionResult>({
     type: "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT",
+    windowId,
+  });
+}
+
+export function duplicateCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_DUPLICATE_TAB",
     windowId,
   });
 }

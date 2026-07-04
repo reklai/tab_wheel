@@ -1,9 +1,14 @@
 // TabWheel help overlay - read-only reference for wheel tab switching.
 
+import browser from "webextension-polyfill";
 import { escapeHtml } from "../../../common/utils/helpers";
+import { createDebouncedCallback } from "../../../common/utils/asyncFlow";
 import {
+  describeTabWheelClickAction,
   formatTabWheelModifierCombo,
   loadTabWheelSettings,
+  normalizeTabWheelSettings,
+  TABWHEEL_STORAGE_KEYS,
 } from "../../../common/contracts/tabWheel";
 import { openTabWheelOptions } from "../../../adapters/runtime/tabWheelApi";
 import {
@@ -26,9 +31,9 @@ const SCROLL_STEP = 80;
 
 function buildHelpSections(settings: TabWheelSettings): HelpSection[] {
   const gestureModifier = formatTabWheelModifierCombo(settings.gestureModifier, settings.gestureWithShift);
-  const leftClickAction = settings.openNativeNewTabOnLeftClick
-    ? "opens the browser's normal new tab page"
-    : "opens the in-page search launcher";
+  const leftClickAction = describeTabWheelClickAction(settings.leftClickAction);
+  const middleClickAction = describeTabWheelClickAction(settings.middleClickAction);
+  const rightClickAction = describeTabWheelClickAction(settings.rightClickAction);
   const editableFields = settings.allowGesturesInEditableFields
     ? "Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs"
     : "Skip wheel-cycling when cursor is inside text boxes, search fields, and editors/docs";
@@ -40,8 +45,8 @@ function buildHelpSections(settings: TabWheelSettings): HelpSection[] {
       items: [
         { token: `${gestureModifier} + Wheel`, value: "switches tabs using the current cycle mode" },
         { token: `${gestureModifier} + Left Click`, value: leftClickAction },
-        { token: `${gestureModifier} + Middle Click`, value: "jumps to the most recently used tab" },
-        { token: `${gestureModifier} + Right Click`, value: "closes this tab; returns to the most recently used tab first when available" },
+        { token: `${gestureModifier} + Middle Click`, value: middleClickAction },
+        { token: `${gestureModifier} + Right Click`, value: rightClickAction },
       ],
     },
     {
@@ -57,8 +62,8 @@ function buildHelpSections(settings: TabWheelSettings): HelpSection[] {
       items: [
         { label: "Switch tabs", value: `${gestureModifier} + Wheel` },
         { label: "Left click", value: `${gestureModifier} + Left Click ${leftClickAction}` },
-        { label: "Most recent tab", value: `${gestureModifier} + Middle Click` },
-        { label: "Close tab", value: `${gestureModifier} + Right Click` },
+        { label: "Middle click", value: `${gestureModifier} + Middle Click ${middleClickAction}` },
+        { label: "Right click", value: `${gestureModifier} + Right Click ${rightClickAction}` },
         { label: "Editable fields", value: editableFields },
         { label: "Wheel down/right", value: settings.invertScroll ? "goes to previous tab" : "goes to next tab" },
         { label: "Wheel up/left", value: settings.invertScroll ? "goes to next tab" : "goes to previous tab" },
@@ -72,6 +77,7 @@ function buildHelpSections(settings: TabWheelSettings): HelpSection[] {
         { label: "MRU", value: "switch through eligible tabs in most-recently-used order" },
         { label: "Pinned tabs", value: settings.skipPinnedTabs ? "left out of cycling" : "included in cycling" },
         { label: "Restricted pages", value: settings.skipRestrictedPages ? "left out of cycling" : "included when the browser allows activation" },
+        { label: "Hidden tabs", value: settings.skipHiddenTabs ? "left out of cycling" : "included in cycling" },
         { label: "Wrap around", value: settings.wrapAround ? "last tab continues to first tab" : "stop at the first or last tab" },
       ],
     },
@@ -166,9 +172,23 @@ export async function openTabWheelHelpOverlay(): Promise<void> {
     const closeButton = panel.querySelector(".ht-dot-close") as HTMLButtonElement;
     const settingsButton = panel.querySelector('[data-action="settings"]') as HTMLButtonElement;
 
+    const debouncedRebuild = createDebouncedCallback((rawSettings: unknown) => {
+      body.innerHTML = buildSectionsHtml(buildHelpSections(normalizeTabWheelSettings(rawSettings)));
+    }, 150);
+
     function close(): void {
       document.removeEventListener("keydown", keyHandler, true);
+      debouncedRebuild.cancel();
+      browser.storage.onChanged.removeListener(storageChangedHandler);
       removePanelHost();
+    }
+
+    function storageChangedHandler(
+      changes: Record<string, browser.Storage.StorageChange>,
+    ): void {
+      const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
+      if (!settingsChange) return;
+      debouncedRebuild(settingsChange.newValue);
     }
 
     function keyHandler(event: KeyboardEvent): void {
@@ -213,6 +233,13 @@ export async function openTabWheelHelpOverlay(): Promise<void> {
       close();
     });
     document.addEventListener("keydown", keyHandler, true);
+    browser.storage.onChanged.addListener(storageChangedHandler);
+    panel.addEventListener("wheel", (event: WheelEvent) => {
+      event.stopPropagation();
+      if (!body.contains(event.target as Node)) {
+        event.preventDefault();
+      }
+    }, { passive: false });
     registerPanelCleanup(close);
     host.focus();
   } catch (error) {

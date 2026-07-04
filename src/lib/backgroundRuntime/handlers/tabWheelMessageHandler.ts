@@ -1,3 +1,7 @@
+// Translates TabWheel runtime messages into domain calls. Returns the router's
+// UNHANDLED marker for message types it does not own so additional handlers
+// can be composed behind it.
+
 import browser from "webextension-polyfill";
 import { TabWheelDomain } from "../domains/tabWheelDomain";
 import { RuntimeMessageHandler, UNHANDLED } from "./runtimeRouter";
@@ -60,6 +64,9 @@ export function createTabWheelMessageHandler(
 
       case "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT":
         return await domain.closeCurrentTabAndActivateRecent(sender.tab, message.windowId);
+
+      case "TABWHEEL_DUPLICATE_TAB":
+        return await domain.duplicateTab(sender.tab, message.windowId);
 
       case "TABWHEEL_SAVE_SCROLL_POSITION": {
         const tabId = sender.tab?.id;

@@ -1,5 +1,5 @@
 // Shadow DOM panel host — creates an isolated overlay container with focus
-// trapping so keyboard input stays in the panel (not the address bar).
+// trapping so keyboard input stays inside the panel instead of the address bar.
 
 import browser from "webextension-polyfill";
 import { escapeHtml } from "./helpers";
@@ -162,7 +162,7 @@ export function createPanelHost(): PanelHost {
     host.focus({ preventScroll: true });
   };
 
-  // Reclaim focus when it escapes the panel (e.g. to browser chrome).
+  // Reclaim focus when it escapes the panel (e.g. to the browser UI).
   // Must check both host.contains() and shadowRoot.contains() because
   // Shadow DOM children aren't found by host.contains().
   let reclaimId = 0;
@@ -201,7 +201,9 @@ export function createPanelHost(): PanelHost {
     handlePanelRuntimeFault("Panel unhandled rejection", event.reason);
   };
 
-  // Watchdog: if UI thread stalls while panel is visible, fail closed.
+  // Watchdog: the host covers the whole viewport at maximum z-index, so a
+  // stuck overlay makes the page unusable. If no animation frame has run for
+  // 3s while the panel is visible, assume the panel is stuck and remove it.
   let lastAnimationFrameAt = performance.now();
   let frameProbeId = 0;
   const frameProbe = (ts: number): void => {

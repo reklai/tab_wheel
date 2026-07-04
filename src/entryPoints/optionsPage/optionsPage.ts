@@ -1,10 +1,12 @@
 // Options page for TabWheel settings.
 
+import browser from "webextension-polyfill";
 import {
   applyTabWheelPreset,
+  DEFAULT_TABWHEEL_SETTINGS,
+  describeTabWheelClickActionSentence,
   detectTabWheelPreset,
   formatTabWheelModifierCombo,
-  formatTabWheelModifierKey,
   loadTabWheelSettings,
   MAX_PAGE_SCROLL_SPEED_MULTIPLIER,
   MAX_PAGE_SCROLL_VIEWPORT_CAP_RATIO,
@@ -15,31 +17,26 @@ import {
   MIN_WHEEL_COOLDOWN_MS,
   MIN_WHEEL_SENSITIVITY,
   saveTabWheelSettings,
-  TABWHEEL_CYCLE_SCOPES,
-  TABWHEEL_MODIFIER_KEYS,
-  TABWHEEL_PRESETS,
 } from "../../lib/common/contracts/tabWheel";
-
-function presetLabel(preset: TabWheelPreset): string {
-  if (preset === "precise") return "Precise";
-  if (preset === "fast") return "Fast";
-  if (preset === "custom") return "Custom";
-  return "Balanced";
-}
-
-function cycleScopeLabel(scope: TabWheelCycleScope): string {
-  return scope === "mru" ? "Most Recently Used" : "Left-To-Right";
-}
+import {
+  populateClickActionSelect,
+  populateCycleScopeSelect,
+  populateModifierSelect,
+  populatePresetSelect,
+} from "../../lib/ui/settings/settingsControls";
 
 document.addEventListener("DOMContentLoaded", async () => {
   const invertScrollInput = document.getElementById("invertScroll") as HTMLInputElement;
   const allowGesturesInEditableFieldsInput = document.getElementById("allowGesturesInEditableFields") as HTMLInputElement;
   const gestureModifierSelect = document.getElementById("gestureModifier") as HTMLSelectElement;
   const gestureWithShiftInput = document.getElementById("gestureWithShift") as HTMLInputElement;
-  const openNativeNewTabOnLeftClickSelect = document.getElementById("openNativeNewTabOnLeftClick") as HTMLSelectElement;
+  const leftClickActionSelect = document.getElementById("leftClickAction") as HTMLSelectElement;
+  const middleClickActionSelect = document.getElementById("middleClickAction") as HTMLSelectElement;
+  const rightClickActionSelect = document.getElementById("rightClickAction") as HTMLSelectElement;
   const cycleScopeSelect = document.getElementById("cycleScope") as HTMLSelectElement;
   const skipPinnedTabsInput = document.getElementById("skipPinnedTabs") as HTMLInputElement;
   const skipRestrictedPagesInput = document.getElementById("skipRestrictedPages") as HTMLInputElement;
+  const skipHiddenTabsInput = document.getElementById("skipHiddenTabs") as HTMLInputElement;
   const wrapAroundInput = document.getElementById("wrapAround") as HTMLInputElement;
   const wheelPresetSelect = document.getElementById("wheelPreset") as HTMLSelectElement;
   const wheelAccelerationInput = document.getElementById("wheelAcceleration") as HTMLInputElement;
@@ -58,8 +55,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const searchShortcut = document.getElementById("searchShortcut")!;
   const leftClickShortcutDescription = document.getElementById("leftClickShortcutDescription")!;
   const recentShortcut = document.getElementById("recentShortcut")!;
+  const middleClickShortcutDescription = document.getElementById("middleClickShortcutDescription")!;
   const closeShortcut = document.getElementById("closeShortcut")!;
+  const rightClickShortcutDescription = document.getElementById("rightClickShortcutDescription")!;
   const statusBar = document.getElementById("statusBar")!;
+  const resetDefaultsBtn = document.getElementById("resetDefaults") as HTMLButtonElement;
+  const closeOptionsBtn = document.getElementById("closeOptionsBtn") as HTMLButtonElement;
 
   let settings = await loadTabWheelSettings();
   let statusTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -73,24 +74,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }, 2500);
   }
 
-  function populateModifierSelect(select: HTMLSelectElement): void {
-    select.innerHTML = TABWHEEL_MODIFIER_KEYS
-      .map((modifier) => `<option value="${modifier}">${formatTabWheelModifierKey(modifier)}</option>`)
-      .join("");
-  }
-
-  function populatePresetSelect(select: HTMLSelectElement): void {
-    select.innerHTML = TABWHEEL_PRESETS
-      .map((preset) => `<option value="${preset}">${presetLabel(preset)}</option>`)
-      .join("");
-  }
-
-  function populateCycleScopeSelect(select: HTMLSelectElement): void {
-    select.innerHTML = TABWHEEL_CYCLE_SCOPES
-      .map((cycleScope) => `<option value="${cycleScope}">${cycleScopeLabel(cycleScope)}</option>`)
-      .join("");
-  }
-
   function readSettings(): TabWheelSettings {
     const nextSettings: TabWheelSettings = {
       ...settings,
@@ -98,10 +81,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       allowGesturesInEditableFields: allowGesturesInEditableFieldsInput.checked,
       gestureModifier: gestureModifierSelect.value as TabWheelModifierKey,
       gestureWithShift: gestureWithShiftInput.checked,
-      openNativeNewTabOnLeftClick: openNativeNewTabOnLeftClickSelect.value === "true",
+      leftClickAction: leftClickActionSelect.value as TabWheelClickAction,
+      middleClickAction: middleClickActionSelect.value as TabWheelClickAction,
+      rightClickAction: rightClickActionSelect.value as TabWheelClickAction,
       cycleScope: cycleScopeSelect.value as TabWheelCycleScope,
       skipPinnedTabs: skipPinnedTabsInput.checked,
       skipRestrictedPages: skipRestrictedPagesInput.checked,
+      skipHiddenTabs: skipHiddenTabsInput.checked,
       wrapAround: wrapAroundInput.checked,
       wheelPreset: wheelPresetSelect.value as TabWheelPreset,
       wheelAcceleration: wheelAccelerationInput.checked,
@@ -125,10 +111,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     allowGesturesInEditableFieldsInput.checked = settings.allowGesturesInEditableFields;
     gestureModifierSelect.value = settings.gestureModifier;
     gestureWithShiftInput.checked = settings.gestureWithShift;
-    openNativeNewTabOnLeftClickSelect.value = settings.openNativeNewTabOnLeftClick ? "true" : "false";
+    leftClickActionSelect.value = settings.leftClickAction;
+    middleClickActionSelect.value = settings.middleClickAction;
+    rightClickActionSelect.value = settings.rightClickAction;
     cycleScopeSelect.value = settings.cycleScope;
     skipPinnedTabsInput.checked = settings.skipPinnedTabs;
     skipRestrictedPagesInput.checked = settings.skipRestrictedPages;
+    skipHiddenTabsInput.checked = settings.skipHiddenTabs;
     wrapAroundInput.checked = settings.wrapAround;
     wheelPresetSelect.value = settings.wheelPreset;
     wheelAccelerationInput.checked = settings.wheelAcceleration;
@@ -153,11 +142,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     invertScrollHelp.textContent = `${gestureModifier} + wheel down/right becomes previous, and ${gestureModifier} + wheel up/left becomes next.`;
     wheelShortcut.textContent = `${gestureModifier} + Wheel`;
     searchShortcut.textContent = `${gestureModifier} + Left Click`;
-    leftClickShortcutDescription.textContent = settings.openNativeNewTabOnLeftClick
-      ? "Open the browser's normal new tab page."
-      : "Open the in-page search launcher.";
+    leftClickShortcutDescription.textContent = describeTabWheelClickActionSentence(settings.leftClickAction);
     recentShortcut.textContent = `${gestureModifier} + Middle Click`;
+    middleClickShortcutDescription.textContent = describeTabWheelClickActionSentence(settings.middleClickAction);
     closeShortcut.textContent = `${gestureModifier} + Right Click`;
+    rightClickShortcutDescription.textContent = describeTabWheelClickActionSentence(settings.rightClickAction);
   }
 
   async function persist(nextSettings: TabWheelSettings): Promise<void> {
@@ -171,9 +160,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     await persist(readSettings());
   }
 
-  populateModifierSelect(gestureModifierSelect);
-  populatePresetSelect(wheelPresetSelect);
-  populateCycleScopeSelect(cycleScopeSelect);
+  populateModifierSelect(gestureModifierSelect, settings.gestureModifier);
+  populatePresetSelect(wheelPresetSelect, settings.wheelPreset);
+  populateCycleScopeSelect(cycleScopeSelect, settings.cycleScope);
+  populateClickActionSelect(leftClickActionSelect, settings.leftClickAction);
+  populateClickActionSelect(middleClickActionSelect, settings.middleClickAction);
+  populateClickActionSelect(rightClickActionSelect, settings.rightClickAction);
   renderSettings(settings);
 
   wheelPresetSelect.addEventListener("change", () => {
@@ -183,10 +175,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   allowGesturesInEditableFieldsInput.addEventListener("change", () => void saveSettings());
   gestureModifierSelect.addEventListener("change", () => void saveSettings());
   gestureWithShiftInput.addEventListener("change", () => void saveSettings());
-  openNativeNewTabOnLeftClickSelect.addEventListener("change", () => void saveSettings());
+  leftClickActionSelect.addEventListener("change", () => void saveSettings());
+  middleClickActionSelect.addEventListener("change", () => void saveSettings());
+  rightClickActionSelect.addEventListener("change", () => void saveSettings());
   cycleScopeSelect.addEventListener("change", () => void saveSettings());
   skipPinnedTabsInput.addEventListener("change", () => void saveSettings());
   skipRestrictedPagesInput.addEventListener("change", () => void saveSettings());
+  skipHiddenTabsInput.addEventListener("change", () => void saveSettings());
   wrapAroundInput.addEventListener("change", () => void saveSettings());
   wheelAccelerationInput.addEventListener("change", () => void saveSettings());
   horizontalWheelInput.addEventListener("change", () => void saveSettings());
@@ -210,5 +205,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   pageScrollViewportCapInput.addEventListener("input", () => {
     pageScrollViewportCapValue.textContent = `${Math.round(Number(pageScrollViewportCapInput.value) * 100)}%`;
     wheelPresetSelect.value = "custom";
+  });
+
+  resetDefaultsBtn.addEventListener("click", async () => {
+    const confirmed = window.confirm("Restore all settings to their factory defaults?");
+    if (!confirmed) return;
+    await persist({ ...DEFAULT_TABWHEEL_SETTINGS });
+    showStatus("Defaults restored");
+  });
+
+  closeOptionsBtn.addEventListener("click", async () => {
+    try {
+      const tab = await browser.tabs.getCurrent();
+      if (tab?.id != null) {
+        await browser.tabs.remove(tab.id);
+        return;
+      }
+    } catch (_) {}
+    window.close();
   });
 });

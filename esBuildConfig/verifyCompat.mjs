@@ -60,7 +60,7 @@ if (!Array.isArray(requiredDataCollection) || requiredDataCollection.length === 
   errors.push("MV2 data_collection_permissions.required must include \"none\" for no external data collection.");
 }
 
-const requiredV3Permissions = ["scripting", "tabs", "storage", "search"];
+const requiredV3Permissions = ["scripting", "tabs", "storage", "search", "tabGroups"];
 if (!hasAll(manifestV3.permissions || [], requiredV3Permissions)) {
   errors.push("MV3 is missing required permissions for runtime features.");
 }

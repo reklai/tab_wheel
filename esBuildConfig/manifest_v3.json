@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Scroll Wheel Tab Switcher",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Alt + mouse wheel switches tabs. Tune tab switching and page-scroll wheel feel. Clicks open search, recent, and close.",
   "permissions": [
     "scripting",
     "tabs",
     "storage",
-    "search"
+    "search",
+    "tabGroups"
   ],
   "host_permissions": [
     "<all_urls>"

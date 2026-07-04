@@ -1,3 +1,10 @@
+// Background-side TabWheel domain: tab cycling (strip and MRU order), click
+// actions, scroll memory, and the content-script lifecycle (install-time
+// injection, ping/ready tracking, restricted-page probing). The Maps below
+// are in-memory caches that live for one service worker lifetime — only scroll
+// memory, MRU state, and settings are saved to storage — so callers must
+// tolerate these caches being empty after a worker restart.
+
 import browser, { Tabs } from "webextension-polyfill";
 import {
   buildSearchUrl,
@@ -10,6 +17,12 @@ import {
   TABWHEEL_STORAGE_KEYS,
 } from "../../common/contracts/tabWheel";
 import { resolveCycleTargetIndex } from "../../core/tabWheel/tabWheelCore";
+import {
+  createInFlightMemo,
+  createKeyedTaskQueue,
+  createWriteChain,
+  sleep,
+} from "../../common/utils/asyncFlow";
 
 type ScrollMemoryByTabId = Record<string, TabWheelScrollMemoryEntry>;
 type MruTabIdsByWindowId = TabWheelMruState;
@@ -20,6 +33,17 @@ interface BrowserDefaultSearchApi {
     tabId?: number;
     disposition?: "CURRENT_TAB" | "NEW_TAB" | "NEW_WINDOW";
   }): Promise<void>;
+}
+
+interface BrowserTabGroupsApi {
+  query(queryInfo: {
+    windowId?: number;
+    collapsed?: boolean;
+  }): Promise<Array<{
+    id: number;
+    collapsed: boolean;
+    windowId: number;
+  }>>;
 }
 
 interface ExistingTabActivationResult {
@@ -48,6 +72,11 @@ interface ContentScriptUnavailableEntry {
   expiresAt: number;
 }
 
+interface DiscardedTabWakeHold {
+  tabId: number;
+  expiresAt: number;
+}
+
 export interface TabWheelDomain {
   ensureLoaded(): Promise<void>;
   activateExistingContentScripts(): Promise<ExistingTabActivationResult>;
@@ -58,6 +87,7 @@ export interface TabWheelDomain {
   openNativeNewTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   activateMostRecentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   closeCurrentTabAndActivateRecent(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
+  duplicateTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   toggleCycleScope(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   setCycleScope(cycleScope: TabWheelCycleScope, tab?: Tabs.Tab, windowId?: number, options?: TabWheelStatusOptions): Promise<TabWheelActionResult>;
   saveScrollPosition(tabId: number, windowId: number, url: string | undefined, scroll: ScrollData): Promise<TabWheelActionResult>;
@@ -70,9 +100,12 @@ const MRU_CYCLE_SESSION_MS = 1400;
 const WINDOW_TABS_CACHE_TTL_MS = 350;
 const SCROLL_MEMORY_SAVE_DEBOUNCE_MS = 120;
 const GESTURE_TARGET_PROBE_TIMEOUT_MS = 320;
+const MAX_GESTURE_PROBE_ATTEMPTS = 4;
 const CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS = 2500;
 const GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS = [0, 80, 180] as const;
 const SCROLL_RESTORE_RETRY_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600] as const;
+const DISCARDED_SCROLL_RESTORE_RETRY_DELAYS_MS = [...SCROLL_RESTORE_RETRY_DELAYS_MS, 4000] as const;
+const DISCARDED_WAKE_CYCLE_HOLD_MS = 700;
 
 function windowKey(windowId: number): string {
   return String(windowId);
@@ -80,10 +113,6 @@ function windowKey(windowId: number): string {
 
 function tabKey(tabId: number): string {
   return String(tabId);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function resolveWithTimeout<T>(
@@ -248,6 +277,28 @@ function normalizeMruState(rawValue: unknown): MruTabIdsByWindowId {
   return normalized;
 }
 
+function buildScrollMemoryEntry(
+  tabId: number,
+  windowId: number,
+  url: string,
+  scroll: ScrollData,
+): TabWheelScrollMemoryEntry {
+  return {
+    tabId,
+    windowId,
+    url,
+    scrollX: scroll.scrollX,
+    scrollY: scroll.scrollY,
+    scrollRatioX: scroll.scrollRatioX,
+    scrollRatioY: scroll.scrollRatioY,
+    scrollWidth: scroll.scrollWidth,
+    scrollHeight: scroll.scrollHeight,
+    viewportWidth: scroll.viewportWidth,
+    viewportHeight: scroll.viewportHeight,
+    updatedAt: Date.now(),
+  };
+}
+
 function getTabIndex(tab: Tabs.Tab): number {
   return Number(tab.index) || 0;
 }
@@ -263,11 +314,20 @@ function getBrowserDefaultSearchApi(): BrowserDefaultSearchApi | null {
     : null;
 }
 
-function getEligibleTabs(tabs: Tabs.Tab[], settings: TabWheelSettings): Tabs.Tab[] {
+function isCollapsedGroupTab(tab: Tabs.Tab, collapsedTabGroupIds: ReadonlySet<number>): boolean {
+  return tab.groupId != null && collapsedTabGroupIds.has(tab.groupId);
+}
+
+function getEligibleTabs(
+  tabs: Tabs.Tab[],
+  settings: TabWheelSettings,
+  collapsedTabGroupIds: ReadonlySet<number> = new Set(),
+): Tabs.Tab[] {
   return tabs
-    .filter((tab) => tab.id != null)
-    .filter((tab) => !settings.skipPinnedTabs || tab.pinned !== true)
-    .filter((tab) => !settings.skipRestrictedPages || !isRestrictedTab(tab))
+    .filter((tab) => tab.id != null
+      && (!settings.skipPinnedTabs || tab.pinned !== true)
+      && (!settings.skipHiddenTabs || (tab.hidden !== true && !isCollapsedGroupTab(tab, collapsedTabGroupIds)))
+      && (!settings.skipRestrictedPages || !isRestrictedTab(tab)))
     .sort((left, right) => getTabIndex(left) - getTabIndex(right));
 }
 
@@ -279,12 +339,18 @@ export function createTabWheelDomain(): TabWheelDomain {
   let scrollMemoryByTabId: ScrollMemoryByTabId = {};
   let mruTabIdsByWindowId: MruTabIdsByWindowId = {};
   const windowTabsCacheByWindowId = new Map<number, WindowTabsCacheEntry>();
+  const collapsedTabGroupIdsCacheByWindowId = new Map<number, {
+    collapsedTabGroupIds: Set<number>;
+    expiresAt: number;
+  }>();
   const contentScriptReadyUrlsByTabId = new Map<number, string>();
-  const cycleTasksByWindowId = new Map<number, Promise<void>>();
+  const windowGestureTaskQueue = createKeyedTaskQueue();
+  const mruStateWriteChain = createWriteChain();
   const mruCycleSessionsByWindowId = new Map<number, MruCycleSession>();
   const activeTabIdsByWindowId = new Map<number, number>();
   const scrollRestoreTokensByTabId = new Map<number, number>();
   const contentScriptUnavailableUrlsByTabId = new Map<number, ContentScriptUnavailableEntry>();
+  const discardedWakeHoldByWindowId = new Map<number, DiscardedTabWakeHold>();
   let scrollRestoreSerial = 0;
   let scrollMemorySaveTimer: ReturnType<typeof setTimeout> | null = null;
   let scrollMemorySaveResolvers: Array<{
@@ -293,10 +359,8 @@ export function createTabWheelDomain(): TabWheelDomain {
   }> = [];
   let scrollMemoryWriteChain: Promise<void> = Promise.resolve();
   let settingsCache: TabWheelSettings | null = null;
-  let loaded = false;
 
-  async function ensureLoaded(): Promise<void> {
-    if (loaded) return;
+  const ensureLoaded = createInFlightMemo(async () => {
     const stored = await browser.storage.local.get([
       TABWHEEL_STORAGE_KEYS.scrollMemory,
       TABWHEEL_STORAGE_KEYS.mruState,
@@ -305,8 +369,7 @@ export function createTabWheelDomain(): TabWheelDomain {
       stored[TABWHEEL_STORAGE_KEYS.scrollMemory],
     );
     mruTabIdsByWindowId = normalizeMruState(stored[TABWHEEL_STORAGE_KEYS.mruState]);
-    loaded = true;
-  }
+  });
 
   async function getSettings(): Promise<TabWheelSettings> {
     if (settingsCache) return settingsCache;
@@ -359,18 +422,20 @@ export function createTabWheelDomain(): TabWheelDomain {
     return pendingSave;
   }
 
-  async function saveMruState(): Promise<void> {
-    await browser.storage.local.set({
+  function saveMruState(): Promise<void> {
+    return mruStateWriteChain.enqueue(() => browser.storage.local.set({
       [TABWHEEL_STORAGE_KEYS.mruState]: mruTabIdsByWindowId,
-    });
+    }));
+  }
+
+  function queryTabsSafe(queryInfo: Tabs.QueryQueryInfoType): Promise<Tabs.Tab[] | null> {
+    return browser.tabs.query(queryInfo).catch(() => null);
   }
 
   async function queryActiveTab(windowId?: number): Promise<Tabs.Tab | null> {
-    if (windowId != null) {
-      const [activeTab] = await browser.tabs.query({ active: true, windowId });
-      return activeTab?.id != null && activeTab.windowId != null ? activeTab : null;
-    }
-    const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const [activeTab] = await queryTabsSafe(
+      windowId != null ? { active: true, windowId } : { active: true, currentWindow: true },
+    ) ?? [];
     return activeTab?.id != null && activeTab.windowId != null ? activeTab : null;
   }
 
@@ -392,22 +457,25 @@ export function createTabWheelDomain(): TabWheelDomain {
 
   async function resolveCurrentWindowId(windowId?: number): Promise<number | null> {
     if (windowId != null) return windowId;
-    const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const [activeTab] = await queryTabsSafe({ active: true, currentWindow: true }) ?? [];
     return activeTab?.windowId ?? null;
   }
 
   function invalidateWindowTabsCache(windowId: number | undefined): void {
     if (windowId == null) {
       windowTabsCacheByWindowId.clear();
+      collapsedTabGroupIdsCacheByWindowId.clear();
       return;
     }
     windowTabsCacheByWindowId.delete(windowId);
+    collapsedTabGroupIdsCacheByWindowId.delete(windowId);
   }
 
   async function getWindowTabs(windowId: number): Promise<Tabs.Tab[]> {
     const cached = windowTabsCacheByWindowId.get(windowId);
     if (cached && cached.expiresAt > Date.now()) return cached.tabs;
-    const tabs = await browser.tabs.query({ windowId });
+    const tabs = await queryTabsSafe({ windowId });
+    if (!tabs) return [];
     windowTabsCacheByWindowId.set(windowId, {
       tabs,
       expiresAt: Date.now() + WINDOW_TABS_CACHE_TTL_MS,
@@ -445,8 +513,41 @@ export function createTabWheelDomain(): TabWheelDomain {
     return false;
   }
 
-  function getGestureEligibleTabs(tabs: Tabs.Tab[], settings: TabWheelSettings): Tabs.Tab[] {
-    const eligibleTabs = getEligibleTabs(tabs, settings);
+  async function getCollapsedTabGroupIds(
+    windowId: number,
+    tabs: Tabs.Tab[],
+    settings: TabWheelSettings,
+  ): Promise<Set<number>> {
+    if (!settings.skipHiddenTabs) return new Set();
+    if (!tabs.some((tab) => tab.groupId != null && tab.groupId !== -1)) return new Set();
+    const cached = collapsedTabGroupIdsCacheByWindowId.get(windowId);
+    if (cached && cached.expiresAt > Date.now()) return cached.collapsedTabGroupIds;
+    const tabGroupsApi = (browser as typeof browser & {
+      tabGroups?: Partial<BrowserTabGroupsApi>;
+    }).tabGroups;
+    if (typeof tabGroupsApi?.query !== "function") return new Set();
+    const collapsedGroups = await tabGroupsApi
+      .query({ windowId, collapsed: true })
+      .catch(() => []);
+    const collapsedTabGroupIds = new Set(
+      collapsedGroups
+        .filter((group) => group.collapsed === true && Number.isInteger(group.id))
+        .map((group) => group.id),
+    );
+    collapsedTabGroupIdsCacheByWindowId.set(windowId, {
+      collapsedTabGroupIds,
+      expiresAt: Date.now() + WINDOW_TABS_CACHE_TTL_MS,
+    });
+    return collapsedTabGroupIds;
+  }
+
+  async function getGestureEligibleTabs(
+    tabs: Tabs.Tab[],
+    settings: TabWheelSettings,
+    windowId: number,
+  ): Promise<Tabs.Tab[]> {
+    const collapsedTabGroupIds = await getCollapsedTabGroupIds(windowId, tabs, settings);
+    const eligibleTabs = getEligibleTabs(tabs, settings, collapsedTabGroupIds);
     return settings.skipRestrictedPages
       ? eligibleTabs.filter((tab) => !isContentScriptKnownUnavailable(tab))
       : eligibleTabs;
@@ -467,6 +568,30 @@ export function createTabWheelDomain(): TabWheelDomain {
     return scrollRestoreTokensByTabId.get(tabId) === token;
   }
 
+  function getActiveDiscardedWakeHold(windowId: number, activeTabId: number): DiscardedTabWakeHold | null {
+    const hold = discardedWakeHoldByWindowId.get(windowId);
+    if (!hold) return null;
+    if (hold.tabId !== activeTabId || hold.expiresAt <= Date.now()) {
+      discardedWakeHoldByWindowId.delete(windowId);
+      return null;
+    }
+    return hold;
+  }
+
+  function setDiscardedWakeHold(tab: Tabs.Tab): void {
+    if (tab.id == null || tab.windowId == null || tab.discarded !== true) return;
+    discardedWakeHoldByWindowId.set(tab.windowId, {
+      tabId: tab.id,
+      expiresAt: Date.now() + DISCARDED_WAKE_CYCLE_HOLD_MS,
+    });
+  }
+
+  function clearDiscardedWakeHoldForTab(tabId: number): void {
+    for (const [windowId, hold] of discardedWakeHoldByWindowId) {
+      if (hold.tabId === tabId) discardedWakeHoldByWindowId.delete(windowId);
+    }
+  }
+
   async function reconcileMruWindow(windowId: number, tabs: Tabs.Tab[]): Promise<void> {
     await ensureLoaded();
     const key = windowKey(windowId);
@@ -479,15 +604,20 @@ export function createTabWheelDomain(): TabWheelDomain {
     await saveMruState();
   }
 
+  // MRU bookkeeping must never fail the gesture that triggered it.
   async function recordMruTab(tabId: number, windowId: number): Promise<void> {
-    await ensureLoaded();
-    if (!Number.isInteger(tabId) || tabId <= 0 || !Number.isInteger(windowId) || windowId <= 0) return;
-    const key = windowKey(windowId);
-    const current = mruTabIdsByWindowId[key] || [];
-    const next = [tabId, ...current.filter((candidate) => candidate !== tabId)].slice(0, MAX_MRU_TABS);
-    if (hasSameNumberList(current, next)) return;
-    mruTabIdsByWindowId[key] = next;
-    await saveMruState();
+    try {
+      await ensureLoaded();
+      if (!Number.isInteger(tabId) || tabId <= 0 || !Number.isInteger(windowId) || windowId <= 0) return;
+      const key = windowKey(windowId);
+      const current = mruTabIdsByWindowId[key] || [];
+      const next = [tabId, ...current.filter((candidate) => candidate !== tabId)].slice(0, MAX_MRU_TABS);
+      if (hasSameNumberList(current, next)) return;
+      mruTabIdsByWindowId[key] = next;
+      await saveMruState();
+    } catch (error) {
+      console.warn("[TabWheel] MRU recording failed:", error);
+    }
   }
 
   function getMruOrderedTabs(windowId: number, eligibleTabs: Tabs.Tab[]): Tabs.Tab[] {
@@ -583,8 +713,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     }
   }
 
-  async function injectContentScriptIntoTab(tab: Tabs.Tab): Promise<"injected" | "skipped" | "failed"> {
-    if (tab.id == null || tab.discarded === true || isPageGestureRestrictedUrl(tab.url)) return "skipped";
+  async function executeContentScriptInTab(tabId: number, allFrames: boolean): Promise<boolean> {
     const runtimeBrowser = browser as typeof browser & {
       scripting?: {
         executeScript(details: { target: { tabId: number; allFrames?: boolean }; files: string[] }): Promise<unknown>;
@@ -597,24 +726,35 @@ export function createTabWheelDomain(): TabWheelDomain {
     try {
       if (runtimeBrowser.scripting?.executeScript) {
         await runtimeBrowser.scripting.executeScript({
-          target: { tabId: tab.id, allFrames: true },
+          target: { tabId, ...(allFrames ? { allFrames: true } : {}) },
           files: ["contentScript.js"],
         });
-        return "injected";
+        return true;
       }
       if (runtimeBrowser.tabs.executeScript) {
-        await runtimeBrowser.tabs.executeScript(tab.id, {
+        await runtimeBrowser.tabs.executeScript(tabId, {
           file: "contentScript.js",
           runAt: "document_start",
-          allFrames: true,
+          ...(allFrames ? { allFrames: true } : {}),
         });
-        return "injected";
+        return true;
       }
     } catch (_) {
-      return "failed";
+      return false;
     }
 
-    return "failed";
+    return false;
+  }
+
+  async function injectContentScriptIntoTab(tab: Tabs.Tab): Promise<"injected" | "skipped" | "failed"> {
+    if (tab.id == null || tab.discarded === true || isPageGestureRestrictedUrl(tab.url)) return "skipped";
+
+    // All frames first: one call covers every frame, including the top, exactly once.
+    if (await executeContentScriptInTab(tab.id, true)) return "injected";
+
+    // A single restricted subframe can make all-frame injection fail entirely in
+    // Chrome; the top-frame listener is enough for the page-level gesture path.
+    return await executeContentScriptInTab(tab.id, false) ? "injected" : "failed";
   }
 
   async function activateExistingContentScripts(): Promise<ExistingTabActivationResult> {
@@ -638,6 +778,36 @@ export function createTabWheelDomain(): TabWheelDomain {
     }));
 
     return result;
+  }
+
+  async function ensureActiveTabContentScripts(): Promise<void> {
+    const windows = await browser.windows.getAll().catch(() => []);
+    await Promise.all(windows.map(async (win) => {
+      if (win.id == null) return;
+      const [activeTab] = await browser.tabs.query({ active: true, windowId: win.id }).catch(() => []);
+      if (!activeTab || activeTab.id == null) return;
+      if (isPageGestureRestrictedUrl(activeTab.url) || activeTab.discarded === true) return;
+      if (contentScriptReadyUrlsByTabId.get(activeTab.id) === normalizePageUrl(activeTab.url)) return;
+      if (await pingContentScript(activeTab)) return;
+      const injection = await injectContentScriptIntoTab(activeTab);
+      if (injection !== "injected") return;
+      await waitForContentScriptReady(activeTab, GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS);
+    }));
+  }
+
+  async function ensureContentScriptForActiveTab(tabId: number): Promise<void> {
+    const tab = await browser.tabs.get(tabId).catch(() => null);
+    if (!tab || tab.id == null) return;
+    if (isPageGestureRestrictedUrl(tab.url) || tab.discarded === true) return;
+    if (contentScriptReadyUrlsByTabId.get(tab.id) === normalizePageUrl(tab.url)) return;
+    if (await pingContentScript(tab)) return;
+    const injection = await injectContentScriptIntoTab(tab);
+    if (injection !== "injected") return;
+    await resolveWithTimeout(
+      waitForContentScriptReady(tab, GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS),
+      GESTURE_TARGET_PROBE_TIMEOUT_MS,
+      false,
+    ).catch(() => {});
   }
 
   async function pingContentScript(tab: Tabs.Tab): Promise<boolean> {
@@ -705,7 +875,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     markContentScriptAvailable(tab, url);
     if (tab.active === true && tab.windowId != null) {
       activeTabIdsByWindowId.set(tab.windowId, tab.id);
-      void recordMruTab(tab.id, tab.windowId).catch(() => {});
+      void recordMruTab(tab.id, tab.windowId);
     }
     return { ok: true };
   }
@@ -742,12 +912,15 @@ export function createTabWheelDomain(): TabWheelDomain {
 
   async function restoreScroll(tab: Tabs.Tab): Promise<boolean> {
     if (tab.id == null) return false;
+    const retryDelaysMs = tab.discarded === true
+      ? DISCARDED_SCROLL_RESTORE_RETRY_DELAYS_MS
+      : SCROLL_RESTORE_RETRY_DELAYS_MS;
     const restoreToken = beginScrollRestore(tab.id);
     const entry = scrollMemoryByTabId[tabKey(tab.id)];
     const currentUrl = normalizePageUrl(tab.url);
     if (!currentUrl || entry?.url !== currentUrl) return false;
     if (!entry) return false;
-    for (const delay of SCROLL_RESTORE_RETRY_DELAYS_MS) {
+    for (const delay of retryDelaysMs) {
       if (!isScrollRestoreCurrent(tab.id, restoreToken)) return false;
       if (delay > 0) await sleep(delay);
       if (!isScrollRestoreCurrent(tab.id, restoreToken)) return false;
@@ -765,7 +938,9 @@ export function createTabWheelDomain(): TabWheelDomain {
         });
         return true;
       } catch (_) {
-        // Content script may be unavailable or not ready.
+        // The tab may still be loading or its content script may be gone;
+        // keep retrying on the delay schedule until the restore lands or the
+        // token check above tells us a newer restore superseded this one.
       }
     }
     return false;
@@ -778,21 +953,16 @@ export function createTabWheelDomain(): TabWheelDomain {
     const scroll = await getScroll(tab.id);
     if (!scroll) return;
     const normalized = normalizeScrollData(scroll);
-    scrollMemoryByTabId[tabKey(tab.id)] = {
-      tabId: tab.id,
-      windowId: tab.windowId,
-      url,
-      scrollX: normalized.scrollX,
-      scrollY: normalized.scrollY,
-      scrollRatioX: normalized.scrollRatioX,
-      scrollRatioY: normalized.scrollRatioY,
-      scrollWidth: normalized.scrollWidth,
-      scrollHeight: normalized.scrollHeight,
-      viewportWidth: normalized.viewportWidth,
-      viewportHeight: normalized.viewportHeight,
-      updatedAt: Date.now(),
-    };
+    scrollMemoryByTabId[tabKey(tab.id)] = buildScrollMemoryEntry(tab.id, tab.windowId, url, normalized);
     await saveScrollMemory();
+  }
+
+  // A tab still waking from discard reports a top-of-page scroll; don't let that
+  // clobber its remembered position — the restore re-runs on the next visit.
+  function captureTabScrollUnlessWaking(tab: Tabs.Tab): void {
+    if (tab.id == null || tab.windowId == null) return;
+    if (getActiveDiscardedWakeHold(tab.windowId, tab.id)) return;
+    void captureTabScroll(tab).catch(() => {});
   }
 
   async function getOverview(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelOverview> {
@@ -810,7 +980,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     const activeTab = await resolveActiveTab(tab, resolvedWindowId);
     const tabs = await getWindowTabs(resolvedWindowId);
     await reconcileMruWindow(resolvedWindowId, tabs);
-    const eligibleTabs = getGestureEligibleTabs(tabs, settings);
+    const eligibleTabs = await getGestureEligibleTabs(tabs, settings, resolvedWindowId);
     const scopeTabs = getCycleTabs(resolvedWindowId, eligibleTabs, settings);
     const activeIndex = activeTab
       ? scopeTabs.findIndex((candidate) => candidate.id === activeTab.id)
@@ -894,12 +1064,15 @@ export function createTabWheelDomain(): TabWheelDomain {
     settings: TabWheelSettings,
   ): Promise<Tabs.Tab | null> {
     let remainingTabs = candidateTabs;
-    for (let attempts = 0; attempts < candidateTabs.length; attempts += 1) {
+    const maxAttempts = Math.min(candidateTabs.length, MAX_GESTURE_PROBE_ATTEMPTS);
+    for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
       const targetTab = resolveCycleTargetTab(activeTab, remainingTabs, direction, settings);
       if (!targetTab?.id || targetTab.id === activeTab.id) return null;
       if (!settings.skipRestrictedPages || await ensurePageGestureAvailable(targetTab)) return targetTab;
       remainingTabs = remainingTabs.filter((candidate) => candidate.id !== targetTab.id);
     }
+    // Never activate an unprobed tab: failed probes are cached as unavailable, so the
+    // next gesture tick filters them out and probes the following candidates instead.
     return null;
   }
 
@@ -910,7 +1083,8 @@ export function createTabWheelDomain(): TabWheelDomain {
     settings: TabWheelSettings,
   ): Promise<Tabs.Tab | null> {
     let remainingTabs = eligibleTabs;
-    for (let attempts = 0; attempts < eligibleTabs.length; attempts += 1) {
+    const maxAttempts = Math.min(eligibleTabs.length, MAX_GESTURE_PROBE_ATTEMPTS);
+    for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
       const targetTab = resolveMostRecentTab(activeTab, windowId, remainingTabs);
       if (!targetTab?.id) return null;
       if (!settings.skipRestrictedPages || await ensurePageGestureAvailable(targetTab)) return targetTab;
@@ -919,38 +1093,34 @@ export function createTabWheelDomain(): TabWheelDomain {
     return null;
   }
 
-  async function activateTab(targetTab: Tabs.Tab, options: ActivateTabOptions = {}): Promise<void> {
-    if (targetTab.id == null) return;
-    await browser.tabs.update(targetTab.id, { active: true });
-    if (targetTab.windowId != null) await recordMruTab(targetTab.id, targetTab.windowId);
+  async function activateTab(targetTab: Tabs.Tab, options: ActivateTabOptions = {}): Promise<boolean> {
+    if (targetTab.id == null) return false;
+    const didActivate = await browser.tabs
+      .update(targetTab.id, { active: true })
+      .then(() => true)
+      .catch(() => false);
+    if (!didActivate) return false;
+    setDiscardedWakeHold(targetTab);
+    if (targetTab.windowId != null) {
+      await recordMruTab(targetTab.id, targetTab.windowId);
+    }
     if (options.restoreScrollAsync === true) {
       void restoreScroll(targetTab).catch(() => {});
-      return;
+      return true;
     }
     await restoreScroll(targetTab);
+    return true;
   }
 
-  async function runSerializedCycle<T>(
-    windowId: number,
+  function runSerializedWindowTask<T>(
+    tab: Tabs.Tab | undefined,
+    windowId: number | undefined,
     task: () => Promise<T>,
   ): Promise<T> {
-    const previousTask = cycleTasksByWindowId.get(windowId) ?? Promise.resolve();
-    let releaseTask = (): void => {};
-    const currentTask = new Promise<void>((resolve) => {
-      releaseTask = resolve;
-    });
-    const nextTask = previousTask.catch(() => {}).then(() => currentTask);
-    cycleTasksByWindowId.set(windowId, nextTask);
-
-    await previousTask.catch(() => {});
-    try {
-      return await task();
-    } finally {
-      releaseTask();
-      if (cycleTasksByWindowId.get(windowId) === nextTask) {
-        cycleTasksByWindowId.delete(windowId);
-      }
-    }
+    return windowGestureTaskQueue.run(
+      windowId ?? tab?.windowId ?? FALLBACK_CYCLE_LOCK_WINDOW_ID,
+      task,
+    );
   }
 
   async function cycleUnlocked(
@@ -958,14 +1128,14 @@ export function createTabWheelDomain(): TabWheelDomain {
     tab?: Tabs.Tab,
   ): Promise<TabWheelActionResult> {
     await ensureLoaded();
-    const settings = await getSettings();
     const activeTab = await resolveActiveTab(tab);
     if (!activeTab?.id || activeTab.windowId == null) {
       return { ok: false, reason: "No active tab" };
     }
+    const settings = await getSettings();
     const tabs = await getWindowTabs(activeTab.windowId);
     await reconcileMruWindow(activeTab.windowId, tabs);
-    const eligibleTabs = getGestureEligibleTabs(tabs, settings);
+    const eligibleTabs = await getGestureEligibleTabs(tabs, settings, activeTab.windowId);
     if (eligibleTabs.length === 0) return { ok: false, reason: "No eligible tabs" };
 
     const candidateTabs = settings.cycleScope === "mru"
@@ -977,9 +1147,10 @@ export function createTabWheelDomain(): TabWheelDomain {
     }
 
     cancelScrollRestore(activeTab.id);
-    void captureTabScroll(activeTab).catch(() => {});
+    captureTabScrollUnlessWaking(activeTab);
     await dismissTabWheelPanel(activeTab);
-    await activateTab(targetTab, { restoreScrollAsync: true });
+    const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });
+    if (!didActivate) return { ok: false, reason: "Tab no longer exists" };
     return { ok: true, tabId: targetTab.id };
   }
 
@@ -987,10 +1158,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     direction: "prev" | "next",
     tab?: Tabs.Tab,
   ): Promise<TabWheelActionResult> {
-    return await runSerializedCycle(
-      tab?.windowId ?? FALLBACK_CYCLE_LOCK_WINDOW_ID,
-      () => cycleUnlocked(direction, tab),
-    );
+    return await runSerializedWindowTask(tab, undefined, () => cycleUnlocked(direction, tab));
   }
 
   async function refreshCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelRefreshResult> {
@@ -1061,104 +1229,155 @@ export function createTabWheelDomain(): TabWheelDomain {
   async function openSearchTab(query: string, tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
     const normalizedQuery = normalizeSearchQuery(query);
     if (!normalizedQuery) return { ok: false, reason: "Enter a search query" };
-    await ensureLoaded();
-    const activeTab = await resolveActiveTab(tab, windowId);
-    const searchApi = getBrowserDefaultSearchApi();
-    const createProperties: Tabs.CreateCreatePropertiesType = {
-      active: true,
-      url: searchApi ? "about:blank" : buildSearchUrl(normalizedQuery),
-      ...(activeTab?.windowId != null ? { windowId: activeTab.windowId } : {}),
-      ...(activeTab?.index != null ? { index: activeTab.index + 1 } : {}),
-    };
-    const createdTab = await browser.tabs.create(createProperties);
-    invalidateWindowTabsCache(createdTab.windowId);
-    if (createdTab.id != null && searchApi) {
-      const didUseBrowserDefaultSearch = await searchApi
-        .query({ text: normalizedQuery, tabId: createdTab.id })
-        .then(() => true)
-        .catch(() => false);
-      if (!didUseBrowserDefaultSearch) {
-        const didUseFallbackSearch = await browser.tabs
-          .update(createdTab.id, {
-            url: buildSearchUrl(normalizedQuery),
-          })
-          .then(() => true)
-          .catch(() => false);
-        if (!didUseFallbackSearch) {
-          await browser.tabs.remove(createdTab.id).catch(() => {});
-          return { ok: false, reason: "Search unavailable" };
+    return await runSerializedWindowTask(
+      tab,
+      windowId,
+      async () => {
+        await ensureLoaded();
+        const activeTab = await resolveActiveTab(tab, windowId);
+        const searchApi = getBrowserDefaultSearchApi();
+        const createProperties: Tabs.CreateCreatePropertiesType = {
+          active: true,
+          url: searchApi ? "about:blank" : buildSearchUrl(normalizedQuery),
+          ...(activeTab?.windowId != null ? { windowId: activeTab.windowId } : {}),
+          ...(activeTab?.index != null ? { index: activeTab.index + 1 } : {}),
+        };
+        const createdTab = await browser.tabs.create(createProperties).catch(() => null);
+        if (!createdTab) return { ok: false, reason: "Search unavailable" };
+        invalidateWindowTabsCache(createdTab.windowId);
+        if (createdTab.id != null && searchApi) {
+          const didUseBrowserDefaultSearch = await searchApi
+            .query({ text: normalizedQuery, tabId: createdTab.id })
+            .then(() => true)
+            .catch(() => false);
+          if (!didUseBrowserDefaultSearch) {
+            const didUseFallbackSearch = await browser.tabs
+              .update(createdTab.id, {
+                url: buildSearchUrl(normalizedQuery),
+              })
+              .then(() => true)
+              .catch(() => false);
+            if (!didUseFallbackSearch) {
+              await browser.tabs.remove(createdTab.id).catch(() => {});
+              return { ok: false, reason: "Search unavailable" };
+            }
+          }
         }
-      }
-    }
-    if (createdTab.id != null && createdTab.windowId != null) {
-      await recordMruTab(createdTab.id, createdTab.windowId);
-    }
-    return { ok: true, tabId: createdTab.id };
+        if (createdTab.id != null && createdTab.windowId != null) {
+          await recordMruTab(createdTab.id, createdTab.windowId);
+        }
+        return { ok: true, tabId: createdTab.id };
+      },
+    );
   }
 
   async function openNativeNewTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
-    await ensureLoaded();
-    const activeTab = await resolveActiveTab(tab, windowId);
-    const createProperties: Tabs.CreateCreatePropertiesType = {
-      active: true,
-      ...(activeTab?.windowId != null ? { windowId: activeTab.windowId } : {}),
-      ...(activeTab?.index != null ? { index: activeTab.index + 1 } : {}),
-    };
-    const fallbackCreateProperties: Tabs.CreateCreatePropertiesType = {
-      active: true,
-      ...(activeTab?.windowId != null ? { windowId: activeTab.windowId } : {}),
-    };
-    const createdTab = await browser.tabs
-      .create(createProperties)
-      .catch(() => browser.tabs.create(fallbackCreateProperties))
-      .catch(() => browser.tabs.create({ active: true }))
-      .catch(() => browser.tabs.create({ active: true, url: "about:blank" }))
-      .catch(() => null);
-    if (!createdTab) return { ok: false, reason: "New tab unavailable" };
-    invalidateWindowTabsCache(createdTab.windowId);
-    if (createdTab.id != null && createdTab.windowId != null) {
-      await recordMruTab(createdTab.id, createdTab.windowId);
-    }
-    return { ok: true, tabId: createdTab.id };
+    return await runSerializedWindowTask(
+      tab,
+      windowId,
+      async () => {
+        await ensureLoaded();
+        const activeTab = await resolveActiveTab(tab, windowId);
+        const createProperties: Tabs.CreateCreatePropertiesType = {
+          active: true,
+          ...(activeTab?.windowId != null ? { windowId: activeTab.windowId } : {}),
+          ...(activeTab?.index != null ? { index: activeTab.index + 1 } : {}),
+        };
+        const fallbackCreateProperties: Tabs.CreateCreatePropertiesType = {
+          active: true,
+          ...(activeTab?.windowId != null ? { windowId: activeTab.windowId } : {}),
+        };
+        const createdTab = await browser.tabs
+          .create(createProperties)
+          .catch(() => browser.tabs.create(fallbackCreateProperties))
+          .catch(() => browser.tabs.create({ active: true }))
+          .catch(() => browser.tabs.create({ active: true, url: "about:blank" }))
+          .catch(() => null);
+        if (!createdTab) return { ok: false, reason: "New tab unavailable" };
+        invalidateWindowTabsCache(createdTab.windowId);
+        if (createdTab.id != null && createdTab.windowId != null) {
+          await recordMruTab(createdTab.id, createdTab.windowId);
+        }
+        return { ok: true, tabId: createdTab.id };
+      },
+    );
   }
 
   async function activateMostRecentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
-    await ensureLoaded();
-    const settings = await getSettings();
-    const activeTab = await resolveActiveTab(tab, windowId);
-    if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
-    const tabs = await getWindowTabs(activeTab.windowId);
-    await reconcileMruWindow(activeTab.windowId, tabs);
-    const eligibleTabs = getGestureEligibleTabs(tabs, settings).filter((candidate) => candidate.id !== activeTab.id);
-    if (eligibleTabs.length === 0) return { ok: false, reason: "No recent tab" };
-    const targetTab = await resolveMostRecentAvailableTab(activeTab, activeTab.windowId, eligibleTabs, settings);
-    if (!targetTab?.id) return { ok: false, reason: "No recent tab" };
-    cancelScrollRestore(activeTab.id);
-    void captureTabScroll(activeTab).catch(() => {});
-    await dismissTabWheelPanel(activeTab);
-    await activateTab(targetTab, { restoreScrollAsync: true });
-    return { ok: true, tabId: targetTab.id };
+    return await runSerializedWindowTask(
+      tab,
+      windowId,
+      async () => {
+        await ensureLoaded();
+        const settings = await getSettings();
+        const activeTab = await resolveActiveTab(tab, windowId);
+        if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
+        const tabs = await getWindowTabs(activeTab.windowId);
+        await reconcileMruWindow(activeTab.windowId, tabs);
+        const eligibleTabs = (await getGestureEligibleTabs(tabs, settings, activeTab.windowId))
+          .filter((candidate) => candidate.id !== activeTab.id);
+        if (eligibleTabs.length === 0) return { ok: false, reason: "No recent tab" };
+        const targetTab = await resolveMostRecentAvailableTab(activeTab, activeTab.windowId, eligibleTabs, settings);
+        if (!targetTab?.id) return { ok: false, reason: "No recent tab" };
+        cancelScrollRestore(activeTab.id);
+        captureTabScrollUnlessWaking(activeTab);
+        await dismissTabWheelPanel(activeTab);
+        const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });
+        if (!didActivate) return { ok: false, reason: "No recent tab" };
+        return { ok: true, tabId: targetTab.id };
+      },
+    );
   }
 
   async function closeCurrentTabAndActivateRecent(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
-    await ensureLoaded();
-    const settings = await getSettings();
-    const activeTab = await resolveActiveTab(tab, windowId);
-    if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
-    const tabs = await getWindowTabs(activeTab.windowId);
-    await reconcileMruWindow(activeTab.windowId, tabs);
-    const eligibleTabs = getGestureEligibleTabs(tabs, settings).filter((candidate) => candidate.id !== activeTab.id);
-    const targetTab = eligibleTabs.length > 0
-      ? await resolveMostRecentAvailableTab(activeTab, activeTab.windowId, eligibleTabs, settings)
-      : null;
-    cancelScrollRestore(activeTab.id);
-    await dismissTabWheelPanel(activeTab);
-    if (targetTab?.id) {
-      await activateTab(targetTab, { restoreScrollAsync: true });
-    }
-    await browser.tabs.remove(activeTab.id);
-    invalidateWindowTabsCache(activeTab.windowId);
-    return { ok: true, tabId: targetTab?.id };
+    return await runSerializedWindowTask(
+      tab,
+      windowId,
+      async () => {
+        await ensureLoaded();
+        const settings = await getSettings();
+        const activeTab = await resolveActiveTab(tab, windowId);
+        if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
+        const tabs = await getWindowTabs(activeTab.windowId);
+        await reconcileMruWindow(activeTab.windowId, tabs);
+        const eligibleTabs = (await getGestureEligibleTabs(tabs, settings, activeTab.windowId))
+          .filter((candidate) => candidate.id !== activeTab.id);
+        const targetTab = eligibleTabs.length > 0
+          ? await resolveMostRecentAvailableTab(activeTab, activeTab.windowId, eligibleTabs, settings)
+          : null;
+        cancelScrollRestore(activeTab.id);
+        await dismissTabWheelPanel(activeTab);
+        if (targetTab?.id) {
+          const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });
+          if (!didActivate) return { ok: false, reason: "No recent tab" };
+        }
+        const didClose = await browser.tabs.remove(activeTab.id)
+          .then(() => true)
+          .catch(() => false);
+        invalidateWindowTabsCache(activeTab.windowId);
+        if (!didClose) return { ok: false, reason: "Close tab failed" };
+        return { ok: true, tabId: targetTab?.id };
+      },
+    );
+  }
+
+  async function duplicateTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
+    return await runSerializedWindowTask(
+      tab,
+      windowId,
+      async () => {
+        await ensureLoaded();
+        const activeTab = await resolveActiveTab(tab, windowId);
+        if (!activeTab?.id) return { ok: false, reason: "No active tab" };
+        const duplicatedTab = await browser.tabs.duplicate(activeTab.id).catch(() => null);
+        if (!duplicatedTab) return { ok: false, reason: "Duplicate unavailable" };
+        invalidateWindowTabsCache(duplicatedTab.windowId ?? activeTab.windowId);
+        if (duplicatedTab.id != null && duplicatedTab.windowId != null) {
+          await recordMruTab(duplicatedTab.id, duplicatedTab.windowId);
+        }
+        return { ok: true, tabId: duplicatedTab.id };
+      },
+    );
   }
 
   async function setCycleScope(
@@ -1208,27 +1427,21 @@ export function createTabWheelDomain(): TabWheelDomain {
     ) {
       return { ok: true };
     }
-    scrollMemoryByTabId[key] = {
-      tabId,
-      windowId,
-      url,
-      scrollX: scroll.scrollX,
-      scrollY: scroll.scrollY,
-      scrollRatioX: scroll.scrollRatioX,
-      scrollRatioY: scroll.scrollRatioY,
-      scrollWidth: scroll.scrollWidth,
-      scrollHeight: scroll.scrollHeight,
-      viewportWidth: scroll.viewportWidth,
-      viewportHeight: scroll.viewportHeight,
-      updatedAt: Date.now(),
-    };
+    scrollMemoryByTabId[key] = buildScrollMemoryEntry(tabId, windowId, url, scroll);
     await saveScrollMemory();
     return { ok: true };
   }
 
   function registerLifecycleListeners(): void {
-    browser.runtime.onInstalled.addListener(() => {
-      void activateExistingContentScripts().catch(() => {});
+    browser.runtime.onInstalled.addListener((details: { reason: string }) => {
+      // Chrome never injects manifest content scripts into already-open tabs, and an
+      // extension update destroys every running content script, so installs and updates
+      // both need re-injection from code. Browser updates restart tabs and re-inject via
+      // the manifest.
+      if (details.reason !== "install" && details.reason !== "update") return;
+      void activateExistingContentScripts()
+        .then(ensureActiveTabContentScripts)
+        .catch((error) => { console.warn("[TabWheel] install-time content script activation failed:", error); });
     });
 
     browser.storage.onChanged.addListener((changes: Record<string, browser.Storage.StorageChange>, areaName: string) => {
@@ -1244,11 +1457,14 @@ export function createTabWheelDomain(): TabWheelDomain {
     browser.tabs.onActivated.addListener((activeInfo: { tabId: number; windowId: number }) => {
       const previousTabId = activeTabIdsByWindowId.get(activeInfo.windowId);
       activeTabIdsByWindowId.set(activeInfo.windowId, activeInfo.tabId);
+      const wakeHold = discardedWakeHoldByWindowId.get(activeInfo.windowId);
+      if (wakeHold && wakeHold.tabId !== activeInfo.tabId) discardedWakeHoldByWindowId.delete(activeInfo.windowId);
       if (previousTabId != null && previousTabId !== activeInfo.tabId) {
         cancelScrollRestore(previousTabId);
         void dismissTabWheelPanelById(previousTabId).catch(() => {});
       }
-      void recordMruTab(activeInfo.tabId, activeInfo.windowId).catch(() => {});
+      void recordMruTab(activeInfo.tabId, activeInfo.windowId);
+      void ensureContentScriptForActiveTab(activeInfo.tabId).catch(() => {});
     });
 
     browser.tabs.onMoved.addListener((_tabId: number, moveInfo: { windowId?: number }) => {
@@ -1270,6 +1486,7 @@ export function createTabWheelDomain(): TabWheelDomain {
       contentScriptReadyUrlsByTabId.delete(tabId);
       contentScriptUnavailableUrlsByTabId.delete(tabId);
       scrollRestoreTokensByTabId.delete(tabId);
+      clearDiscardedWakeHoldForTab(tabId);
       for (const [windowId, activeTabId] of activeTabIdsByWindowId) {
         if (activeTabId === tabId) activeTabIdsByWindowId.delete(windowId);
       }
@@ -1289,9 +1506,12 @@ export function createTabWheelDomain(): TabWheelDomain {
       await saveScrollMemory();
     });
 
-    browser.tabs.onUpdated.addListener((tabId: number, changeInfo: { url?: string; pinned?: boolean }, updatedTab?: Tabs.Tab) => {
-      if (changeInfo.url || changeInfo.pinned != null) {
+    browser.tabs.onUpdated.addListener((tabId: number, changeInfo: { url?: string; pinned?: boolean; groupId?: number; status?: string }, updatedTab?: Tabs.Tab) => {
+      if (changeInfo.url || changeInfo.pinned != null || changeInfo.groupId != null) {
         invalidateWindowTabsCache(updatedTab?.windowId);
+      }
+      if (changeInfo.status === "complete") {
+        clearDiscardedWakeHoldForTab(tabId);
       }
       if (changeInfo.url) {
         contentScriptReadyUrlsByTabId.delete(tabId);
@@ -1305,9 +1525,9 @@ export function createTabWheelDomain(): TabWheelDomain {
         await ensureLoaded();
         invalidateWindowTabsCache(windowId);
         delete mruTabIdsByWindowId[windowKey(windowId)];
-        cycleTasksByWindowId.delete(windowId);
         mruCycleSessionsByWindowId.delete(windowId);
         activeTabIdsByWindowId.delete(windowId);
+        discardedWakeHoldByWindowId.delete(windowId);
         for (const [key, entry] of Object.entries(scrollMemoryByTabId)) {
           if (entry.windowId === windowId) {
             delete scrollMemoryByTabId[key];
@@ -1324,15 +1544,20 @@ export function createTabWheelDomain(): TabWheelDomain {
       scrollMemoryByTabId = trimScrollMemory(scrollMemoryByTabId);
       mruTabIdsByWindowId = {};
       windowTabsCacheByWindowId.clear();
-      cycleTasksByWindowId.clear();
+      collapsedTabGroupIdsCacheByWindowId.clear();
       mruCycleSessionsByWindowId.clear();
       contentScriptReadyUrlsByTabId.clear();
       contentScriptUnavailableUrlsByTabId.clear();
       scrollRestoreTokensByTabId.clear();
       activeTabIdsByWindowId.clear();
+      discardedWakeHoldByWindowId.clear();
       await saveScrollMemory();
       await browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.mruState);
     });
+
+    // Disabling and re-enabling the extension kills content scripts without firing
+    // onInstalled; prime each window's focused tab whenever the background starts.
+    void ensureActiveTabContentScripts().catch(() => {});
   }
 
   return {
@@ -1345,6 +1570,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     openNativeNewTab,
     activateMostRecentTab,
     closeCurrentTabAndActivateRecent,
+    duplicateTab,
     toggleCycleScope,
     setCycleScope,
     saveScrollPosition,

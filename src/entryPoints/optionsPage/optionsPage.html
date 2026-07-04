@@ -9,9 +9,7 @@
   <main class="settings-container">
     <div class="settings-titlebar">
       <div class="traffic-lights">
-        <span class="dot dot-close"></span>
-        <span class="dot dot-minimize"></span>
-        <span class="dot dot-maximize"></span>
+        <button class="dot dot-close" id="closeOptionsBtn" type="button" title="Close" aria-label="Close settings"></button>
       </div>
       <span class="titlebar-text">__EXTENSION_NAME__ - Settings</span>
     </div>
@@ -20,152 +18,194 @@
       <div class="settings-header">
         <h1>__EXTENSION_NAME__</h1>
         <p class="subtitle">Reliable mouse scroll wheel cycling with New Tab mode, click gestures, and toolbar fallbacks.</p>
+        <button class="reset-button" id="resetDefaults" title="Restore all settings to their factory defaults">Reset to defaults</button>
       </div>
 
-      <label class="setting-row" for="cycleScope" title="Choose left-to-right or most-recently-used wheel cycling.">
-        <span>
-          <strong>Mouse Scroll Wheel Cycle Mode</strong>
-          <small>Left-To-Right follows tab strip order. Most Recently Used follows most-recently-used tab order.</small>
-        </span>
-        <select class="setting-control" id="cycleScope"></select>
-      </label>
+      <fieldset class="settings-section">
+        <legend>Cycle &amp; Click Actions</legend>
 
-      <label class="setting-row" for="openNativeNewTabOnLeftClick" title="Use the browser's normal new tab page for modifier + left click instead of the TabWheel search launcher.">
-        <span>
-          <strong>Browser New Tab Page Mode</strong>
-          <small>Choose whether modifier + left click opens Tabwheel search or the browser default new tab page.</small>
-        </span>
-        <select class="setting-control" id="openNativeNewTabOnLeftClick">
-          <option value="false">Tabwheel</option>
-          <option value="true">Browser Default</option>
-        </select>
-      </label>
+        <label class="setting-row" for="cycleScope" title="Choose left-to-right or most-recently-used wheel cycling.">
+          <span>
+            <strong>Mouse Scroll Wheel Cycle Mode</strong>
+            <small>Left-To-Right follows tab strip order. Most Recently Used follows most-recently-used tab order.</small>
+          </span>
+          <select class="setting-control" id="cycleScope"></select>
+        </label>
 
-      <label class="setting-row" for="wheelPreset" title="Apply a preset for tab switching and page scrolling wheel behavior.">
-        <span>
-          <strong>Preset</strong>
-          <small>Apply wheel behavior across tab sensitivity, tab cooldown, page speed, and viewport cap.</small>
-        </span>
-        <select class="setting-control" id="wheelPreset"></select>
-      </label>
+        <label class="setting-row" for="leftClickAction" title="Choose what modifier + left click does, including Tabwheel search or the Browser Default new tab page.">
+          <span>
+            <strong>Left Click Action</strong>
+            <small>Choose whether modifier + left click opens Tabwheel search, the Browser Default new tab page, another action, or stays native.</small>
+          </span>
+          <select class="setting-control" id="leftClickAction"></select>
+        </label>
 
-      <label class="setting-row" for="gestureModifier" title="Base key for wheel and click shortcuts.">
-        <span>
-          <strong>Modifier</strong>
-          <small>Choose the base key used for wheel cycling, search, recent tab, and close tab gestures.</small>
-        </span>
-        <select class="setting-control" id="gestureModifier"></select>
-      </label>
+        <label class="setting-row" for="middleClickAction" title="Choose what modifier + middle click does.">
+          <span>
+            <strong>Middle Click Action</strong>
+            <small>Choose what modifier + middle click does, or turn it off to keep the native click.</small>
+          </span>
+          <select class="setting-control" id="middleClickAction"></select>
+        </label>
 
-      <label class="setting-row" for="gestureWithShift" title="Add Shift to the selected modifier before wheel cycling is active.">
-        <span>
-          <strong>Require Shift</strong>
-          <small>Add Shift to the selected modifier to reduce accidental wheel switches.</small>
-        </span>
-        <input id="gestureWithShift" type="checkbox" />
-      </label>
+        <label class="setting-row" for="rightClickAction" title="Choose what modifier + right click does.">
+          <span>
+            <strong>Right Click Action</strong>
+            <small>Choose what modifier + right click does, or turn it off to keep the native context menu.</small>
+          </span>
+          <select class="setting-control" id="rightClickAction"></select>
+        </label>
+      </fieldset>
 
-      <label class="setting-row" for="invertScroll" title="Swap wheel down/up so down goes previous and up goes next.">
-        <span>
-          <strong>Invert wheel</strong>
-          <small id="invertScrollHelp">Alt + wheel down becomes previous, and Alt + wheel up becomes next.</small>
-        </span>
-        <input id="invertScroll" type="checkbox" />
-      </label>
+      <fieldset class="settings-section">
+        <legend>Gesture Keys</legend>
 
-      <label class="setting-row" for="skipPinnedTabs" title="Keep pinned utility tabs out of the cycling path.">
-        <span>
-          <strong>Skip pinned</strong>
-          <small>Keep utility tabs out of wheel cycling.</small>
-        </span>
-        <input id="skipPinnedTabs" type="checkbox" />
-      </label>
+        <label class="setting-row" for="wheelPreset" title="Apply a preset for tab switching and page scrolling wheel behavior.">
+          <span>
+            <strong>Preset</strong>
+            <small>Apply wheel behavior across tab sensitivity, tab cooldown, page speed, and viewport cap.</small>
+          </span>
+          <select class="setting-control" id="wheelPreset"></select>
+        </label>
 
-      <label class="setting-row" for="skipRestrictedPages" title="Skip browser UI, extension pages, stores, PDF viewers, and other unsupported pages when cycling.">
-        <span>
-          <strong>Skip restricted</strong>
-          <small>Skip browser UI, extension pages, stores, PDF viewers, and unsupported pages when cycling.</small>
-        </span>
-        <input id="skipRestrictedPages" type="checkbox" />
-      </label>
+        <label class="setting-row" for="gestureModifier" title="Base key for wheel and click shortcuts.">
+          <span>
+            <strong>Modifier</strong>
+            <small>Choose the base key used for wheel cycling, search, recent tab, and close tab gestures.</small>
+          </span>
+          <select class="setting-control" id="gestureModifier"></select>
+        </label>
 
-      <label class="setting-row" for="wrapAround" title="At the first or last tab, continue from the opposite edge.">
-        <span>
-          <strong>Wrap around</strong>
-          <small>Continue from the other edge of the tab list.</small>
-        </span>
-        <input id="wrapAround" type="checkbox" />
-      </label>
+        <label class="setting-row" for="gestureWithShift" title="Add Shift to the selected modifier before wheel cycling is active.">
+          <span>
+            <strong>Require Shift</strong>
+            <small>Add Shift to the selected modifier to reduce accidental wheel switches.</small>
+          </span>
+          <input id="gestureWithShift" type="checkbox" />
+        </label>
+      </fieldset>
 
-      <label class="setting-row" for="wheelAcceleration" title="Shortens the cooldown during repeated wheel bursts.">
-        <span>
-          <strong>Acceleration</strong>
-          <small>Shorten the cooldown during repeated wheel bursts for faster intentional tab scanning.</small>
-        </span>
-        <input id="wheelAcceleration" type="checkbox" />
-      </label>
+      <fieldset class="settings-section">
+        <legend>Wheel Feel</legend>
 
-      <label class="setting-row" for="horizontalWheel" title="Let horizontal wheel or trackpad motion switch tabs.">
-        <span>
-          <strong>Horizontal wheel</strong>
-          <small>Use sideways wheel or trackpad motion for previous and next tab switching.</small>
-        </span>
-        <input id="horizontalWheel" type="checkbox" />
-      </label>
+        <label class="setting-row" for="wheelSensitivity" title="Higher values need less wheel movement before switching tabs.">
+          <span>
+            <strong>Sensitivity</strong>
+            <small>Higher values need less wheel movement before switching. Current: <span id="wheelSensitivityValue">1.0x</span></small>
+          </span>
+          <input class="setting-range" id="wheelSensitivity" type="range" step="0.1" />
+        </label>
 
-      <label class="setting-row" for="overshootGuard" title="Prevent extra tab jumps from trackpad or wheel momentum.">
-        <span>
-          <strong>Safe overshoot guard</strong>
-          <small>Prevent extra tab jumps from trackpad or wheel momentum.</small>
-        </span>
-        <input id="overshootGuard" type="checkbox" />
-      </label>
+        <label class="setting-row" for="wheelCooldownMs" title="Minimum time between tab switches; lower feels faster but can overshoot.">
+          <span>
+            <strong>Cooldown</strong>
+            <small>Minimum time between tab switches. Current: <span id="wheelCooldownValue">160ms</span></small>
+          </span>
+          <input class="setting-range" id="wheelCooldownMs" type="range" step="10" />
+        </label>
 
-      <label class="setting-row" for="allowGesturesInEditableFields" title="Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs">
-        <span>
-          <strong>Editable fields</strong>
-          <small>Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs</small>
-        </span>
-        <input id="allowGesturesInEditableFields" type="checkbox" />
-      </label>
+        <label class="setting-row" for="wheelAcceleration" title="Shortens the cooldown during repeated wheel bursts.">
+          <span>
+            <strong>Acceleration</strong>
+            <small>Shorten the cooldown during repeated wheel bursts for faster intentional tab scanning.</small>
+          </span>
+          <input id="wheelAcceleration" type="checkbox" />
+        </label>
 
-      <label class="setting-row" for="wheelSensitivity" title="Higher values need less wheel movement before switching tabs.">
-        <span>
-          <strong>Sensitivity</strong>
-          <small>Higher values need less wheel movement before switching. Current: <span id="wheelSensitivityValue">1.0x</span></small>
-        </span>
-        <input class="setting-range" id="wheelSensitivity" type="range" step="0.1" />
-      </label>
+        <label class="setting-row" for="horizontalWheel" title="Let horizontal wheel or trackpad motion switch tabs.">
+          <span>
+            <strong>Horizontal wheel</strong>
+            <small>Use sideways wheel or trackpad motion for previous and next tab switching.</small>
+          </span>
+          <input id="horizontalWheel" type="checkbox" />
+        </label>
 
-      <label class="setting-row" for="wheelCooldownMs" title="Minimum time between tab switches; lower feels faster but can overshoot.">
-        <span>
-          <strong>Cooldown</strong>
-          <small>Minimum time between tab switches. Current: <span id="wheelCooldownValue">160ms</span></small>
-        </span>
-        <input class="setting-range" id="wheelCooldownMs" type="range" step="10" />
-      </label>
+        <label class="setting-row" for="overshootGuard" title="Prevent extra tab jumps from trackpad or wheel momentum.">
+          <span>
+            <strong>Safe overshoot guard</strong>
+            <small>Prevent extra tab jumps from trackpad or wheel momentum.</small>
+          </span>
+          <input id="overshootGuard" type="checkbox" />
+        </label>
 
-      <label class="setting-row" for="pageScrollSpeedMultiplier" title="Normal page scroll speed when page scroll filtering is active.">
-        <span>
-          <strong>Page Scroll Speed</strong>
-          <small>Normal wheel page speed. Current: <span id="pageScrollSpeedValue">1.0x</span></small>
-        </span>
-        <input class="setting-range" id="pageScrollSpeedMultiplier" type="range" step="0.1" />
-      </label>
+        <label class="setting-row" for="allowGesturesInEditableFields" title="Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs">
+          <span>
+            <strong>Editable fields</strong>
+            <small>Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs</small>
+          </span>
+          <input id="allowGesturesInEditableFields" type="checkbox" />
+        </label>
+      </fieldset>
 
-      <label class="setting-row" for="pageScrollViewportCapRatio" title="Maximum normal page scroll step as a percentage of the active viewport.">
-        <span>
-          <strong>Viewport Step Cap</strong>
-          <small>Maximum wheel step. Current: <span id="pageScrollViewportCapValue">100%</span></small>
-        </span>
-        <input class="setting-range" id="pageScrollViewportCapRatio" type="range" step="0.05" />
-      </label>
+      <fieldset class="settings-section">
+        <legend>Page Scrolling</legend>
+
+        <label class="setting-row" for="pageScrollSpeedMultiplier" title="Normal page scroll speed when page scroll filtering is active.">
+          <span>
+            <strong>Page Scroll Speed</strong>
+            <small>Normal wheel page speed. Current: <span id="pageScrollSpeedValue">1.0x</span></small>
+          </span>
+          <input class="setting-range" id="pageScrollSpeedMultiplier" type="range" step="0.1" />
+        </label>
+
+        <label class="setting-row" for="pageScrollViewportCapRatio" title="Maximum normal page scroll step as a percentage of the active viewport.">
+          <span>
+            <strong>Viewport Step Cap</strong>
+            <small>Maximum wheel step. Current: <span id="pageScrollViewportCapValue">100%</span></small>
+          </span>
+          <input class="setting-range" id="pageScrollViewportCapRatio" type="range" step="0.05" />
+        </label>
+      </fieldset>
+
+      <fieldset class="settings-section">
+        <legend>Cycling Rules</legend>
+
+        <label class="setting-row" for="invertScroll" title="Swap wheel down/up so down goes previous and up goes next.">
+          <span>
+            <strong>Invert wheel</strong>
+            <small id="invertScrollHelp">Alt + wheel down becomes previous, and Alt + wheel up becomes next.</small>
+          </span>
+          <input id="invertScroll" type="checkbox" />
+        </label>
+
+        <label class="setting-row" for="skipPinnedTabs" title="Keep pinned utility tabs out of the cycling path.">
+          <span>
+            <strong>Skip pinned</strong>
+            <small>Keep utility tabs out of wheel cycling.</small>
+          </span>
+          <input id="skipPinnedTabs" type="checkbox" />
+        </label>
+
+        <label class="setting-row" for="skipRestrictedPages" title="Skip browser UI, extension pages, stores, PDF viewers, and other unsupported pages when cycling.">
+          <span>
+            <strong>Skip restricted</strong>
+            <small>Skip browser UI, extension pages, stores, PDF viewers, and unsupported pages when cycling.</small>
+          </span>
+          <input id="skipRestrictedPages" type="checkbox" />
+        </label>
+
+        <label class="setting-row" for="skipHiddenTabs" title="Skip tabs in collapsed tab groups or hidden panes when cycling.">
+          <span>
+            <strong>Skip hidden</strong>
+            <small>Leave tabs in collapsed tab groups and hidden panes out of cycling.</small>
+          </span>
+          <input id="skipHiddenTabs" type="checkbox" />
+        </label>
+
+        <label class="setting-row" for="wrapAround" title="At the first or last tab, continue from the opposite edge.">
+          <span>
+            <strong>Wrap around</strong>
+            <small>Continue from the other edge of the tab list.</small>
+          </span>
+          <input id="wrapAround" type="checkbox" />
+        </label>
+      </fieldset>
 
       <div class="reference-grid" aria-label="Shortcut reference">
         <div><strong id="wheelShortcut">Alt + Wheel</strong><span>Cycle tabs using the current cycle mode.</span></div>
         <div><strong id="searchShortcut">Alt + Left Click</strong><span id="leftClickShortcutDescription">Open the in-page search launcher.</span></div>
-        <div><strong id="recentShortcut">Alt + Middle Click</strong><span>Jump to the most recently used tab.</span></div>
-        <div><strong id="closeShortcut">Alt + Right Click</strong><span>Close the current tab; return to the most recently used tab first when available.</span></div>
+        <div><strong id="recentShortcut">Alt + Middle Click</strong><span id="middleClickShortcutDescription">Jump to the most recently used tab.</span></div>
+        <div><strong id="closeShortcut">Alt + Right Click</strong><span id="rightClickShortcutDescription">Close the current tab; return to the most recently used tab first when available.</span></div>
       </div>
 
       <div class="constraint-grid" aria-label="Gesture and page constraints">

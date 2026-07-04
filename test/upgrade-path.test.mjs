@@ -24,7 +24,7 @@ test("TabWheel storage keys are stable and isolated from legacy storage", () => 
   assert.match(domain, /TABWHEEL_STORAGE_KEYS\.mruState/);
   assert.match(domain, /browser\.storage\.local\.set\(\{\s*\[TABWHEEL_STORAGE_KEYS\.scrollMemory\]/);
   assert.match(domain, /browser\.storage\.local\.set\(\{\s*\[TABWHEEL_STORAGE_KEYS\.mruState\]/);
-  assert.match(migrations, /export const STORAGE_SCHEMA_VERSION = 12/);
+  assert.match(migrations, /export const STORAGE_SCHEMA_VERSION = 13/);
   assert.match(migrations, /deleteKey\(migratedStorage,\s*"frecencyData"\)/);
   assert.match(migrations, /TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs"/);
   assert.match(migrations, /TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList"/);
@@ -38,5 +38,11 @@ test("TabWheel storage keys are stable and isolated from legacy storage", () => 
   assert.match(migrations, /removeScrollMemoryWithoutUrls\(migratedStorage\)/);
   assert.match(migrations, /removeScrollMemoryZoom\(migratedStorage\)/);
   assert.match(migrations, /openNativeNewTabOnLeftClick = false/);
+  assert.match(migrations, /migrateClickActionSettings\(migratedStorage\)/);
+  assert.match(migrations, /openNativeNewTabOnLeftClick === true[\s\S]*"nativeNewTab"/);
+  assert.match(migrations, /deleteKey\(nextSettings,\s*"openNativeNewTabOnLeftClick"\)/);
+  assert.match(migrations, /if \(fromVersion > STORAGE_SCHEMA_VERSION\)[\s\S]*return \{[\s\S]*fromVersion[\s\S]*toVersion:\s*fromVersion[\s\S]*changed:\s*false[\s\S]*migratedStorage/);
+  assert.match(migrations, /function isClickActionValue\(value: unknown\): boolean[\s\S]*TABWHEEL_CLICK_ACTION_VALUES\.includes\(value\)/);
+  assert.match(migrations, /if \(isClickActionValue\(nextSettings\[settingKey\]\)\) continue/);
   assert.doesNotMatch(migrations, /tabManagerList|tabManagerSessions|anchorTagsByTabId|keybindings/);
 });

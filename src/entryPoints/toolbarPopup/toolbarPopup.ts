@@ -4,8 +4,9 @@ import browser from "webextension-polyfill";
 import {
   applyTabWheelPreset,
   detectTabWheelPreset,
+  formatTabWheelClickActionLabel,
+  formatTabWheelCycleScopeLabel,
   formatTabWheelModifierCombo,
-  formatTabWheelModifierKey,
   loadTabWheelSettings,
   MAX_PAGE_SCROLL_SPEED_MULTIPLIER,
   MAX_PAGE_SCROLL_VIEWPORT_CAP_RATIO,
@@ -16,37 +17,41 @@ import {
   MIN_WHEEL_COOLDOWN_MS,
   MIN_WHEEL_SENSITIVITY,
   saveTabWheelSettings,
-  TABWHEEL_MODIFIER_KEYS,
-  TABWHEEL_PRESETS,
+  summarizeTabWheelClickAction,
 } from "../../lib/common/contracts/tabWheel";
 import {
   activateMostRecentTabWheelTab,
   closeCurrentTabWheelTabAndActivateRecent,
   cycleTabWheel,
+  getTabWheelOverview,
   getTabWheelOverviewWithRetry,
   openTabWheelHelp,
   openTabWheelSearchTab,
   refreshCurrentTabWheel,
   setTabWheelCycleScope,
 } from "../../lib/adapters/runtime/tabWheelApi";
+import { createDebouncedCallback } from "../../lib/common/utils/asyncFlow";
+import {
+  populateClickActionSelect,
+  populateModifierSelect,
+  populatePresetSelect,
+} from "../../lib/ui/settings/settingsControls";
 
 const EXTENSION_TITLE = "Scroll Wheel Tab Switcher";
+const OVERVIEW_REFRESH_DEBOUNCE_MS = 300;
 
-function presetLabel(preset: TabWheelPreset): string {
-  if (preset === "precise") return "Precise";
-  if (preset === "fast") return "Fast";
-  if (preset === "custom") return "Custom";
-  return "Balanced";
-}
-
-function cycleScopeLabel(scope: TabWheelCycleScope): string {
-  return scope === "mru" ? "Most Recently Used" : "Left-To-Right";
-}
-
-function setSelectOptions(select: HTMLSelectElement, values: readonly string[], selected: string, label: (value: string) => string): void {
-  select.innerHTML = values
-    .map((value) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label(value)}</option>`)
-    .join("");
+function buildReadySummary(settings: TabWheelSettings): string {
+  const clickSummaries: ReadonlyArray<[string, TabWheelClickAction]> = [
+    ["Left-click", settings.leftClickAction],
+    ["Middle-click", settings.middleClickAction],
+    ["Right-click", settings.rightClickAction],
+  ];
+  const sentences = ["Wheel switches tab."];
+  for (const [buttonLabel, clickAction] of clickSummaries) {
+    const phrase = summarizeTabWheelClickAction(clickAction);
+    if (phrase) sentences.push(`${buttonLabel} ${phrase}.`);
+  }
+  return sentences.join(" ");
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -60,8 +65,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const generalModeBtn = document.getElementById("generalModeBtn") as HTMLButtonElement;
   const mruModeBtn = document.getElementById("mruModeBtn") as HTMLButtonElement;
   const leftClickActionLabel = document.getElementById("leftClickActionLabel")!;
-  const leftClickSearchBtn = document.getElementById("leftClickSearchBtn") as HTMLButtonElement;
-  const leftClickNativeBtn = document.getElementById("leftClickNativeBtn") as HTMLButtonElement;
+  const leftClickActionSelect = document.getElementById("leftClickAction") as HTMLSelectElement;
+  const middleClickActionSelect = document.getElementById("middleClickAction") as HTMLSelectElement;
+  const rightClickActionSelect = document.getElementById("rightClickAction") as HTMLSelectElement;
   const prevTabBtn = document.getElementById("prevTabBtn") as HTMLButtonElement;
   const nextTabBtn = document.getElementById("nextTabBtn") as HTMLButtonElement;
   const searchForm = document.getElementById("searchForm") as HTMLFormElement;
@@ -74,6 +80,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const invertScrollInput = document.getElementById("invertScroll") as HTMLInputElement;
   const skipPinnedTabsInput = document.getElementById("skipPinnedTabs") as HTMLInputElement;
   const skipRestrictedPagesInput = document.getElementById("skipRestrictedPages") as HTMLInputElement;
+  const skipHiddenTabsInput = document.getElementById("skipHiddenTabs") as HTMLInputElement;
   const wrapAroundInput = document.getElementById("wrapAround") as HTMLInputElement;
   const wheelAccelerationInput = document.getElementById("wheelAcceleration") as HTMLInputElement;
   const horizontalWheelInput = document.getElementById("horizontalWheel") as HTMLInputElement;
@@ -127,16 +134,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  function renderLeftClickActionButtons(): void {
-    leftClickActionLabel.textContent = settings.openNativeNewTabOnLeftClick
-      ? "Browser Default"
-      : "Tabwheel";
-    for (const button of [leftClickSearchBtn, leftClickNativeBtn]) {
-      const isNativeNewTabButton = button.dataset.nativeNewTab === "true";
-      const isActive = isNativeNewTabButton === settings.openNativeNewTabOnLeftClick;
-      button.classList.toggle("is-active", isActive);
-      button.setAttribute("aria-pressed", String(isActive));
-    }
+  function renderClickActionControls(): void {
+    leftClickActionLabel.textContent = formatTabWheelClickActionLabel(settings.leftClickAction);
+    leftClickActionSelect.value = settings.leftClickAction;
+    middleClickActionSelect.value = settings.middleClickAction;
+    rightClickActionSelect.value = settings.rightClickAction;
   }
 
   function renderState(): void {
@@ -144,34 +146,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     const cycleScope = overview?.cycleScope || settings.cycleScope;
     shortcutEl.textContent = `Hold ${gesture} and Use Mouse Wheel or Clicks`;
     titlebarTextEl.textContent = EXTENSION_TITLE;
-    scopeLabel.textContent = cycleScopeLabel(cycleScope);
+    scopeLabel.textContent = formatTabWheelCycleScopeLabel(cycleScope);
     renderModeButtons(cycleScope);
-    renderLeftClickActionButtons();
+    renderClickActionControls();
     const arePageShortcutsReady = overview?.contentScriptStatus === "ready";
     fallbackPanel.hidden = arePageShortcutsReady;
     shortcutStatusEl.hidden = !arePageShortcutsReady;
-    shortcutStatusEl.textContent = arePageShortcutsReady
-      ? "Wheel switches tab. Left-click opens new tab. Middle-click opens most recent tab. Right-click closes current tab."
-      : "";
+    shortcutStatusEl.textContent = arePageShortcutsReady ? buildReadySummary(settings) : "";
   }
 
   function renderSettings(): void {
-    setSelectOptions(
-      wheelPresetSelect,
-      TABWHEEL_PRESETS,
-      settings.wheelPreset,
-      (value) => presetLabel(value as TabWheelPreset),
-    );
-    setSelectOptions(
-      gestureModifierSelect,
-      TABWHEEL_MODIFIER_KEYS,
-      settings.gestureModifier,
-      (value) => formatTabWheelModifierKey(value as TabWheelModifierKey),
-    );
+    populatePresetSelect(wheelPresetSelect, settings.wheelPreset);
+    populateModifierSelect(gestureModifierSelect, settings.gestureModifier);
     gestureWithShiftInput.checked = settings.gestureWithShift;
     invertScrollInput.checked = settings.invertScroll;
     skipPinnedTabsInput.checked = settings.skipPinnedTabs;
     skipRestrictedPagesInput.checked = settings.skipRestrictedPages;
+    skipHiddenTabsInput.checked = settings.skipHiddenTabs;
     wrapAroundInput.checked = settings.wrapAround;
     wheelAccelerationInput.checked = settings.wheelAcceleration;
     horizontalWheelInput.checked = settings.horizontalWheel;
@@ -202,11 +193,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderState();
   }
 
+  const scheduleOverviewRefresh = createDebouncedCallback(() => {
+    void getTabWheelOverview()
+      .then((nextOverview) => {
+        overview = nextOverview;
+        renderState();
+      })
+      .catch(() => {});
+  }, OVERVIEW_REFRESH_DEBOUNCE_MS);
+
   async function persist(nextSettings: TabWheelSettings): Promise<void> {
     settings = nextSettings;
     await saveTabWheelSettings(settings);
-    await refreshAll();
+    renderSettings();
+    renderState();
     showStatus("Saved");
+    scheduleOverviewRefresh();
   }
 
   async function runPopupAction(
@@ -239,7 +241,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       reason: "Mode switch failed",
     }));
     await refreshAll();
-    showStatus(result.ok ? `Mode: ${cycleScopeLabel(result.cycleScope || cycleScope)}` : result.reason || "Mode switch failed");
+    showStatus(result.ok ? `Mode: ${formatTabWheelCycleScopeLabel(result.cycleScope || cycleScope)}` : result.reason || "Mode switch failed");
   }
 
   async function refreshCurrentTabWheelState(): Promise<void> {
@@ -268,6 +270,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       invertScroll: invertScrollInput.checked,
       skipPinnedTabs: skipPinnedTabsInput.checked,
       skipRestrictedPages: skipRestrictedPagesInput.checked,
+      skipHiddenTabs: skipHiddenTabsInput.checked,
       wrapAround: wrapAroundInput.checked,
       wheelAcceleration: wheelAccelerationInput.checked,
       horizontalWheel: horizontalWheelInput.checked,
@@ -277,6 +280,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       wheelCooldownMs: Number(wheelCooldownInput.value),
       pageScrollSpeedMultiplier: Number(pageScrollSpeedInput.value),
       pageScrollViewportCapRatio: Number(pageScrollViewportCapInput.value),
+      leftClickAction: leftClickActionSelect.value as TabWheelClickAction,
+      middleClickAction: middleClickActionSelect.value as TabWheelClickAction,
+      rightClickAction: rightClickActionSelect.value as TabWheelClickAction,
     };
     return {
       ...nextSettings,
@@ -284,12 +290,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
   }
 
+  populateClickActionSelect(leftClickActionSelect, settings.leftClickAction);
+  populateClickActionSelect(middleClickActionSelect, settings.middleClickAction);
+  populateClickActionSelect(rightClickActionSelect, settings.rightClickAction);
+
   [
     gestureModifierSelect,
+    leftClickActionSelect,
+    middleClickActionSelect,
+    rightClickActionSelect,
     gestureWithShiftInput,
     invertScrollInput,
     skipPinnedTabsInput,
     skipRestrictedPagesInput,
+    skipHiddenTabsInput,
     wrapAroundInput,
     wheelAccelerationInput,
     horizontalWheelInput,
@@ -328,15 +342,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   mruModeBtn.addEventListener("click", () => {
     void setPopupCycleScope("mru");
-  });
-
-  leftClickSearchBtn.addEventListener("click", () => {
-    if (!settings.openNativeNewTabOnLeftClick) return;
-    void persist({ ...readSettings(), openNativeNewTabOnLeftClick: false });
-  });
-  leftClickNativeBtn.addEventListener("click", () => {
-    if (settings.openNativeNewTabOnLeftClick) return;
-    void persist({ ...readSettings(), openNativeNewTabOnLeftClick: true });
   });
 
   prevTabBtn.addEventListener("click", () => {
@@ -394,6 +399,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   settingsBtn.addEventListener("click", () => {
     void browser.runtime.openOptionsPage();
+    window.close();
+  });
+
+  const closePopupBtn = document.getElementById("closePopupBtn") as HTMLButtonElement;
+  closePopupBtn.addEventListener("click", () => {
     window.close();
   });
 
