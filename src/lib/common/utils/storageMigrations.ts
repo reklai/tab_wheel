@@ -1,10 +1,10 @@
-const STORAGE_SCHEMA_VERSION_KEY = "storageSchemaVersion";
+export const STORAGE_SCHEMA_VERSION_KEY = "storageSchemaVersion";
 const TABWHEEL_SETTINGS_KEY = "tabWheelSettings";
 const TABWHEEL_SCROLL_MEMORY_KEY = "tabWheelScrollMemory";
 const TABWHEEL_MRU_STATE_KEY = "tabWheelMruState";
 const TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs";
 const TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList";
-export const STORAGE_SCHEMA_VERSION = 12;
+export const STORAGE_SCHEMA_VERSION = 13;
 
 type StorageSnapshot = Record<string, unknown>;
 
@@ -20,6 +20,19 @@ function readSchemaVersion(storage: StorageSnapshot): number {
   if (!Number.isFinite(numeric)) return 0;
   const rounded = Math.floor(numeric);
   return rounded > 0 ? rounded : 0;
+}
+
+export function isStorageSchemaVersionCurrent(rawVersion: unknown): boolean {
+  return Number(rawVersion) === STORAGE_SCHEMA_VERSION;
+}
+
+export function createCurrentVersionMigrationResult(): StorageMigrationResult {
+  return {
+    fromVersion: STORAGE_SCHEMA_VERSION,
+    toVersion: STORAGE_SCHEMA_VERSION,
+    changed: false,
+    migratedStorage: {},
+  };
 }
 
 function hasKey(storage: StorageSnapshot, key: string): boolean {
@@ -108,6 +121,44 @@ function migrateTabWheelSettings(storage: StorageSnapshot): boolean {
     nextSettings.pageScrollViewportCapRatio = 1;
     changed = true;
   }
+
+  if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
+  return changed;
+}
+
+// Duplicates TABWHEEL_CLICK_ACTIONS so this file stays import-free — historical
+// migrations are frozen at the values they shipped with.
+const TABWHEEL_CLICK_ACTION_VALUES = [
+  "search",
+  "nativeNewTab",
+  "recentTab",
+  "closeToRecent",
+  "duplicateTab",
+  "openSettings",
+  "none",
+];
+
+function isClickActionValue(value: unknown): boolean {
+  return typeof value === "string" && TABWHEEL_CLICK_ACTION_VALUES.includes(value);
+}
+
+function migrateClickActionSettings(storage: StorageSnapshot): boolean {
+  const settings = storage[TABWHEEL_SETTINGS_KEY];
+  const hasExistingSettings = typeof settings === "object" && settings !== null && !Array.isArray(settings);
+  const nextSettings = hasExistingSettings ? { ...(settings as Record<string, unknown>) } : {};
+  let changed = !hasExistingSettings;
+
+  const clickActionFallbacks: ReadonlyArray<[string, string]> = [
+    ["leftClickAction", nextSettings.openNativeNewTabOnLeftClick === true ? "nativeNewTab" : "search"],
+    ["middleClickAction", "recentTab"],
+    ["rightClickAction", "closeToRecent"],
+  ];
+  for (const [settingKey, fallback] of clickActionFallbacks) {
+    if (isClickActionValue(nextSettings[settingKey])) continue;
+    nextSettings[settingKey] = fallback;
+    changed = true;
+  }
+  if (deleteKey(nextSettings, "openNativeNewTabOnLeftClick")) changed = true;
 
   if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
   return changed;
@@ -223,6 +274,9 @@ export function migrateStorageSnapshot(input: StorageSnapshot): StorageMigration
   }
   if (fromVersion < 12) {
     changed = deleteSettingKey(migratedStorage, "searchUrlTemplate") || changed;
+  }
+  if (fromVersion < 13) {
+    changed = migrateClickActionSettings(migratedStorage) || changed;
   }
 
   if (migratedStorage[STORAGE_SCHEMA_VERSION_KEY] !== STORAGE_SCHEMA_VERSION) {
