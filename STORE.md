@@ -11,7 +11,7 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Alt + mouse wheel switches tabs. Tune tab switching and page-scroll wheel feel. Clicks open search, recent, and close.
+Alt + mouse wheel switches tabs. Left/middle/right clicks remap to search, new tab, recent, close, duplicate, settings.
 
 ## Description
 
