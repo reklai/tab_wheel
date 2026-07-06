@@ -14,6 +14,17 @@ Run `npm run ci` before preparing a release, then run:
 npm run release:package
 ```
 
+## 2.1.0
+
+Search launcher and store-readiness release:
+
+- Added local search launcher suggestions from recent searches, open tabs, browser history, and bookmarks.
+- Added `/tab`, `/hist`, and `/book` filters, fuzzy highlighting, keyboard navigation, and open-tab reuse for matching history/bookmark URLs.
+- Kept private-window searches out of stored recent searches and kept history/bookmark suggestions out of page-visible DOM.
+- Removed the dedicated help menu and moved the options/popup settings controls toward the updated toolbar flow.
+- Tightened reset/default behavior, fresh-install migration behavior, and popup/options settings sync.
+- Added 16px and 32px icon assets, regenerated Chrome/Firefox/source release packages, and kept package/browser manifests aligned at `2.1.0`.
+
 ## 2.0.1
 
 Hardening release for the unpublished 2.0.0 work:

@@ -1,6 +1,6 @@
 {
   "name": "tabwheel",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "description": "Alt + mouse wheel switches tabs. Tune tab switching and page-scroll wheel feel. Clicks open search, recent, and close.",
   "license": "MIT",
