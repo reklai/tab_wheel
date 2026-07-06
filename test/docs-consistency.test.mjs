@@ -24,6 +24,8 @@ test("store and privacy docs match current TabWheel limits", () => {
 
   assert.ok(store.includes("Firefox / Zen: Scroll Wheel Tab Switcher"));
   assert.ok(store.includes("Chrome: Scroll Wheel Tab Switcher"));
+  assert.ok(store.includes("WHAT'S NEW IN 2.1.0"));
+  assert.ok(store.includes("CURRENT DEFAULTS"));
   assert.ok(store.includes("TagWheel") === false);
   assert.ok(store.includes("Alt + Wheel"));
   assert.ok(store.includes("Hold Alt and scroll your mouse wheel to switch tabs"));

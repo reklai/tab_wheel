@@ -15,6 +15,24 @@ Hold Alt and scroll your mouse wheel to switch tabs. Alt+middle-click opens sett
 
 ## Description
 
+WHAT'S NEW IN 2.1.0:
+- TabWheel Search now suggests local matches from recent searches, open tabs, browser history, and bookmarks as you type.
+- Type /tab, /hist, or /book to filter suggestions to open tabs, history, or bookmarks.
+- Fuzzy highlighting and keyboard navigation make the search launcher faster to use from the page.
+- History and bookmark selections switch to an already-open matching tab when possible instead of creating duplicates.
+- Private-window search submissions are not saved as recent searches.
+- Popup and options controls were streamlined with a settings gear, clearer descriptions, matching Refresh / Reset buttons, and consistent settings sync.
+- Reset to defaults now clears local TabWheel settings and state so the current defaults take effect cleanly.
+
+CURRENT DEFAULTS:
+- Hold Alt and scroll the mouse wheel to switch tabs.
+- Left-To-Right mode is the default cycle mode; Most Recently Used mode is also available.
+- Alt + Middle Click opens Settings by default.
+- Alt + Left Click and Alt + Right Click keep their native browser/page behavior until you remap them.
+- Left, middle, and right click can each be remapped to TabWheel Search, Browser Default new tab, Most Recent Tab, Close Tab, Duplicate Tab, Open Settings, or native click pass-through.
+- Restricted pages are skipped by default. Pinned-tab and hidden-tab skipping are available options.
+- Normal page scrolling stays browser-native at 1.0x speed and a 100% viewport step cap until you change page-scroll tuning.
+
 Scroll Wheel Tab Switcher lets you switch browser tabs with your mouse wheel. Hold Alt and scroll on a normal web page to move to the next or previous tab, making tab switching a fast hand-on-mouse gesture instead of clicking through the tab bar or reaching for keyboard shortcuts. By default, Alt + Middle Click opens the Settings page, while Alt + Left Click and Alt + Right Click keep their native click behavior until you remap them. Left, middle, and right click actions can each be remapped to TabWheel Search, Browser Default new tab, Most Recent Tab, Close Tab, Duplicate Tab, Open Settings, or native click pass-through. Mouse wheel cycling can use Left-To-Right mode or Most Recently Used mode. These behaviors are configurable from the extension popup toolbar and options page.
 
 ACCESS EXTENSION POPUP TOOLBAR:
