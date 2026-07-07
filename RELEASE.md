@@ -14,6 +14,13 @@ Run `npm run ci` before preparing a release, then run:
 npm run release:package
 ```
 
+## 2.1.1
+
+Store listing copy update:
+
+- Updated the short store summary to emphasize mouse-first tab switching from anywhere on the page.
+- Aligned package and browser manifest versions at `2.1.1`.
+
 ## 2.1.0
 
 Search launcher and store-readiness release:

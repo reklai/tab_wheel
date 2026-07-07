@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Scroll Wheel Tab Switcher",
-  "version": "2.1.0",
-  "description": "Hold Alt and scroll your mouse wheel to switch tabs. Alt+middle-click opens settings. Optional: choose what each mouse click does.",
+  "version": "2.1.1",
+  "description": "Hold Alt and scroll your mouse wheel anywhere on the page to switch tabs. No tab bar hovering needed.",
   "permissions": [
     "scripting",
     "tabs",

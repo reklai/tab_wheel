@@ -11,11 +11,15 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Hold Alt and scroll your mouse wheel to switch tabs. Alt+middle-click opens settings. Optional: choose what each mouse click does.
+Hold Alt and scroll your mouse wheel anywhere on the page to switch tabs. No tab bar hovering needed.
 
 ## Description
 
-WHAT'S NEW IN 2.1.0:
+WHAT'S NEW IN 2.1.1:
+- Updated the short store summary to emphasize mouse-first tab switching from anywhere on the page.
+- Kept package/browser manifests aligned at 2.1.1.
+
+CURRENT FEATURE HIGHLIGHTS:
 - TabWheel Search now suggests local matches from recent searches, open tabs, browser history, and bookmarks as you type.
 - Type /tab, /hist, or /book to filter suggestions to open tabs, history, or bookmarks.
 - Fuzzy highlighting and keyboard navigation make the search launcher faster to use from the page.
