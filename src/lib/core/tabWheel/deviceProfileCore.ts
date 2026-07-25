@@ -142,20 +142,29 @@ export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDe
   return "unknown";
 }
 
-// Trackpad momentum streams are easy to over-trigger, so guard strictly
-// (slower to re-arm, more patient about what still counts as "decaying").
-// Wheel devices (and the conservative "unknown" default) rarely produce real
-// momentum, so guard leniently and get out of the way quickly.
+// Trackpad momentum streams are easy to over-trigger, so guard strictly:
+// wider tail cadence, a higher bar for what counts as a fresh flick, and more
+// evidence required before releasing a run as steady input. Wheel devices
+// (and the conservative "unknown" default) rarely produce real momentum, so
+// guard leniently and get out of the way quickly.
+//
+// maxTailGapMs sits below deviceProfileCore's own DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS
+// on purpose: a detented wheel cannot physically produce a momentum tail, so
+// its cadence alone takes it out of the guard's scope at zero cost.
 const STRICT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
   idleGapMs: 140,
+  maxTailGapMs: 32,
   rampRatio: 1.7,
-  decayTolerance: 0.3,
+  steadyDecayFraction: 0.08,
+  steadyEventCount: 6,
 };
 
 const LENIENT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
   idleGapMs: 100,
+  maxTailGapMs: 24,
   rampRatio: 1.3,
-  decayTolerance: 0.12,
+  steadyDecayFraction: 0.08,
+  steadyEventCount: 4,
 };
 
 export function resolveDeviceTuningAdjustment(kind: TabWheelDeviceKind): TabWheelDeviceTuningAdjustment {

@@ -79,10 +79,16 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // Effective values only — stored settings and presets are untouched.
   assert.match(app, /const triggerDistance = acceleratedDistance \* deviceAdjustment\.triggerDistanceMultiplier;/);
   assert.match(app, /settings\.wheelCooldownMs \+ extraCooldownMs/);
-  assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection\);/);
+  // The guard session inherits the committing gesture's peak magnitude, and a
+  // blocked delta can never raise that peak because it returns before this.
+  assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection, gestureMagnitudePeakPx\);/);
+  assertOrdered(app, [
+    "wheelAccumulator += wheelDelta;",
+    "gestureMagnitudePeakPx = Math.max(gestureMagnitudePeakPx, Math.abs(wheelDelta));",
+  ]);
 
   // Every existing reset path drops the guard session with the gesture state.
-  assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*momentumGuardSession = null;/);
+  assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*gestureMagnitudePeakPx = 0;[^}]*momentumGuardSession = null;/);
   assert.match(app, /settings = normalizeTabWheelSettings\(settingsChange\.newValue\);[\s\S]{0,400}resetWheelGestureState\(\);/);
   assert.match(app, /document\.visibilityState !== "hidden"\) return;[\s\S]{0,200}resetWheelGestureState\(\);/);
 });

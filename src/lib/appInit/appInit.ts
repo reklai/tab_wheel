@@ -214,6 +214,10 @@ export function initApp(): void {
   let suppressScrollSaveUntil = 0;
   let scrollRestoreToken = 0;
   let wheelAccumulator = 0;
+  // Peak delta magnitude of the events feeding the current accumulation. This
+  // is the envelope the momentum guard inherits on commit: a fling's tail
+  // starts at the gesture's peak, so the peak is what a tail has to decay from.
+  let gestureMagnitudePeakPx = 0;
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
   let middleClickSession: TabWheelMiddleClickSession | null = null;
@@ -411,8 +415,10 @@ export function initApp(): void {
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
     // The guard tracks raw delta sign, not the mapped prev/next direction, so
-    // an inverted-scroll setup still recognizes its own momentum tail.
-    momentumGuardSession = createMomentumGuardSession(now, deltaDirection);
+    // an inverted-scroll setup still recognizes its own momentum tail. It also
+    // inherits this gesture's peak magnitude, so the first delta after the
+    // commit is judged against a real envelope instead of being swallowed.
+    momentumGuardSession = createMomentumGuardSession(now, deltaDirection, gestureMagnitudePeakPx);
     void cycleTabWheel(direction, "gesture").catch(() => {});
     return true;
   }
@@ -450,6 +456,8 @@ export function initApp(): void {
       return;
     }
     wheelAccumulator += wheelDelta;
+    // Blocked deltas return above, so a tail can never raise this peak.
+    gestureMagnitudePeakPx = Math.max(gestureMagnitudePeakPx, Math.abs(wheelDelta));
     const baseDistance = resolveWheelTriggerDistance(
       WHEEL_TRIGGER_THRESHOLD_PX,
       settings.wheelSensitivity,
@@ -472,6 +480,7 @@ export function initApp(): void {
     );
     if (cycleRan || settings.overshootGuard) {
       wheelAccumulator = 0;
+      gestureMagnitudePeakPx = 0;
       return;
     }
     wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
@@ -482,6 +491,7 @@ export function initApp(): void {
 
   function resetWheelGestureState(): void {
     wheelAccumulator = 0;
+    gestureMagnitudePeakPx = 0;
     lastWheelCycleAt = 0;
     wheelBurstCount = 0;
     momentumGuardSession = null;
