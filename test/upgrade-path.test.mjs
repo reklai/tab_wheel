@@ -14,7 +14,7 @@ test("focused v14 migration preserves core state and removes retired state", () 
   assert.match(contract, /scrollMemory:\s*"tabWheelScrollMemory"/);
   assert.match(contract, /mruState:\s*"tabWheelMruState"/);
   assert.match(contract, /onboarding:\s*"tabWheelOnboarding"/);
-  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 14/);
+  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 15/);
   assert.match(migrations, /focusTabWheelSettings\(migratedStorage\)/);
   assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_SEARCH_HISTORY_KEY\)/);
   assert.match(migrations, /"leftClickAction"/);
@@ -26,6 +26,15 @@ test("focused v14 migration preserves core state and removes retired state", () 
   assert.match(migrations, /"horizontalWheel"/);
   assert.match(migrations, /nextSettings\[key\] = true/);
   assert.match(migrations, /nextSettings\.skipHiddenTabs = true/);
+});
+
+test("focused v15 migration backfills the device-tuning and restricted-badge settings", () => {
+  const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+
+  assert.match(migrations, /if \(fromVersion < 15\)/);
+  assert.match(migrations, /backfillFeelAndReliabilitySettings\(migratedStorage\)/);
+  assert.match(migrations, /"deviceAwareTuning"/);
+  assert.match(migrations, /"showRestrictedBadge"/);
 });
 
 test("migration does not downgrade storage created by a future release", () => {

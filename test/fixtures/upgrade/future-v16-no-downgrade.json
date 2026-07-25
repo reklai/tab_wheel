@@ -1,0 +1,17 @@
+{
+  "input": {
+    "storageSchemaVersion": 16,
+    "tabWheelSettings": {
+      "futureSetting": true
+    },
+    "futureKey": true
+  },
+  "expected": {
+    "storageSchemaVersion": 16,
+    "tabWheelSettings": {
+      "futureSetting": true
+    },
+    "futureKey": true
+  },
+  "expectedChanged": false
+}

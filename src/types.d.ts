@@ -51,11 +51,13 @@ interface TabWheelSettings {
   skipPinnedTabs: boolean;
   skipRestrictedPages: boolean;
   skipHiddenTabs: boolean;
+  showRestrictedBadge: boolean;
   wrapAround: boolean;
   wheelPreset: TabWheelPreset;
   wheelSensitivity: number;
   wheelCooldownMs: number;
   wheelAcceleration: boolean;
+  deviceAwareTuning: boolean;
   horizontalWheel: boolean;
   overshootGuard: boolean;
 }

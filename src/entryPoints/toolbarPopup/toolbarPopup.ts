@@ -42,8 +42,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const wheelSensitivity = byId<HTMLInputElement>("wheelSensitivity");
   const wheelCooldownMs = byId<HTMLInputElement>("wheelCooldownMs");
   const wheelAcceleration = byId<HTMLInputElement>("wheelAcceleration");
+  const deviceAwareTuning = byId<HTMLInputElement>("deviceAwareTuning");
   const skipPinnedTabs = byId<HTMLInputElement>("skipPinnedTabs");
   const skipHiddenTabs = byId<HTMLInputElement>("skipHiddenTabs");
+  const showRestrictedBadge = byId<HTMLInputElement>("showRestrictedBadge");
   const wheelSensitivityValue = byId<HTMLElement>("wheelSensitivityValue");
   const wheelCooldownValue = byId<HTMLElement>("wheelCooldownValue");
   const toast = byId<HTMLElement>("popupToast");
@@ -70,8 +72,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       wheelSensitivity: Number(wheelSensitivity.value),
       wheelCooldownMs: Number(wheelCooldownMs.value),
       wheelAcceleration: wheelAcceleration.checked,
+      deviceAwareTuning: deviceAwareTuning.checked,
       skipPinnedTabs: skipPinnedTabs.checked,
       skipHiddenTabs: skipHiddenTabs.checked,
+      showRestrictedBadge: showRestrictedBadge.checked,
     };
     return { ...next, wheelPreset: detectTabWheelPreset(next) };
   }
@@ -90,8 +94,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     wheelSensitivity.value = String(next.wheelSensitivity);
     wheelCooldownMs.value = String(next.wheelCooldownMs);
     wheelAcceleration.checked = next.wheelAcceleration;
+    deviceAwareTuning.checked = next.deviceAwareTuning;
     skipPinnedTabs.checked = next.skipPinnedTabs;
     skipHiddenTabs.checked = next.skipHiddenTabs;
+    showRestrictedBadge.checked = next.showRestrictedBadge;
     wheelSensitivityValue.textContent = `${next.wheelSensitivity.toFixed(1)}×`;
     wheelCooldownValue.textContent = `${Math.round(next.wheelCooldownMs)}ms`;
 
@@ -135,8 +141,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     cycleScope,
     wheelDirection,
     wheelAcceleration,
+    deviceAwareTuning,
     skipPinnedTabs,
     skipHiddenTabs,
+    showRestrictedBadge,
   ]) {
     control.addEventListener("change", () => void saveCurrent());
   }

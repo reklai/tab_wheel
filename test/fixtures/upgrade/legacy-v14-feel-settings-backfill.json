@@ -7,11 +7,13 @@
     "futureKey": true
   },
   "expected": {
-    "storageSchemaVersion": 14,
+    "storageSchemaVersion": 15,
     "tabWheelSettings": {
-      "invertScroll": false
+      "invertScroll": false,
+      "deviceAwareTuning": true,
+      "showRestrictedBadge": true
     },
     "futureKey": true
   },
-  "expectedChanged": false
+  "expectedChanged": true
 }

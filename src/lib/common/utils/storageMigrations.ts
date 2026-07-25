@@ -5,7 +5,7 @@ const TABWHEEL_MRU_STATE_KEY = "tabWheelMruState";
 const TABWHEEL_SEARCH_HISTORY_KEY = "tabWheelSearchHistory";
 const TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs";
 const TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList";
-export const STORAGE_SCHEMA_VERSION = 14;
+export const STORAGE_SCHEMA_VERSION = 15;
 
 type StorageSnapshot = Record<string, unknown>;
 
@@ -231,6 +231,22 @@ function focusTabWheelSettings(storage: StorageSnapshot): boolean {
   return changed;
 }
 
+function backfillFeelAndReliabilitySettings(storage: StorageSnapshot): boolean {
+  const settings = storage[TABWHEEL_SETTINGS_KEY];
+  const hasExistingSettings = typeof settings === "object" && settings !== null && !Array.isArray(settings);
+  const nextSettings = hasExistingSettings ? { ...(settings as Record<string, unknown>) } : {};
+  let changed = !hasExistingSettings;
+
+  for (const key of ["deviceAwareTuning", "showRestrictedBadge"]) {
+    if (typeof nextSettings[key] === "boolean") continue;
+    nextSettings[key] = true;
+    changed = true;
+  }
+
+  if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
+  return changed;
+}
+
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== "string") return false;
   try {
@@ -359,6 +375,9 @@ export function migrateStorageSnapshot(input: StorageSnapshot): StorageMigration
   if (fromVersion < 14) {
     changed = focusTabWheelSettings(migratedStorage) || changed;
     changed = deleteKey(migratedStorage, TABWHEEL_SEARCH_HISTORY_KEY) || changed;
+  }
+  if (fromVersion < 15) {
+    changed = backfillFeelAndReliabilitySettings(migratedStorage) || changed;
   }
 
   if (migratedStorage[STORAGE_SCHEMA_VERSION_KEY] !== STORAGE_SCHEMA_VERSION) {

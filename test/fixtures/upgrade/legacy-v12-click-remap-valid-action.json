@@ -24,7 +24,7 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 14,
+    "storageSchemaVersion": 15,
     "tabWheelSettings": {
       "invertScroll": false,
       "gestureModifier": "alt",
@@ -42,7 +42,9 @@
       "horizontalWheel": true,
       "overshootGuard": true,
       "restorePagePosition": true,
-      "skipHiddenTabs": true
+      "skipHiddenTabs": true,
+      "deviceAwareTuning": true,
+      "showRestrictedBadge": true
     }
   },
   "expectedChanged": true

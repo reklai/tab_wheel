@@ -58,11 +58,13 @@ export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   skipPinnedTabs: false,
   skipRestrictedPages: true,
   skipHiddenTabs: true,
+  showRestrictedBadge: true,
   wrapAround: true,
   wheelPreset: "balanced",
   wheelSensitivity: 1,
   wheelCooldownMs: 160,
   wheelAcceleration: false,
+  deviceAwareTuning: true,
   horizontalWheel: true,
   overshootGuard: true,
 };
@@ -155,6 +157,10 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
     skipPinnedTabs: normalizeEnabledFlag(settings.skipPinnedTabs, DEFAULT_TABWHEEL_SETTINGS.skipPinnedTabs),
     skipRestrictedPages: true,
     skipHiddenTabs: normalizeEnabledFlag(settings.skipHiddenTabs, DEFAULT_TABWHEEL_SETTINGS.skipHiddenTabs),
+    showRestrictedBadge: normalizeEnabledFlag(
+      settings.showRestrictedBadge,
+      DEFAULT_TABWHEEL_SETTINGS.showRestrictedBadge,
+    ),
     wrapAround: true,
     wheelPreset: normalizeWheelPreset(settings.wheelPreset),
     wheelSensitivity: normalizeNumberInRange(
@@ -172,6 +178,10 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
     wheelAcceleration: normalizeEnabledFlag(
       settings.wheelAcceleration,
       DEFAULT_TABWHEEL_SETTINGS.wheelAcceleration,
+    ),
+    deviceAwareTuning: normalizeEnabledFlag(
+      settings.deviceAwareTuning,
+      DEFAULT_TABWHEEL_SETTINGS.deviceAwareTuning,
     ),
     horizontalWheel: true,
     overshootGuard: true,

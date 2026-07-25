@@ -62,6 +62,8 @@ test("defaults support a predictable first run", () => {
   assert.match(contract, /horizontalWheel:\s*true/);
   assert.match(contract, /allowGesturesInEditableFields:\s*true/);
   assert.match(contract, /overshootGuard:\s*true/);
+  assert.match(contract, /deviceAwareTuning:\s*true/);
+  assert.match(contract, /showRestrictedBadge:\s*true/);
   assert.doesNotMatch(contract, /leftClickAction|pageScrollSpeedMultiplier|searchUrlTemplate/);
 });
 
@@ -125,8 +127,10 @@ test("popup mirrors the full settings order with protected-page fallbacks", () =
     'id="wheelSensitivity"',
     'id="wheelCooldownMs"',
     'id="wheelAcceleration"',
+    'id="deviceAwareTuning"',
     'id="skipPinnedTabs"',
     'id="skipHiddenTabs"',
+    'id="showRestrictedBadge"',
   ]);
   assert.match(html, /<strong>Where it works<\/strong>[\s\S]*<ul>/);
   assert.match(html, /id="refreshTabWheelBtn"[\s\S]*id="resetDefaults"/);
@@ -156,8 +160,10 @@ test("options has one live gesture title and the exact focused control order", (
     'id="wheelSensitivity"',
     'id="wheelCooldownMs"',
     'id="wheelAcceleration"',
+    'id="deviceAwareTuning"',
     'id="skipPinnedTabs"',
     'id="skipHiddenTabs"',
+    'id="showRestrictedBadge"',
   ]);
   assert.match(html, /<strong>Where it works<\/strong>[\s\S]*<ul>/);
   assert.match(source, /moves through your \$\{direction\} tabs/);

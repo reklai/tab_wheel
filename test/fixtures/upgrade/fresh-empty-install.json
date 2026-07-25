@@ -1,7 +1,7 @@
 {
   "input": {},
   "expected": {
-    "storageSchemaVersion": 14
+    "storageSchemaVersion": 15
   },
   "expectedChanged": true
 }
