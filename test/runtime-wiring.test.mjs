@@ -391,20 +391,28 @@ test("cycling within the active tab's group filters eligibility from the active 
     domain.indexOf("function hasSameNumberList("),
   );
   assert.ok(eligibleTabsSource.length > 0, "getEligibleTabs should be found in source");
-  assert.match(eligibleTabsSource, /activeTabGroupId\?:\s*number,/);
+  // Required, not optional: an omitted argument must not be able to silently
+  // narrow eligibility to ungrouped-only tabs. null is the explicit "no
+  // active tab to compare against" signal, and it must skip the predicate
+  // rather than being coerced into a group id.
+  assert.match(eligibleTabsSource, /activeTabGroupId:\s*number \| null,/);
+  assert.doesNotMatch(eligibleTabsSource, /activeTabGroupId\?:/);
   // Ordered last among the eligibility predicates: the cheaper, more commonly
   // active filters (pinned/hidden/restricted) short-circuit first, and the
-  // group check only runs when the setting is actually on.
+  // group check only runs when the setting is on and there is a subject to
+  // compare against.
   assertOrdered(eligibleTabsSource, [
     "!settings.skipPinnedTabs",
     "!settings.skipHiddenTabs",
     "!settings.skipRestrictedPages",
     "!settings.cycleWithinTabGroup",
-    "normalizeTabGroupId(tab.groupId) === normalizeTabGroupId(activeTabGroupId)",
+    "activeTabGroupId == null",
+    "normalizeTabGroupId(tab.groupId) === activeTabGroupId",
   ]);
 
   // getGestureEligibleTabs is the sole choke point that turns an active tab
-  // into the groupId the filter above compares against.
+  // into the groupId the filter above compares against; no active tab means
+  // no subject, so it passes null (skip the predicate), not a made-up id.
   const gestureEligibleSource = domain.slice(
     domain.indexOf("async function getGestureEligibleTabs("),
     domain.indexOf("function beginScrollRestore("),
@@ -413,7 +421,7 @@ test("cycling within the active tab's group filters eligibility from the active 
   assert.match(gestureEligibleSource, /activeTab:\s*Tabs\.Tab \| null,/);
   assert.match(
     gestureEligibleSource,
-    /getEligibleTabs\(tabs, settings, collapsedTabGroupIds, activeTab\?\.groupId\)/,
+    /activeTab \? activeTab\.groupId \?\? -1 : null,/,
   );
 
   // Both callers already resolve the active tab before asking for eligible
@@ -499,7 +507,7 @@ test("internal reliability rules are enforced and absent from user-facing contro
   assert.doesNotMatch(`${popup}\n${options}`, /id="direction"|id="invertScroll"|<details/);
 });
 
-// wrapAround graduated from a forced internal rule (pre-3.1.1) to a normal
+// wrapAround graduated from a forced internal rule (3.1.0) to a normal
 // user setting: it now normalizes like showRestrictedBadge and has controls
 // in both mirrors. This pins that it stayed graduated.
 test("wrap-around is a normal user setting, not an internal reliability rule", () => {

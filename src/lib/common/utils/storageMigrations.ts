@@ -261,9 +261,10 @@ function removeDeviceTuningState(storage: StorageSnapshot): boolean {
 }
 
 // v17 turns wrapAround into a normal user setting (see normalizeTabWheelSettings)
-// and introduces cycleWithinTabGroup. wrapAround already has a value on every
-// upgrading profile — earlier steps have forced it true since v14 — so it
-// needs no backfill here; only the newly introduced key does.
+// and introduces cycleWithinTabGroup. wrapAround needs no backfill of its own:
+// an absent key already normalizes to true by default (tabWheel.ts), the same
+// value the old force-true rule produced, so every upgrading profile keeps
+// its effective behavior either way. Only the newly introduced key does.
 function backfillCycleWithinTabGroupSetting(storage: StorageSnapshot): boolean {
   const settings = storage[TABWHEEL_SETTINGS_KEY];
   const hasExistingSettings = typeof settings === "object" && settings !== null && !Array.isArray(settings);

@@ -307,7 +307,10 @@ function getEligibleTabs(
   tabs: Tabs.Tab[],
   settings: TabWheelSettings,
   collapsedTabGroupIds: ReadonlySet<number> = new Set(),
-  activeTabGroupId?: number,
+  // Required, not optional: null means "no active tab to compare against" and
+  // must skip the predicate rather than silently narrowing to ungrouped-only
+  // tabs, which is what an omitted argument would otherwise produce.
+  activeTabGroupId: number | null,
 ): Tabs.Tab[] {
   return tabs
     .filter((tab) => tab.id != null
@@ -315,7 +318,8 @@ function getEligibleTabs(
       && (!settings.skipHiddenTabs || (tab.hidden !== true && !isCollapsedGroupTab(tab, collapsedTabGroupIds)))
       && (!settings.skipRestrictedPages || !isRestrictedTab(tab))
       && (!settings.cycleWithinTabGroup
-        || normalizeTabGroupId(tab.groupId) === normalizeTabGroupId(activeTabGroupId)))
+        || activeTabGroupId == null
+        || normalizeTabGroupId(tab.groupId) === activeTabGroupId))
     .sort((left, right) => getTabIndex(left) - getTabIndex(right));
 }
 
@@ -537,7 +541,12 @@ export function createTabWheelDomain(): TabWheelDomain {
     activeTab: Tabs.Tab | null,
   ): Promise<Tabs.Tab[]> {
     const collapsedTabGroupIds = await getCollapsedTabGroupIds(windowId, tabs, settings);
-    const eligibleTabs = getEligibleTabs(tabs, settings, collapsedTabGroupIds, activeTab?.groupId);
+    const eligibleTabs = getEligibleTabs(
+      tabs,
+      settings,
+      collapsedTabGroupIds,
+      activeTab ? activeTab.groupId ?? -1 : null,
+    );
     return settings.skipRestrictedPages
       ? eligibleTabs.filter((tab) => !isContentScriptKnownUnavailable(tab))
       : eligibleTabs;

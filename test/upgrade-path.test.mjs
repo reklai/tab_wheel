@@ -60,8 +60,9 @@ test("focused v17 migration backfills the cycle-within-group setting it introduc
   assert.match(migrations, /backfillCycleWithinTabGroupSetting\(migratedStorage\)/);
   assert.match(migrations, /typeof nextSettings\.cycleWithinTabGroup !== "boolean"/);
   assert.match(migrations, /nextSettings\.cycleWithinTabGroup = false;/);
-  // wrapAround needs no v17 backfill of its own: every upgrading profile
-  // already has a value because the v14 step has forced it true since then.
+  // wrapAround needs no v17 backfill of its own: an absent key already
+  // normalizes to true by default, the same value the old force-true rule
+  // produced, so no upgrading profile's effective behavior depends on it.
   assert.doesNotMatch(
     migrations.slice(migrations.indexOf("function backfillCycleWithinTabGroupSetting(")),
     /wrapAround/,
