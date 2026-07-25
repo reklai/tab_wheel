@@ -31,6 +31,7 @@ type TabWheelCycleSource = "gesture" | "popup";
 type TabWheelMiddleClickAction = "openSettings" | "none";
 type TabWheelContentScriptStatus = "ready" | "unavailable";
 type TabWheelMruState = Record<string, number[]>;
+type TabWheelDeviceKind = "discreteWheel" | "freeSpinWheel" | "trackpad" | "unknown";
 
 interface TabWheelContentScriptActivationResult {
   attempted: number;
