@@ -48,17 +48,15 @@ test("content script owns the wheel chord and only the focused middle-click exce
   assert.doesNotMatch(app, /pageScrollSpeedMultiplier|pageScrollViewportCapRatio|scalePageScroll/);
 });
 
-test("wheel sampling, device tuning, and the momentum guard are wired into the gesture path", () => {
+test("the momentum guard and the arrival guard are wired into the gesture path", () => {
   const app = readText("src/lib/appInit/appInit.ts");
 
-  // Sampling has to precede the modifier check: unmodified scrolling and
-  // momentum tails are the evidence the classifier needs. Suppression comes
-  // before both guard steps so a swallowed tail cannot scroll the page either,
-  // and both run before accumulation so their deltas are dropped, not banked.
+  // Suppression comes before both guard steps so a swallowed tail cannot
+  // scroll the page either, and both run before accumulation so their deltas
+  // are dropped, not banked.
   const wheelHandlerSource = app.slice(app.indexOf("function wheelHandler"));
   assertOrdered(wheelHandlerSource, [
     "if (!event.isTrusted) return;",
-    "addWheelSample(",
     "if (!isKeyboardWheelEvent(event)) return;",
     "suppressPageEvent(event);",
     "createMomentumGuardSession(",
@@ -67,88 +65,42 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   ]);
   assert.match(app, /momentumGuardSession\s*\n\s*&& shouldBlockWheelDelta\(/);
 
-  // Samples stay content-free and local: timing, deltaMode, magnitude only.
-  assertOrdered(app, [
-    "timeStampMs: now",
-    "deltaMode: event.deltaMode",
-    "deltaMagnitudePx: wheelMagnitudePx",
-  ]);
+  // Nothing about the wheel is measured, recorded, or written anywhere: wheel
+  // events are handled transiently for the gesture itself and then forgotten.
   assert.doesNotMatch(app, /storage\.local\.set|JSON\.stringify/);
-  // A zero-magnitude event carries no cadence evidence and must not be
-  // recorded as an observation.
-  assert.match(app, /if \(wheelMagnitudePx > 0\) \{\s*\n\s*addWheelSample\(/);
 
-  // Classification is lazy and gated: off means an exact identity adjustment
-  // (a null profile resolves to the neutral "unknown" tuning).
-  assert.match(app, /if \(!settings\.deviceAwareTuning\) return null;/);
+  // One tuning, for every device — the classifier that used to pick between a
+  // strict and a lenient variant is gone, so the guard is fed the single
+  // constant that lives beside it in the core module.
   assert.match(
     app,
-    /return resolveEffectiveDeviceProfile\(wheelSampleWindow, storedDeviceProfile, nowMs\);/,
+    /shouldBlockWheelDelta\(\s*\n\s*momentumGuardSession,\s*\n\s*wheelDelta,\s*\n\s*now,\s*\n\s*DEFAULT_MOMENTUM_GUARD_TUNING,\s*\n\s*\)/,
   );
-  assert.match(app, /return resolveDeviceTuningAdjustment\(deviceProfile\?\.kind \?\? "unknown"\);/);
 
-  // Effective values only — stored settings and presets are untouched.
-  assert.match(app, /const triggerDistance = acceleratedDistance \* deviceAdjustment\.triggerDistanceMultiplier;/);
-
-  // Notch-adaptive trigger: a detented wheel's own notch magnitude can only
-  // tighten the accelerated+device-multiplied trigger, never loosen it, so
-  // one notch reliably reads as one switch on Firefox (48px) and Linux
-  // Chrome (~53px) instead of paying two notches against the balanced 80px
-  // default. Gated on deviceAwareTuning and a 40px floor shared with the
-  // formula's own max() so a borderline 30-40px misclassified cluster can't
-  // produce a hair-trigger.
-  assert.match(app, /const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;/);
-  assert.match(app, /const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0\.85;/);
-  // The notch now comes off the effective profile, so a cold tab in the middle
-  // of a traversal adapts to the same notch the first tab measured.
-  assert.match(app, /const notchMagnitudePx = deviceProfile\?\.notchMagnitudePx \?\? null;/);
-  // Product rule (mutation-checked): device tuning adjusts effective values
-  // but must never narrow the trigger past explicit user intent. A user on
-  // Precise (wheelSensitivity 0.8) or a manually lowered slider asked for
-  // more deliberate switching, so the notch-adaptive min() below is only
-  // ever reachable at sensitivity >= 1 (Balanced's 1, Fast's 1.35, the
-  // default). The cooldown's -60 stays ungated by design (see
-  // resolveDeviceTuningAdjustment / runWheelCycle's clamp): narrowing the
-  // trigger risks accidental switches the user asked to avoid, while
-  // shortening the cooldown only lets intentional fast notching register
-  // instead of being silently eaten, so it carries no equivalent risk.
-  // Worked example: sensitivity 0.8 + a 53px detented notch clears every
-  // other condition (deviceAwareTuning on, notch >= 40) but fails this one,
-  // so triggerDistance stays resolveWheelTriggerDistance(80, 0.8) = 100 —
-  // pinned numerically in tabwheel-core.test.mjs. Deleting the
-  // `settings.wheelSensitivity >= 1 &&` clause breaks this exact match.
-  assert.match(
-    app,
-    /const effectiveTriggerDistance =\s*\n\s*settings\.wheelSensitivity >= 1\s*\n\s*&& notchMagnitudePx !== null\s*\n\s*&& notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX\s*\n\s*\? Math\.min\(\s*\n\s*triggerDistance,\s*\n\s*Math\.max\(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx \* NOTCH_ADAPTIVE_TRIGGER_RATIO\),\s*\n\s*\)\s*\n\s*: triggerDistance;/,
-  );
-  assert.match(app, /if \(Math\.abs\(wheelAccumulator\) < effectiveTriggerDistance\) return;/);
+  // The whole trigger: configured sensitivity, accelerated by the current
+  // burst. No multiplier, no notch adaptation, no per-device narrowing — a
+  // preset's feel is exactly what the user picked.
+  assert.match(app, /if \(Math\.abs\(wheelAccumulator\) < acceleratedDistance\) return;/);
   assertOrdered(app, [
-    "const triggerDistance = acceleratedDistance * deviceAdjustment.triggerDistanceMultiplier;",
-    "const effectiveTriggerDistance =",
-    "if (Math.abs(wheelAccumulator) < effectiveTriggerDistance) return;",
+    "const acceleratedDistance = resolveAcceleratedWheelTriggerDistance(",
+    "if (Math.abs(wheelAccumulator) < acceleratedDistance) return;",
   ]);
+  assert.doesNotMatch(app, /triggerDistanceMultiplier|notchMagnitudePx|extraCooldownMs/);
+
   // The overshoot cap is dead in the shipped product today —
   // normalizeTabWheelSettings force-trues overshootGuard, so the
   // `cycleRan || settings.overshootGuard` branch above always returns first
-  // and this line never runs. It is pinned anyway as defense-in-depth: if
-  // that guard is ever relaxed, capping to the effective (notch-adaptive)
-  // trigger rather than the pre-adaptive one keeps a detented wheel's
-  // held-over accumulator sized to its own notch distance.
+  // and this line never runs. It is pinned anyway as defense-in-depth: if that
+  // guard is ever relaxed, an overshoot may carry at most one trigger's worth
+  // of distance into the next switch.
   assert.match(
     app,
-    /wheelAccumulator = Math\.sign\(wheelAccumulator\) \* Math\.min\(\s*\n\s*Math\.abs\(wheelAccumulator\),\s*\n\s*effectiveTriggerDistance,\s*\n\s*\);/,
+    /wheelAccumulator = Math\.sign\(wheelAccumulator\) \* Math\.min\(\s*\n\s*Math\.abs\(wheelAccumulator\),\s*\n\s*acceleratedDistance,\s*\n\s*\);/,
   );
 
-  // Detented cooldown reduction: a detented notch can't produce a momentum
-  // tail, so its cooldown (extraCooldownMs -60 from resolveDeviceTuningAdjustment)
-  // sheds down to the same MIN_WHEEL_COOLDOWN_MS floor a configured cooldown
-  // already respects, never below it — fast notching stops getting eaten by
-  // cooldown without opening a window the momentum guard wasn't built for.
-  assert.match(
-    app,
-    /const effectiveCooldownMs = Math\.max\(MIN_WHEEL_COOLDOWN_MS, settings\.wheelCooldownMs \+ extraCooldownMs\);/,
-  );
-  assert.match(app, /if \(now - lastWheelCycleAt < effectiveCooldownMs\) return false;/);
+  // The configured cooldown, plain: the settings UI already clamps it to
+  // MIN_WHEEL_COOLDOWN_MS, so nothing needs re-clamping here.
+  assert.match(app, /if \(now - lastWheelCycleAt < settings\.wheelCooldownMs\) return false;/);
   // The guard session inherits the magnitude the committing gesture ended on,
   // and a blocked delta can never seed it because it returns before this.
   assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection, lastGestureMagnitudePx\);/);
@@ -176,6 +128,19 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // Every existing reset path drops the guard session with the gesture state.
   assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*lastGestureMagnitudePx = 0;[^}]*momentumGuardSession = null;/);
   assert.match(app, /settings = normalizeTabWheelSettings\(settingsChange\.newValue\);[\s\S]{0,400}resetWheelGestureState\(\);/);
+  // The reset stays scoped to a real settings change: every other key this
+  // extension writes lands mid-gesture, and zeroing the accumulator on one
+  // would eat the switch the user is scrolling toward.
+  const storageHandlerSource = app.slice(
+    app.indexOf("function storageChangedHandler("),
+    app.indexOf("function messageHandler("),
+  );
+  assert.ok(storageHandlerSource.length > 0, "storageChangedHandler should be found in source");
+  assertOrdered(storageHandlerSource, [
+    "const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];",
+    "if (!settingsChange) return;",
+    "resetWheelGestureState();",
+  ]);
   // Visibility drives both halves: gaining it arms the arrival window, losing
   // it drops the gesture state and the now-useless guard session.
   assert.match(
@@ -241,84 +206,6 @@ test("the gesture path pre-warms the MV3 worker on a rate limit, off the accumul
     "shouldBlockWheelDelta(",
     "wheelAccumulator += wheelDelta;",
   ]);
-});
-
-test("the device profile is shared across tabs so a traversal's later tabs are not cold", () => {
-  const app = readText("src/lib/appInit/appInit.ts");
-  const contract = readText("src/lib/common/contracts/tabWheel.ts");
-
-  // Storage, not a message type: the profile has to be readable by a document
-  // that starts up long after the classifying tab did.
-  assert.match(contract, /deviceProfile: "tabWheelDeviceProfile",/);
-  assert.match(contract, /export function normalizeTabWheelDeviceProfile\(value: unknown\): TabWheelDeviceProfile \| null \{/);
-  // A stored "unknown" would be indistinguishable from a real classification
-  // downstream, and a notch is meaningless off a detented wheel.
-  assert.match(contract, /if \(kind === "unknown"\) return null;/);
-  assert.match(contract, /kind === "discreteWheel" && Number\.isFinite\(notchMagnitudePx\)/);
-
-  // READ: one batched get at init, alongside settings.
-  assert.match(
-    contract,
-    /const data = await browser\.storage\.local\.get\(\[\s*\n\s*TABWHEEL_STORAGE_KEYS\.settings,\s*\n\s*TABWHEEL_STORAGE_KEYS\.deviceProfile,\s*\n\s*\]\);/,
-  );
-  assert.match(app, /void loadTabWheelGestureState\(\)/);
-  assert.match(app, /storedDeviceProfile = loadedState\.deviceProfile;/);
-
-  // WRITE, first gate: the documented opt-out. PRIVACY.md promises these
-  // measurements drive device detection only while "Auto-tune for your device"
-  // is on, so writing the profile with it off would silently reverse a
-  // published promise. Stated inside the function rather than left to depend
-  // on the caller happening to pass null.
-  assert.match(
-    app,
-    /function persistDeviceProfileIfChanged\(deviceProfile: TabWheelDeviceProfile \| null\): void \{\s*\n\s*if \(!settings\.deviceAwareTuning\) return;/,
-  );
-
-  // WRITE, second gate: fire-and-forget, gated on a reading that actually
-  // disagrees with what is already shared, with the in-memory copy updated
-  // first so a burst cannot queue a second write behind the round trip. It
-  // reuses the profile the handler already resolved instead of re-classifying
-  // the whole sample window a second time in the same event.
-  assert.match(app, /persistDeviceProfileIfChanged\(deviceProfile\);/);
-  assert.doesNotMatch(app, /persistDeviceProfileIfChanged\(now\)/);
-  assert.match(
-    app,
-    /if \(!deviceProfile \|\| !shouldPersistDeviceProfile\(deviceProfile, storedDeviceProfile\)\) return;\s*\n\s*storedDeviceProfile = deviceProfile;\s*\n\s*void saveTabWheelDeviceProfile\(deviceProfile\)\.catch\(\(\) => \{\}\);/,
-  );
-
-  // Publicly promised in PRIVACY.md and RELEASE.md: "Reset to defaults" clears
-  // preferences and leaves the profile, because it is measured evidence about
-  // the user's hardware rather than something they chose.
-  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
-  const resetSource = domain.slice(
-    domain.indexOf("async function resetState("),
-    domain.indexOf("async function activateExistingContentScripts("),
-  );
-  assert.ok(resetSource.length > 0, "resetState should be found in source");
-  assert.match(resetSource, /TABWHEEL_STORAGE_KEYS\.settings/);
-  assert.doesNotMatch(resetSource, /deviceProfile/);
-
-  // CRITICAL: profile writes land mid-gesture, so the storage listener must
-  // filter by key. A profile-only change adopts the value and returns before
-  // the settings reset path — zeroing the accumulator on a sibling tab's
-  // classification would silently eat the switch the user is scrolling toward.
-  const storageHandlerSource = app.slice(
-    app.indexOf("function storageChangedHandler("),
-    app.indexOf("function messageHandler("),
-  );
-  assert.ok(storageHandlerSource.length > 0, "storageChangedHandler should be found in source");
-  assertOrdered(storageHandlerSource, [
-    "const deviceProfileChange = changes[TABWHEEL_STORAGE_KEYS.deviceProfile];",
-    "storedDeviceProfile = normalizeTabWheelDeviceProfile(deviceProfileChange.newValue);",
-    "const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];",
-    "if (!settingsChange) return;",
-    "resetWheelGestureState();",
-  ]);
-  const profileBranch = storageHandlerSource.slice(
-    storageHandlerSource.indexOf("const deviceProfileChange"),
-    storageHandlerSource.indexOf("const settingsChange"),
-  );
-  assert.doesNotMatch(profileBranch, /resetWheelGestureState|wheelAccumulator|resetMiddleClickSession/);
 });
 
 test("a completed cycle pre-probes its neighbors off the hot path without waking discarded tabs", () => {
@@ -470,7 +357,6 @@ test("defaults support a predictable first run", () => {
   assert.match(contract, /horizontalWheel:\s*true/);
   assert.match(contract, /allowGesturesInEditableFields:\s*true/);
   assert.match(contract, /overshootGuard:\s*true/);
-  assert.match(contract, /deviceAwareTuning:\s*true/);
   assert.match(contract, /showRestrictedBadge:\s*true/);
   assert.doesNotMatch(contract, /leftClickAction|pageScrollSpeedMultiplier|searchUrlTemplate/);
 });
@@ -516,28 +402,31 @@ test("install and pre-v3 update flows open the appropriate onboarding page once"
   assert.match(onboarding, /resolveWheelDirection/);
 });
 
-test("onboarding install flow adds a fourth calibration step that samples natural scrolling", () => {
+test("the onboarding calibration panel is inert and every step is still reachable", () => {
   const html = readText("src/entryPoints/onboarding/onboarding.html");
   const source = readText("src/entryPoints/onboarding/onboarding.ts");
 
+  // Transitional state: the device classifier the step-2 panel fed is gone, so
+  // its sampling, classification, and suggested-preset wiring were removed
+  // with it. The markup, CSS, and step renumbering come out next, so the panel
+  // is still rendered — Skip is the one control that still does anything, and
+  // it is what keeps the flow traversable in the meantime.
   assert.match(html, /<span class="active" data-progress="1">/);
   assert.match(html, /<span data-progress="4">/);
   assertOrdered(html, [
     'data-step="1"',
     'data-step="2"',
-    "Calibrate your scrolling",
     'id="calibrationSampleRegion"',
     'id="skipCalibrationBtn"',
-    'id="useSuggestedFeelBtn"',
     'data-step="3"',
     'id="gestureModifier"',
     'data-step="4"',
   ]);
-  assert.match(source, /classifyWheelDevice/);
-  assert.match(source, /resolveSuggestedPreset/);
-  assert.match(source, /addWheelSample\(calibrationSampleWindow/);
-  assert.match(source, /applyTabWheelPreset\(settings,\s*suggestedDevicePreset\)/);
-  assert.match(source, /showStep\(3\)/);
+  assert.doesNotMatch(source, /classifyWheelDevice|resolveSuggestedPreset|addWheelSample|SampleWindow/);
+  assert.match(
+    source,
+    /byId<HTMLButtonElement>\("skipCalibrationBtn"\)\.addEventListener\("click", \(\) => showStep\(3\)\);/,
+  );
   assert.match(source, /showStep\(4\)/);
 });
 
@@ -560,7 +449,6 @@ test("popup mirrors the full settings order with protected-page fallbacks", () =
     'id="wheelSensitivity"',
     'id="wheelCooldownMs"',
     'id="wheelAcceleration"',
-    'id="deviceAwareTuning"',
     'id="skipPinnedTabs"',
     'id="skipHiddenTabs"',
     'id="showRestrictedBadge"',
@@ -593,7 +481,6 @@ test("options has one live gesture title and the exact focused control order", (
     'id="wheelSensitivity"',
     'id="wheelCooldownMs"',
     'id="wheelAcceleration"',
-    'id="deviceAwareTuning"',
     'id="skipPinnedTabs"',
     'id="skipHiddenTabs"',
     'id="showRestrictedBadge"',

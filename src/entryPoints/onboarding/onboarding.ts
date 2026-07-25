@@ -1,8 +1,6 @@
 import browser from "webextension-polyfill";
 import {
-  applyTabWheelPreset,
   formatTabWheelModifierCombo,
-  formatTabWheelPresetLabel,
   loadTabWheelOnboardingState,
   loadTabWheelSettings,
   saveTabWheelOnboardingState,
@@ -15,23 +13,9 @@ import {
   resolveWheelTriggerDistance,
 } from "../../lib/core/tabWheel/tabWheelCore";
 import {
-  addWheelSample,
-  classifyWheelDevice,
-  createWheelSampleWindow,
-  resolveSuggestedPreset,
-} from "../../lib/core/tabWheel/deviceProfileCore";
-import {
   populateMiddleClickActionSelect,
   populateModifierSelect,
 } from "../../lib/ui/settings/settingsControls";
-
-// Purely presentational: no shared surface needs a device-kind label today,
-// so this stays local instead of joining the enum formatters in the contract.
-function formatDetectedDeviceLabel(kind: TabWheelDeviceKind): string {
-  if (kind === "trackpad") return "Trackpad";
-  if (kind === "freeSpinWheel") return "Free-spin wheel";
-  return "Clicky wheel";
-}
 
 document.addEventListener("DOMContentLoaded", async () => {
   const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -122,60 +106,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   continueDemoBtn.addEventListener("click", () => showStep(2));
   byId<HTMLButtonElement>("skipDemoBtn").addEventListener("click", () => showStep(2));
 
-  // Calibration evidence lives here only: in-memory for this page, never
-  // persisted, never messaged. Mirrors how the content script's own sample
-  // window feeds classifyWheelDevice (see appInit.ts), but sourced from
-  // natural, unmodified scrolling instead of the gesture chord.
-  const calibrationSampleRegion = byId<HTMLElement>("calibrationSampleRegion");
-  const calibrationResult = byId<HTMLElement>("calibrationResult");
-  const useSuggestedFeelBtn = byId<HTMLButtonElement>("useSuggestedFeelBtn");
-  const calibrationSampleWindow = createWheelSampleWindow();
-  const CALIBRATION_MIN_SAMPLES = 12;
-  let calibrationObservedCount = 0;
-  let suggestedDevicePreset: TabWheelPreset | null = null;
-
-  function renderCalibrationResult(kind: TabWheelDeviceKind): void {
-    calibrationResult.hidden = false;
-    if (kind === "unknown") {
-      suggestedDevicePreset = null;
-      calibrationResult.textContent = "Couldn't detect a specific device — the Balanced default works well.";
-      useSuggestedFeelBtn.hidden = true;
-      return;
-    }
-    suggestedDevicePreset = resolveSuggestedPreset(kind);
-    calibrationResult.textContent =
-      `Detected: ${formatDetectedDeviceLabel(kind)} — we suggest the ${formatTabWheelPresetLabel(suggestedDevicePreset)} feel.`;
-    useSuggestedFeelBtn.hidden = false;
-  }
-
-  calibrationSampleRegion.addEventListener("wheel", (event) => {
-    const magnitudePx = Math.abs(normalizeWheelDelta(
-      event,
-      calibrationSampleRegion.clientHeight,
-      calibrationSampleRegion.clientWidth,
-      true,
-    ));
-    // A zero-magnitude sample carries no cadence evidence — it must not count
-    // toward CALIBRATION_MIN_SAMPLES, the same rule the live content script
-    // applies in appInit.ts.
-    if (magnitudePx === 0) return;
-    addWheelSample(calibrationSampleWindow, {
-      timeStampMs: Date.now(),
-      deltaMode: event.deltaMode,
-      deltaMagnitudePx: magnitudePx,
-    });
-    calibrationObservedCount += 1;
-    if (calibrationObservedCount < CALIBRATION_MIN_SAMPLES) return;
-    renderCalibrationResult(classifyWheelDevice(calibrationSampleWindow));
-  }, { passive: true });
-
+  // Step 2's panel measured the wheel to suggest a preset. The device
+  // classifier it fed is gone, so nothing here samples, classifies, or
+  // suggests any more: the panel is inert and its only live control is the
+  // button that moves past it. The panel markup, its CSS, and the renumbering
+  // of the remaining steps come out next.
   byId<HTMLButtonElement>("skipCalibrationBtn").addEventListener("click", () => showStep(3));
-  useSuggestedFeelBtn.addEventListener("click", async () => {
-    if (!suggestedDevicePreset) return;
-    settings = applyTabWheelPreset(settings, suggestedDevicePreset);
-    await saveTabWheelSettings(settings);
-    showStep(3);
-  });
 
   byId<HTMLButtonElement>("saveChoicesBtn").addEventListener("click", async () => {
     settings = {

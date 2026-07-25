@@ -4,11 +4,8 @@
 import browser from "webextension-polyfill";
 import {
   DEFAULT_TABWHEEL_SETTINGS,
-  loadTabWheelGestureState,
-  MIN_WHEEL_COOLDOWN_MS,
-  normalizeTabWheelDeviceProfile,
+  loadTabWheelSettings,
   normalizeTabWheelSettings,
-  saveTabWheelDeviceProfile,
   TABWHEEL_STORAGE_KEYS,
 } from "../common/contracts/tabWheel";
 import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
@@ -30,15 +27,8 @@ import {
   TabWheelMiddleClickSession,
 } from "../core/tabWheel/middleClickCore";
 import {
-  addWheelSample,
-  createWheelSampleWindow,
-  resolveDeviceTuningAdjustment,
-  resolveEffectiveDeviceProfile,
-  shouldPersistDeviceProfile,
-  TabWheelDeviceTuningAdjustment,
-} from "../core/tabWheel/deviceProfileCore";
-import {
   createMomentumGuardSession,
+  DEFAULT_MOMENTUM_GUARD_TUNING,
   MomentumGuardSession,
   shouldBlockWheelDelta,
 } from "../core/tabWheel/momentumGuardCore";
@@ -65,21 +55,6 @@ const WHEEL_TRIGGER_THRESHOLD_PX = 80;
 // Keeping this window under that cadence is what stops clicky wheels paying an
 // arrival tax on every switch.
 const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
-// One notch on a detented wheel should be one switch: without this, the
-// balanced 80px trigger silently taxes 2 notches per switch on Firefox
-// (48px/notch) and Linux Chrome (~53px/notch). 0.85 keeps a small margin
-// below the measured notch size so ordinary per-notch jitter (a slightly
-// short sample) still clears the gate. 40 is the same value as
-// MIN_ACCELERATED_TRIGGER_DISTANCE_PX in tabWheelCore.ts: this floors
-// max(40, notch * 0.85) below, that one floors acceleratedDistance (which
-// feeds triggerDistance, the other side of the min() in wheelHandler) — the
-// two 40s must move together, or the min() of the two branches could drop
-// under 40. The same 40 also gates which notch sizes are trusted enough to
-// adapt to in the first place, so a borderline 30-40px cluster (real per
-// deviceProfileCore's own CLUSTER_MIN_MODAL_MAGNITUDE_PX floor) can't
-// produce a hair-trigger.
-const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;
-const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0.85;
 // MV3 shuts the service worker down after ~30s idle, so the first switch after
 // a pause pays worker cold start (~50-300ms) on top of the switch itself, with
 // nothing waking the worker earlier than the switch message. Crossing the
@@ -260,19 +235,11 @@ export function initApp(): void {
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
   let middleClickSession: TabWheelMiddleClickSession | null = null;
-  // Device evidence lives here and nowhere else: in-memory for this document
-  // only, never persisted, never messaged, never attached to settings.
-  const wheelSampleWindow = createWheelSampleWindow();
-  // What some other tab already worked out about this device. Read once here
-  // and kept live by storageChangedHandler, so a tab that was already open
-  // when another tab learned the device still benefits without a reload.
-  let storedDeviceProfile: TabWheelDeviceProfile | null = null;
   let momentumGuardSession: MomentumGuardSession | null = null;
 
-  void loadTabWheelGestureState()
-    .then((loadedState) => {
-      settings = loadedState.settings;
-      storedDeviceProfile = loadedState.deviceProfile;
+  void loadTabWheelSettings()
+    .then((loadedSettings) => {
+      settings = loadedSettings;
     })
     .finally(() => {
       areSettingsLoaded = true;
@@ -439,70 +406,15 @@ export function initApp(): void {
       : 0;
   }
 
-  // Classification is deliberately lazy: unmodified scrolling only feeds the
-  // sample window, and the heuristics run on gesture wheel events only — twice
-  // per event when tuning is on (once here, once inside
-  // resolveDetentedNotchMagnitudePx's own classify guard), and not at all when
-  // it is off, because this returns before touching the window.
-  //
-  // The effective profile behind every device-aware decision below: this
-  // document's own reading when it has one, otherwise whatever another tab
-  // already learned. Null is the neutral posture (tuning off, or nobody has
-  // classified this device yet) and is an exact identity for trigger distance
-  // and cooldown, while still handing the momentum guard its lenient tuning.
-  function resolveActiveDeviceProfile(nowMs: number): TabWheelDeviceProfile | null {
-    if (!settings.deviceAwareTuning) return null;
-    return resolveEffectiveDeviceProfile(wheelSampleWindow, storedDeviceProfile, nowMs);
-  }
-
-  function resolveActiveDeviceAdjustment(
-    deviceProfile: TabWheelDeviceProfile | null,
-  ): TabWheelDeviceTuningAdjustment {
-    return resolveDeviceTuningAdjustment(deviceProfile?.kind ?? "unknown");
-  }
-
-  // Share what this document learned, so the next tab the user lands on does
-  // not start from scratch. Fire-and-forget, and rare by construction: only a
-  // confident reading that actually disagrees with the shared one writes at
-  // all (see shouldPersistDeviceProfile). The in-memory copy is updated first
-  // so a burst of notches cannot queue a second write behind the round trip.
-  //
-  // The tuning gate is the documented opt-out, not an optimization: PRIVACY.md
-  // promises these measurements drive device detection only while "Auto-tune
-  // for your device" is on, and writing the profile with it off would reverse
-  // that silently. It is stated here rather than left to depend on the caller
-  // happening to pass null.
-  //
-  // Takes the profile the handler already resolved instead of classifying
-  // again — that used to double the heuristic runs per event for a write that
-  // almost never happens. Passing the *effective* profile is safe precisely
-  // because one that came from storage is by construction equal to what is
-  // stored, so it can never satisfy shouldPersistDeviceProfile: only a local
-  // reading can disagree, and only a local reading can write.
-  function persistDeviceProfileIfChanged(deviceProfile: TabWheelDeviceProfile | null): void {
-    if (!settings.deviceAwareTuning) return;
-    if (!deviceProfile || !shouldPersistDeviceProfile(deviceProfile, storedDeviceProfile)) return;
-    storedDeviceProfile = deviceProfile;
-    void saveTabWheelDeviceProfile(deviceProfile).catch(() => {});
-  }
-
   function runWheelCycle(
     direction: "prev" | "next",
     deltaDirection: 1 | -1,
     now: number,
-    extraCooldownMs: number,
   ): boolean {
-    // Detented wheels carry extraCooldownMs of -60 (see
-    // resolveDeviceTuningAdjustment) — the only adjustment steep enough to
-    // push settings.wheelCooldownMs + extraCooldownMs under the settings
-    // floor; trackpad's +40 only ever raises the sum further above it, so
-    // it can never breach a floor from below. Clamping to the same
-    // MIN_WHEEL_COOLDOWN_MS the settings UI already enforces means a
-    // detented wheel's cooldown can shed all the way down to it, but never
-    // below — fast notching stops getting eaten by cooldown without
-    // opening a window the momentum guard wasn't built to cover.
-    const effectiveCooldownMs = Math.max(MIN_WHEEL_COOLDOWN_MS, settings.wheelCooldownMs + extraCooldownMs);
-    if (now - lastWheelCycleAt < effectiveCooldownMs) return false;
+    // The configured cooldown, plain: nothing adjusts it per device, and every
+    // settings object reaching here has been through normalizeTabWheelSettings,
+    // which already clamps it to [MIN_WHEEL_COOLDOWN_MS, MAX_WHEEL_COOLDOWN_MS].
+    if (now - lastWheelCycleAt < settings.wheelCooldownMs) return false;
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
     // The guard tracks raw delta sign, not the mapped prev/next direction, so
@@ -523,19 +435,6 @@ export function initApp(): void {
       settings.horizontalWheel,
     );
     const now = Date.now();
-    const wheelMagnitudePx = Math.abs(wheelDelta);
-    // Sampled before the modifier check on purpose: plain scrolling and
-    // momentum tails are the evidence the classifier needs. Timing, deltaMode,
-    // and magnitude only — no direction, no target, no page content. A
-    // zero-magnitude event carries no cadence evidence, so it is not recorded
-    // as an observation.
-    if (wheelMagnitudePx > 0) {
-      addWheelSample(wheelSampleWindow, {
-        timeStampMs: now,
-        deltaMode: event.deltaMode,
-        deltaMagnitudePx: wheelMagnitudePx,
-      });
-    }
     if (!isKeyboardWheelEvent(event)) return;
     if (wheelDelta === 0) return;
     suppressPageEvent(event);
@@ -564,9 +463,6 @@ export function initApp(): void {
       lastWorkerPrewarmAt = now;
       void notifyTabWheelContentReady().catch(() => {});
     }
-    const deviceProfile = resolveActiveDeviceProfile(now);
-    const deviceAdjustment = resolveActiveDeviceAdjustment(deviceProfile);
-    persistDeviceProfileIfChanged(deviceProfile);
     // Cross-tab handoff: the gesture that switched tabs committed in the
     // previous document, whose guard session died with its visibility. The
     // rest of that tail is delivered here, to a tab with no session and no
@@ -574,23 +470,16 @@ export function initApp(): void {
     // session from the first delta to arrive so the tail is judged in the tab
     // it landed in. The seeding delta is evidence, not input: it is dropped.
     //
-    // A fresh tab has an empty sample window, so it has no cadence history of
-    // its own. It may well have a shared device profile — but this branch
-    // deliberately does not consult it. The arrival guard is the last defense
-    // against a handed-off tail switching again in the tab it lands in, and
-    // being wrong in that direction costs an unintended switch, while being
-    // conservative costs at most the single notch that lands inside a 32ms
-    // window. So it judges on deltaMode and arrival timing only. Pixel mode is
-    // the only mode that seeds: line mode is detented by definition, and page
-    // mode is a synthetic multi-line jump — neither can be a momentum tail.
-    //
-    // Future option, deliberately not taken here: a shared discreteWheel
-    // profile is real evidence that this stream cannot be a momentum tail, so
-    // it could skip the seed entirely on Chrome — which reports clicky wheels
-    // in pixel mode, and so cannot be excluded by deltaMode the way Firefox's
-    // line mode already excludes them. That would remove the one-notch arrival
-    // tax those users pay per switch. It needs its own evidence and its own
-    // tests; it is not part of this change.
+    // The arrival guard is the last defense against a handed-off tail
+    // switching again in the tab it lands in, and being wrong in that
+    // direction costs an unintended switch, while being conservative costs at
+    // most the single notch that lands inside a 32ms window. So it judges on
+    // deltaMode and arrival timing only. Pixel mode is the only mode that
+    // seeds: line mode is detented by definition, and page mode is a synthetic
+    // multi-line jump — neither can be a momentum tail. Chrome reports clicky
+    // wheels in pixel mode, so those users can still pay one swallowed notch
+    // per switch when a notch happens to land inside the window; that is the
+    // disclosed residual of judging on timing alone.
     if (
       !momentumGuardSession
       && event.deltaMode === 0
@@ -609,7 +498,7 @@ export function initApp(): void {
         momentumGuardSession,
         wheelDelta,
         now,
-        deviceAdjustment.momentumGuardTuning,
+        DEFAULT_MOMENTUM_GUARD_TUNING,
       )
     ) {
       return;
@@ -626,59 +515,14 @@ export function initApp(): void {
       computeNextBurstCount(now),
       settings.wheelAcceleration,
     );
-    // Effective distance only: stored sensitivity, presets, and the settings
-    // UI never see this. A 1.0 multiplier is an exact no-op.
-    const triggerDistance = acceleratedDistance * deviceAdjustment.triggerDistanceMultiplier;
-    // A detented wheel's notch should map to one switch, not whatever
-    // multiple of the balanced 80px default its notch happens to be (2 on
-    // Firefox's 48px and Linux Chrome's ~53px). Only engaged when tuning is
-    // on and some document has been confident enough to call the stream out
-    // as discreteWheel with a real notch — this document's own window if it
-    // has one, otherwise the profile another tab shared, which is what makes
-    // the second and later tabs of a traversal behave like the first
-    // (resolveDetentedNotchMagnitudePx's own ≥30px cluster floor applies
-    // either way, since that is where the number came from) — this repeats
-    // that same floor at 40px
-    // (NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX) as a second, stricter gate purely
-    // for this feature, so a 30-40px cluster that ever misclassifies as
-    // detented can't produce a hair-trigger. min() with the accelerated,
-    // device-multiplied trigger means this can only tighten the gate, never
-    // loosen it past whatever acceleration/presets/multiplier already chose.
-    //
-    // wheelSensitivity >= 1 additionally gates the whole adjustment: device
-    // tuning adjusts effective values, but it must never narrow the trigger
-    // past what the user explicitly asked for. A user who chose Precise
-    // (0.8) or manually lowered the sensitivity slider asked for more
-    // deliberate switching — the trackpad multiplier above only ever widens
-    // the trigger, never narrows it, and this is the mirror rule on the
-    // narrowing side. The cooldown's -60 (see resolveDeviceTuningAdjustment)
-    // stays ungated by design: narrowing the trigger risks accidental
-    // switches the user asked to avoid, while shortening the cooldown only
-    // lets intentional fast notching register instead of being silently
-    // eaten, so it carries no equivalent risk. Balanced (1), Fast (1.35),
-    // and the default all clear the gate and get one-notch switching;
-    // Precise keeps its configured feel untouched (e.g. sensitivity 0.8
-    // with a 53px detented notch: triggerDistance stays
-    // resolveWheelTriggerDistance(80, 0.8) = 100, never adapted down toward
-    // the notch — see tabwheel-core.test.mjs and runtime-wiring.test.mjs
-    // for the pinned worked example).
-    const notchMagnitudePx = deviceProfile?.notchMagnitudePx ?? null;
-    const effectiveTriggerDistance =
-      settings.wheelSensitivity >= 1
-      && notchMagnitudePx !== null
-      && notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX
-        ? Math.min(
-            triggerDistance,
-            Math.max(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx * NOTCH_ADAPTIVE_TRIGGER_RATIO),
-          )
-        : triggerDistance;
-    if (Math.abs(wheelAccumulator) < effectiveTriggerDistance) return;
+    // The whole trigger: the configured sensitivity, accelerated by the
+    // current burst. Nothing adjusts it per device.
+    if (Math.abs(wheelAccumulator) < acceleratedDistance) return;
     const direction = resolveWheelDirection(wheelAccumulator, settings.invertScroll);
     const cycleRan = runWheelCycle(
       direction,
       wheelAccumulator > 0 ? 1 : -1,
       now,
-      deviceAdjustment.extraCooldownMs,
     );
     if (cycleRan || settings.overshootGuard) {
       wheelAccumulator = 0;
@@ -690,13 +534,11 @@ export function initApp(): void {
     // above is always true and this line never runs. Kept as
     // defense-in-depth in case that ever changes (a future settings
     // relaxation, or an unnormalized settings object reaching here) — if it
-    // does run, capping to effectiveTriggerDistance rather than the
-    // pre-adaptive triggerDistance keeps a detented wheel's held-over
-    // accumulator sized to its own notch distance, not the wider balanced
-    // default.
+    // does run, an overshoot may carry at most one trigger's worth of
+    // distance into the next switch.
     wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
       Math.abs(wheelAccumulator),
-      effectiveTriggerDistance,
+      acceleratedDistance,
     );
   }
 
@@ -713,18 +555,10 @@ export function initApp(): void {
     areaName: string,
   ): void {
     if (areaName !== "local") return;
-    // Adopt a profile another tab just learned, without disturbing anything
-    // else. This branch must stay above the settings guard (a profile-only
-    // change never reaches past it) and must never fall into the reset path
-    // below: profile writes land MID-GESTURE — a sibling tab can classify the
-    // device while this tab is part-way through accumulating toward a switch —
-    // and zeroing the accumulator here would silently eat the switch the user
-    // is actively scrolling toward. Filtering by key is what keeps the reset
-    // scoped to a real settings change.
-    const deviceProfileChange = changes[TABWHEEL_STORAGE_KEYS.deviceProfile];
-    if (deviceProfileChange) {
-      storedDeviceProfile = normalizeTabWheelDeviceProfile(deviceProfileChange.newValue);
-    }
+    // Filtering by key keeps the reset scoped to a real settings change: every
+    // other key this extension writes (scroll memory, MRU, onboarding) lands
+    // mid-gesture, and zeroing the accumulator on one would silently eat the
+    // switch the user is actively scrolling toward.
     const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
     if (!settingsChange) return;
     settings = normalizeTabWheelSettings(settingsChange.newValue);

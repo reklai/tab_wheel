@@ -29,6 +29,25 @@ export interface MomentumGuardTuning {
   steadyEventCount: number;
 }
 
+// One tuning for every device. The guard used to receive a stricter variant
+// when a classifier decided the stream came from a trackpad; that machinery is
+// gone, so these values are what every gesture is judged against.
+//
+// maxTailGapMs 24 is the load-bearing number: hardware momentum is a dense
+// 8-16ms stream, so a gap wider than this cannot be a tail. A detented wheel
+// cannot notch faster than its own ~40ms cadence, which is what keeps clicky
+// wheels outside the guard's scope entirely — at zero cost, without needing to
+// recognize them. steadyEventCount 4 with steadyDecayFraction 0.08 is the
+// design's thinnest margin (a 3%/event tail shows 1 - 0.97^3 = 0.0873 net decay
+// across the window, so it stays blocked); test/momentum-guard-core.test.mjs
+// pins that trade explicitly.
+export const DEFAULT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
+  maxTailGapMs: 24,
+  rampRatio: 1.3,
+  steadyDecayFraction: 0.08,
+  steadyEventCount: 4,
+};
+
 export interface MomentumGuardSession {
   direction: 1 | -1;
   active: boolean;
