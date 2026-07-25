@@ -152,7 +152,6 @@ export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDe
 // on purpose: a detented wheel cannot physically produce a momentum tail, so
 // its cadence alone takes it out of the guard's scope at zero cost.
 const STRICT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
-  idleGapMs: 140,
   maxTailGapMs: 32,
   rampRatio: 1.7,
   steadyDecayFraction: 0.08,
@@ -160,7 +159,6 @@ const STRICT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
 };
 
 const LENIENT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
-  idleGapMs: 100,
   maxTailGapMs: 24,
   rampRatio: 1.3,
   steadyDecayFraction: 0.08,

@@ -53,6 +53,9 @@ declare global {
 const SCROLL_SAVE_DEBOUNCE_MS = 700;
 const SCROLL_RESTORE_SUPPRESS_SAVE_MS = 450;
 const WHEEL_TRIGGER_THRESHOLD_PX = 80;
+// How long after a tab becomes visible a wheel event can still be the tail of
+// the gesture that switched to it, rather than new input from the user.
+const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 300;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
 const STATUS_TIMEOUT_MS = 1500;
 const STATUS_ID = "tw-status-indicator";
@@ -214,10 +217,12 @@ export function initApp(): void {
   let suppressScrollSaveUntil = 0;
   let scrollRestoreToken = 0;
   let wheelAccumulator = 0;
-  // Peak delta magnitude of the events feeding the current accumulation. This
-  // is the envelope the momentum guard inherits on commit: a fling's tail
-  // starts at the gesture's peak, so the peak is what a tail has to decay from.
-  let gestureMagnitudePeakPx = 0;
+  // Magnitude of the most recent delta accumulated into the current gesture.
+  // This is the envelope the momentum guard inherits on commit: a tail starts
+  // from the magnitude the gesture ended on, which is also why it can never
+  // trip the guard's ramp escape.
+  let lastGestureMagnitudePx = 0;
+  let lastVisibleAtMs = 0;
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
   let middleClickSession: TabWheelMiddleClickSession | null = null;
@@ -416,9 +421,9 @@ export function initApp(): void {
     lastWheelCycleAt = now;
     // The guard tracks raw delta sign, not the mapped prev/next direction, so
     // an inverted-scroll setup still recognizes its own momentum tail. It also
-    // inherits this gesture's peak magnitude, so the first delta after the
-    // commit is judged against a real envelope instead of being swallowed.
-    momentumGuardSession = createMomentumGuardSession(now, deltaDirection, gestureMagnitudePeakPx);
+    // inherits the magnitude this gesture ended on, so the first delta after
+    // the commit is judged against a real envelope instead of being swallowed.
+    momentumGuardSession = createMomentumGuardSession(now, deltaDirection, lastGestureMagnitudePx);
     void cycleTabWheel(direction, "gesture").catch(() => {});
     return true;
   }
@@ -444,6 +449,23 @@ export function initApp(): void {
     if (wheelDelta === 0) return;
     suppressPageEvent(event);
     const deviceAdjustment = resolveActiveDeviceAdjustment();
+    // Cross-tab handoff: the gesture that switched tabs committed in the
+    // previous document, whose guard session died with its visibility. The
+    // rest of that tail is delivered here, to a tab with no session and no
+    // cooldown, where it would re-accumulate into an unintended switch. Seed a
+    // session from the first delta to arrive so the tail is judged in the tab
+    // it landed in. The seeding delta is evidence, not input: it is dropped.
+    if (
+      !momentumGuardSession
+      && now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS
+    ) {
+      momentumGuardSession = createMomentumGuardSession(
+        now,
+        wheelDelta > 0 ? 1 : -1,
+        Math.abs(wheelDelta),
+      );
+      return;
+    }
     if (
       momentumGuardSession
       && shouldBlockWheelDelta(
@@ -456,8 +478,8 @@ export function initApp(): void {
       return;
     }
     wheelAccumulator += wheelDelta;
-    // Blocked deltas return above, so a tail can never raise this peak.
-    gestureMagnitudePeakPx = Math.max(gestureMagnitudePeakPx, Math.abs(wheelDelta));
+    // Blocked deltas return above, so a tail can never seed the next session.
+    lastGestureMagnitudePx = Math.abs(wheelDelta);
     const baseDistance = resolveWheelTriggerDistance(
       WHEEL_TRIGGER_THRESHOLD_PX,
       settings.wheelSensitivity,
@@ -480,7 +502,7 @@ export function initApp(): void {
     );
     if (cycleRan || settings.overshootGuard) {
       wheelAccumulator = 0;
-      gestureMagnitudePeakPx = 0;
+      lastGestureMagnitudePx = 0;
       return;
     }
     wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
@@ -491,7 +513,7 @@ export function initApp(): void {
 
   function resetWheelGestureState(): void {
     wheelAccumulator = 0;
-    gestureMagnitudePeakPx = 0;
+    lastGestureMagnitudePx = 0;
     lastWheelCycleAt = 0;
     wheelBurstCount = 0;
     momentumGuardSession = null;
@@ -533,7 +555,13 @@ export function initApp(): void {
   }
 
   function visibilityHandler(): void {
-    if (document.visibilityState !== "hidden") return;
+    if (document.visibilityState !== "hidden") {
+      // A tab activated by a wheel switch starts receiving the tail of the
+      // gesture that activated it. Remember when it arrived so the wheel path
+      // can tell that tail apart from a fresh gesture.
+      lastVisibleAtMs = Date.now();
+      return;
+    }
     cancelScrollRestore();
     resetWheelGestureState();
     resetMiddleClickSession();

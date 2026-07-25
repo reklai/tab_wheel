@@ -22,7 +22,6 @@ function loadCore() {
 }
 
 const TUNING = {
-  idleGapMs: 120,
   maxTailGapMs: 32,
   rampRatio: 1.6,
   steadyDecayFraction: 0.08,
@@ -134,12 +133,31 @@ test("an opposite-sign delta re-arms immediately and stays re-armed", async () =
   assert.equal(shouldBlockWheelDelta(session, 60, 1030, TUNING), false);
 });
 
-test("a gap longer than idleGapMs re-arms the guard", async () => {
+test("a pause longer than the tail cadence re-arms the guard", async () => {
   const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
 
   const session = createMomentumGuardSession(1000, 1, 60);
   assert.equal(shouldBlockWheelDelta(session, 60, 1010, TUNING), true);
-  assert.equal(shouldBlockWheelDelta(session, 55, 1010 + TUNING.idleGapMs + 10, TUNING), false);
+  assert.equal(shouldBlockWheelDelta(session, 55, 1010 + TUNING.maxTailGapMs + 1, TUNING), false);
+});
+
+test("a stream that settles at a lower level is released on its settled level", async () => {
+  // Regression: judging decay against a frozen seed locked out any stream that
+  // settled even slightly below the magnitude the gesture ended on. With the
+  // seed at 100 and steady 90px input, every event showed 10% "decay" from the
+  // seed and was blocked forever despite zero decay from the first event on.
+  const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
+  const { strict, lenient } = await loadShippedTunings();
+
+  for (const [label, tuning] of [["strict", strict], ["lenient", lenient]]) {
+    const session = createMomentumGuardSession(1000, 1, 100);
+    const results = Array.from({ length: 10 }, () => 90)
+      .map((magnitude, index) => shouldBlockWheelDelta(session, magnitude, 1008 + index * 8, tuning));
+
+    const firstPass = results.indexOf(false);
+    assert.ok(firstPass >= 0 && firstPass <= 5, `${label} tuning never released a steady 90px stream`);
+    assert.ok(results.slice(firstPass).every((blocked) => blocked === false), `${label} tuning re-blocked`);
+  }
 });
 
 test("a delta ramping well above the recent envelope re-arms as a fresh flick", async () => {
@@ -158,23 +176,25 @@ test("a delta ramping well above the recent envelope re-arms as a fresh flick", 
 async function runWheelPipeline(options) {
   const guardCore = await loadCore();
   const wheelCore = await loadModule("src/lib/core/tabWheel/tabWheelCore.ts");
-  const { useGuard, sensitivity, cooldownMs, acceleration, gapMs, deltaPx, durationMs, tuning } = options;
+  const { useGuard, sensitivity, cooldownMs, acceleration, gapMs, magnitudeAt, durationMs, tuning } = options;
 
   let accumulator = 0;
-  let gesturePeakPx = 0;
+  let lastMagnitudePx = 0;
   let lastCycleAt = 0;
   let burstCount = 0;
   let session = null;
   let blockedDeltas = 0;
   const commitTimes = [];
 
-  for (let now = 1000; now <= 1000 + durationMs; now += gapMs) {
+  let index = 0;
+  for (let now = 1000; now <= 1000 + durationMs; now += gapMs, index += 1) {
+    const deltaPx = magnitudeAt(index);
     if (useGuard && session && guardCore.shouldBlockWheelDelta(session, deltaPx, now, tuning)) {
       blockedDeltas += 1;
       continue;
     }
     accumulator += deltaPx;
-    gesturePeakPx = Math.max(gesturePeakPx, Math.abs(deltaPx));
+    lastMagnitudePx = Math.abs(deltaPx);
     const nextBurstCount = now - lastCycleAt <= 700 ? Math.min(burstCount + 1, 6) : 0;
     const triggerDistance = wheelCore.resolveAcceleratedWheelTriggerDistance(
       wheelCore.resolveWheelTriggerDistance(80, sensitivity),
@@ -185,13 +205,55 @@ async function runWheelPipeline(options) {
     if (now - lastCycleAt >= cooldownMs) {
       burstCount = nextBurstCount;
       lastCycleAt = now;
-      session = guardCore.createMomentumGuardSession(now, 1, gesturePeakPx);
+      session = guardCore.createMomentumGuardSession(now, 1, lastMagnitudePx);
       commitTimes.push(now - 1000);
     }
     accumulator = 0;
-    gesturePeakPx = 0;
+    lastMagnitudePx = 0;
   }
   return { commitTimes, blockedDeltas };
+}
+
+// The switch itself destroys the committing tab's state: the background
+// activates the target tab, the old document goes hidden, and
+// resetWheelGestureState() drops its guard session. The rest of the physical
+// tail is then delivered to the NEWLY ACTIVATED tab, whose content script has
+// a fresh accumulator, no session, and no cooldown history. Two independent
+// state instances, same pipeline order as appInit.ts.
+async function runTabHandoffTail(options) {
+  const guardCore = await loadCore();
+  const wheelCore = await loadModule("src/lib/core/tabWheel/tabWheelCore.ts");
+  const { useArrivalGuard, tuning, sensitivity, cooldownMs, gapMs, tailMagnitudes, arrivalWindowMs } = options;
+
+  // Tab B, freshly activated at `becameVisibleAt`. Nothing carried over.
+  const becameVisibleAt = 1e6;
+  let accumulator = 0;
+  let lastCycleAt = 0;
+  let session = null;
+  const commitTimes = [];
+
+  tailMagnitudes.forEach((deltaPx, index) => {
+    const now = becameVisibleAt + (index + 1) * gapMs;
+    if (!session && useArrivalGuard && now - becameVisibleAt <= arrivalWindowMs) {
+      session = guardCore.createMomentumGuardSession(now, Math.sign(deltaPx), Math.abs(deltaPx));
+      return;
+    }
+    if (session && guardCore.shouldBlockWheelDelta(session, deltaPx, now, tuning)) return;
+    accumulator += deltaPx;
+    const triggerDistance = wheelCore.resolveAcceleratedWheelTriggerDistance(
+      wheelCore.resolveWheelTriggerDistance(80, sensitivity),
+      0,
+      false,
+    );
+    if (Math.abs(accumulator) < triggerDistance) return;
+    // A fresh tab has never cycled, so the cooldown offers no protection here.
+    if (now - lastCycleAt >= cooldownMs) {
+      lastCycleAt = now;
+      commitTimes.push(now - becameVisibleAt);
+    }
+    accumulator = 0;
+  });
+  return commitTimes;
 }
 
 test("the guard costs no switches and no latency in the free-spin fast path", async () => {
@@ -200,17 +262,28 @@ test("the guard costs no switches and no latency in the free-spin fast path", as
   // freeSpinWheel/unknown so the lenient universal tuning applies.
   const { lenient } = await loadShippedTunings();
   const fastPreset = { sensitivity: 1.35, cooldownMs: 90, acceleration: true, durationMs: 1000, tuning: lenient };
-  for (const [gapMs, deltaPx] of [[8, 100], [10, 100], [16, 120], [16, 60]]) {
-    const unguarded = await runWheelPipeline({ ...fastPreset, gapMs, deltaPx, useGuard: false });
-    const guarded = await runWheelPipeline({ ...fastPreset, gapMs, deltaPx, useGuard: true });
+  const cases = [
+    // Constant magnitudes, then the shape a real wheel actually produces: the
+    // gesture peaks into the commit and the spin settles into a lower band.
+    { label: "8ms/100px", gapMs: 8, magnitudeAt: () => 100 },
+    { label: "10ms/100px", gapMs: 10, magnitudeAt: () => 100 },
+    { label: "16ms/120px", gapMs: 16, magnitudeAt: () => 120 },
+    { label: "16ms/60px", gapMs: 16, magnitudeAt: () => 60 },
+    { label: "10ms/100px peak settling to 85-90", gapMs: 10, magnitudeAt: (index) => (index < 2 ? 100 : [88, 85, 90, 87][index % 4]) },
+    { label: "8ms/120px peak settling to 100-110", gapMs: 8, magnitudeAt: (index) => (index < 2 ? 120 : [104, 110, 100, 107][index % 4]) },
+  ];
+  for (const { label, gapMs, magnitudeAt } of cases) {
+    const unguarded = await runWheelPipeline({ ...fastPreset, gapMs, magnitudeAt, useGuard: false });
+    const guarded = await runWheelPipeline({ ...fastPreset, gapMs, magnitudeAt, useGuard: true });
 
     // Identical commit timestamps, not merely identical counts: every swallowed
     // delta lands inside the cooldown window, where the overshoot guard would
     // have zeroed the accumulator anyway.
-    assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, `gap ${gapMs}ms delta ${deltaPx}px`);
+    assert.ok(unguarded.commitTimes.length > 0, `${label} produced no commits to compare`);
+    assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, label);
     assert.ok(
       guarded.blockedDeltas <= lenient.steadyEventCount * guarded.commitTimes.length,
-      `gap ${gapMs}ms should settle within the steady event budget per commit`,
+      `${label} should settle within the steady event budget per commit`,
     );
   }
 });
@@ -229,11 +302,67 @@ test("detented wheels pay nothing for the guard at any notch spacing", async () 
     { sensitivity: 0.8, cooldownMs: 220, deltaPx: 48, gapMs: 120 },
   ];
   for (const testCase of cases) {
-    const base = { ...testCase, acceleration: false, durationMs: 1000, tuning: lenient };
+    const base = {
+      ...testCase,
+      magnitudeAt: () => testCase.deltaPx,
+      acceleration: false,
+      durationMs: 1000,
+      tuning: lenient,
+    };
     const unguarded = await runWheelPipeline({ ...base, useGuard: false });
     const guarded = await runWheelPipeline({ ...base, useGuard: true });
     const label = `${testCase.deltaPx}px @ ${testCase.gapMs}ms`;
+    assert.ok(unguarded.commitTimes.length > 0, `${label} produced no commits to compare`);
     assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, label);
     assert.equal(guarded.blockedDeltas, 0, `${label} should never reach the guard`);
   }
+});
+
+test("the arrival guard stops a handed-off tail from switching again in the new tab", async () => {
+  // The scenario the whole feature exists for: the flick commits in tab A, A
+  // goes hidden and loses its session, and the rest of the tail is delivered
+  // to tab B — fresh accumulator, no session, no cooldown.
+  const { lenient } = await loadShippedTunings();
+  const decayingTailFrom = (peakPx, rate, count) =>
+    Array.from({ length: count }, (_, index) => peakPx * (1 - rate) ** index);
+
+  for (const [peakPx, rate] of [[60, 0.08], [60, 0.15], [110, 0.1]]) {
+    const options = {
+      tuning: lenient,
+      sensitivity: 1,
+      cooldownMs: 160,
+      gapMs: 8,
+      arrivalWindowMs: 300,
+      tailMagnitudes: decayingTailFrom(peakPx, rate, 40),
+    };
+    const label = `${peakPx}px tail decaying ${rate * 100}%/event`;
+
+    const unguarded = await runTabHandoffTail({ ...options, useArrivalGuard: false });
+    const guarded = await runTabHandoffTail({ ...options, useArrivalGuard: true });
+
+    assert.ok(unguarded.length >= 1, `${label} should re-trigger without the arrival guard`);
+    assert.deepEqual(guarded, [], `${label} should not re-trigger with the arrival guard`);
+  }
+});
+
+test("the arrival guard yields to deliberate input in the new tab", async () => {
+  // Same arrival window, but the user is actually spinning the wheel: the
+  // first delta seeds the session and the steady window releases it, so a
+  // deliberate gesture still lands instead of being swallowed indefinitely.
+  const { lenient } = await loadShippedTunings();
+  const commits = await runTabHandoffTail({
+    useArrivalGuard: true,
+    tuning: lenient,
+    sensitivity: 1,
+    cooldownMs: 160,
+    gapMs: 12,
+    arrivalWindowMs: 300,
+    tailMagnitudes: Array.from({ length: 40 }, () => 100),
+  });
+
+  assert.ok(commits.length >= 1, "steady deliberate input must still switch tabs");
+  assert.ok(
+    commits[0] <= 12 * (lenient.steadyEventCount + 2),
+    `first deliberate switch took ${commits[0]}ms, longer than the steady budget`,
+  );
 });

@@ -52,16 +52,19 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   const app = readText("src/lib/appInit/appInit.ts");
 
   // Sampling has to precede the modifier check: unmodified scrolling and
-  // momentum tails are the evidence the classifier needs. The guard is
-  // consulted before accumulation so a blocked delta is dropped, not banked.
-  assertOrdered(app, [
+  // momentum tails are the evidence the classifier needs. Suppression comes
+  // before both guard steps so a swallowed tail cannot scroll the page either,
+  // and both run before accumulation so their deltas are dropped, not banked.
+  const wheelHandlerSource = app.slice(app.indexOf("function wheelHandler"));
+  assertOrdered(wheelHandlerSource, [
     "if (!event.isTrusted) return;",
     "addWheelSample(",
     "if (!isKeyboardWheelEvent(event)) return;",
+    "suppressPageEvent(event);",
+    "createMomentumGuardSession(",
     "shouldBlockWheelDelta(",
     "wheelAccumulator += wheelDelta;",
   ]);
-  assert.match(app, /suppressPageEvent\(event\);[\s\S]{0,200}shouldBlockWheelDelta\(/);
   assert.match(app, /momentumGuardSession\s*\n\s*&& shouldBlockWheelDelta\(/);
 
   // Samples stay content-free and local: timing, deltaMode, magnitude only.
@@ -79,18 +82,34 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // Effective values only — stored settings and presets are untouched.
   assert.match(app, /const triggerDistance = acceleratedDistance \* deviceAdjustment\.triggerDistanceMultiplier;/);
   assert.match(app, /settings\.wheelCooldownMs \+ extraCooldownMs/);
-  // The guard session inherits the committing gesture's peak magnitude, and a
-  // blocked delta can never raise that peak because it returns before this.
-  assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection, gestureMagnitudePeakPx\);/);
+  // The guard session inherits the magnitude the committing gesture ended on,
+  // and a blocked delta can never seed it because it returns before this.
+  assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection, lastGestureMagnitudePx\);/);
   assertOrdered(app, [
     "wheelAccumulator += wheelDelta;",
-    "gestureMagnitudePeakPx = Math.max(gestureMagnitudePeakPx, Math.abs(wheelDelta));",
+    "lastGestureMagnitudePx = Math.abs(wheelDelta);",
   ]);
 
+  // Arrival guard: a session dies with the committing tab's visibility, so the
+  // tail lands in a tab with no session and no cooldown. The first delta after
+  // a visibility gain seeds a session there instead of being accumulated.
+  assert.match(app, /const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 300;/);
+  assert.match(app, /lastVisibleAtMs = Date\.now\(\);/);
+  assert.match(
+    app,
+    /!momentumGuardSession\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
+  );
+  assert.match(app, /wheelDelta > 0 \? 1 : -1,\s*\n\s*Math\.abs\(wheelDelta\),/);
+
   // Every existing reset path drops the guard session with the gesture state.
-  assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*gestureMagnitudePeakPx = 0;[^}]*momentumGuardSession = null;/);
+  assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*lastGestureMagnitudePx = 0;[^}]*momentumGuardSession = null;/);
   assert.match(app, /settings = normalizeTabWheelSettings\(settingsChange\.newValue\);[\s\S]{0,400}resetWheelGestureState\(\);/);
-  assert.match(app, /document\.visibilityState !== "hidden"\) return;[\s\S]{0,200}resetWheelGestureState\(\);/);
+  // Visibility drives both halves: gaining it arms the arrival window, losing
+  // it drops the gesture state and the now-useless guard session.
+  assert.match(
+    app,
+    /function visibilityHandler\(\): void \{[\s\S]{0,400}lastVisibleAtMs = Date\.now\(\);[\s\S]{0,300}resetWheelGestureState\(\);/,
+  );
 });
 
 test("defaults support a predictable first run", () => {
