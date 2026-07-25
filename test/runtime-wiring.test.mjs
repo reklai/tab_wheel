@@ -180,6 +180,111 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   );
 });
 
+test("the gesture path pre-warms the MV3 worker on a rate limit, off the accumulation path", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+  const api = readText("src/lib/adapters/runtime/tabWheelApi.ts");
+  const contract = readText("src/lib/common/contracts/runtimeMessages.ts");
+  const handler = readText("src/lib/backgroundRuntime/handlers/tabWheelMessageHandler.ts");
+
+  // Deliberate contract decision: the pre-warm reuses an existing routed type
+  // instead of adding a wake message. TABWHEEL_CONTENT_READY's handler is the
+  // only fully synchronous one in the router (no storage read, no tabs query,
+  // no injection), and what it asserts is literally true when a live content
+  // script sends it mid-gesture. Adding a wake type would widen the runtime
+  // contract for nothing, so this pin is where that choice gets revisited.
+  assert.doesNotMatch(`${contract}\n${api}`, /TABWHEEL_WAKE|TABWHEEL_PREWARM/);
+  assert.match(
+    handler,
+    /case "TABWHEEL_CONTENT_READY":\s*\n\s*return domain\.markContentScriptReady\(sender\.tab\);/,
+  );
+  assert.match(
+    api,
+    /export function notifyTabWheelContentReady\(\)[\s\S]{0,220}type: "TABWHEEL_CONTENT_READY"/,
+  );
+
+  // One ping per 15s covers MV3's ~30s idle shutdown without turning every
+  // gesture event into a message.
+  assert.match(app, /const WORKER_PREWARM_INTERVAL_MS = 15000;/);
+
+  const wheelHandlerSource = app.slice(
+    app.indexOf("function wheelHandler"),
+    app.indexOf("function resetWheelGestureState"),
+  );
+  assert.ok(wheelHandlerSource.length > 0, "wheelHandler should be found in source");
+
+  // Rate limited, top-frame only (only the top frame registers the runtime
+  // listener, so only the top frame can answer the ping that "ready"
+  // promises), and fire-and-forget: a slow or failed wake must never delay,
+  // block, or alter the gesture it is warming.
+  assert.match(
+    wheelHandlerSource,
+    /if \(isTopFrameContext && now - lastWorkerPrewarmAt >= WORKER_PREWARM_INTERVAL_MS\) \{\s*\n\s*lastWorkerPrewarmAt = now;\s*\n\s*void notifyTabWheelContentReady\(\)\.catch\(\(\) => \{\}\);\s*\n\s*\}/,
+  );
+  assert.doesNotMatch(wheelHandlerSource, /await notifyTabWheelContentReady/);
+
+  // Only after the modifier chord is recognized (plain scrolling never wakes
+  // the worker), and strictly before the accumulation it exists to overlap.
+  assertOrdered(wheelHandlerSource, [
+    "if (!isKeyboardWheelEvent(event)) return;",
+    "void notifyTabWheelContentReady()",
+    "wheelAccumulator += wheelDelta;",
+  ]);
+});
+
+test("a completed cycle pre-probes its neighbors off the hot path without waking discarded tabs", () => {
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+  const cycleSource = domain.slice(
+    domain.indexOf("async function cycleUnlocked("),
+    domain.indexOf("async function cycle("),
+  );
+  assert.ok(cycleSource.length > 0, "cycleUnlocked should be found in source");
+
+  // Detached with `void` after the switch already landed: the serialized
+  // window queue chains the next gesture on the promise cycleUnlocked returns,
+  // so probes must never be part of it. Awaiting here would put up to four
+  // 320ms probes in front of both this cycle's response and the next switch.
+  assertOrdered(cycleSource, [
+    "const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });",
+    "void warmNeighborReadiness(targetTab, candidateTabs, settings).catch(() => {});",
+    "return { ok: true, tabId: targetTab.id };",
+  ]);
+  assert.doesNotMatch(cycleSource, /await warmNeighborReadiness/);
+
+  const warmSource = domain.slice(
+    domain.indexOf("function collectNeighborCandidateTabs("),
+    domain.indexOf("async function activateTab("),
+  );
+  assert.ok(warmSource.length > 0, "the neighbor pre-probe helpers should be found in source");
+
+  // Candidates come from the list this cycle already built, walked outward
+  // through the cycle's own target resolution so scope (strip vs MRU) and
+  // wrap-around semantics are inherited rather than re-derived.
+  assert.match(domain, /const NEIGHBOR_PREPROBE_DEPTH = 2;/);
+  assert.match(warmSource, /for \(const direction of \["next", "prev"\] as const\)/);
+  assert.match(warmSource, /step < NEIGHBOR_PREPROBE_DEPTH/);
+  assert.match(
+    warmSource,
+    /resolveCycleTargetTab\(cursorTab, candidateTabs, direction, settings\)/,
+  );
+  assert.doesNotMatch(warmSource, /getWindowTabs|browser\.tabs\.query|getGestureEligibleTabs/);
+
+  // Hard rule: probing injects a content script, which would wake a tab the
+  // browser deliberately unloaded. Speculation never gets to spend the user's
+  // memory on a tab they may never switch to.
+  assert.match(warmSource, /if \(tab\.id == null \|\| tab\.discarded === true\) return false;/);
+  // Already-answered tabs are skipped in both directions of the cache.
+  assert.match(warmSource, /if \(isContentScriptKnownUnavailable\(tab\)\) return false;/);
+  assert.match(warmSource, /return contentScriptReadyUrlsByTabId\.get\(tab\.id\) !== url;/);
+  // Only the restricted-page skip path probes during a cycle, so with it off
+  // pre-probing would inject scripts that buy the next gesture nothing.
+  assert.match(warmSource, /if \(!settings\.skipRestrictedPages\) return;/);
+
+  // Sequential by construction: a cold window must not turn one switch into
+  // four simultaneous script injections.
+  assert.match(warmSource, /await ensurePageGestureAvailable\(neighborTab\);/);
+  assert.doesNotMatch(warmSource, /Promise\.all/);
+});
+
 test("defaults support a predictable first run", () => {
   const contract = readText("src/lib/common/contracts/tabWheel.ts");
 

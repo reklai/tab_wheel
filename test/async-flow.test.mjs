@@ -147,6 +147,37 @@ test("keyed task queue runs different keys concurrently", async () => {
   assert.deepEqual(order, ["window two", "window one"]);
 });
 
+// The background cycle spawns neighbor pre-probing with `void` from inside a
+// queued window task. That placement is only safe because the queue chains the
+// next task on the promise the current task returns and nothing else: a second
+// gesture queued behind a switch must start the moment the switch resolves,
+// not after up to four 320ms probes the first task left running.
+test("keyed task queue lets the next task start while detached void work is still running", async () => {
+  const asyncFlow = await loadAsyncFlowModule();
+  const queue = asyncFlow.createKeyedTaskQueue();
+  const order = [];
+  const detachedGate = createDeferred();
+
+  const firstTask = queue.run(1, async () => {
+    void (async () => {
+      await detachedGate.promise;
+      order.push("detached");
+    })();
+    order.push("first");
+  });
+  const secondTask = queue.run(1, async () => {
+    order.push("second");
+  });
+
+  await Promise.all([firstTask, secondTask]);
+  assert.deepEqual(order, ["first", "second"]);
+
+  detachedGate.resolve();
+  await detachedGate.promise;
+  await Promise.resolve();
+  assert.deepEqual(order, ["first", "second", "detached"]);
+});
+
 test("keyed task queue continues after a failed task", async () => {
   const asyncFlow = await loadAsyncFlowModule();
   const queue = asyncFlow.createKeyedTaskQueue();

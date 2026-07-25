@@ -42,6 +42,7 @@ import {
 } from "../core/tabWheel/momentumGuardCore";
 import {
   cycleTabWheel,
+  notifyTabWheelContentReady,
   openTabWheelOptions,
   saveTabWheelScrollPosition,
 } from "../adapters/runtime/tabWheelApi";
@@ -77,6 +78,15 @@ const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
 // produce a hair-trigger.
 const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;
 const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0.85;
+// MV3 shuts the service worker down after ~30s idle, so the first switch after
+// a pause pays worker cold start (~50-300ms) on top of the switch itself, with
+// nothing waking the worker earlier than the switch message. Crossing the
+// trigger distance takes 30-150ms of wheel motion the user is already
+// spending, so a ping sent the moment the gesture chord is recognized overlaps
+// the wake with that motion instead of stacking on top of it. One ping per 15s
+// comfortably covers the idle threshold without turning every wheel event into
+// a message.
+const WORKER_PREWARM_INTERVAL_MS = 15000;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
 const STATUS_TIMEOUT_MS = 1500;
 const STATUS_ID = "tw-status-indicator";
@@ -244,6 +254,7 @@ export function initApp(): void {
   // trip the guard's ramp escape.
   let lastGestureMagnitudePx = 0;
   let lastVisibleAtMs = 0;
+  let lastWorkerPrewarmAt = 0;
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
   let middleClickSession: TabWheelMiddleClickSession | null = null;
@@ -484,6 +495,29 @@ export function initApp(): void {
     if (!isKeyboardWheelEvent(event)) return;
     if (wheelDelta === 0) return;
     suppressPageEvent(event);
+    // Pre-warm the background worker as soon as the chord is recognized, so a
+    // cold start overlaps the accumulation below instead of delaying the
+    // switch that ends it. TABWHEEL_CONTENT_READY is reused rather than adding
+    // a wake type: its handler is the only fully synchronous one in the router
+    // (no storage read, no tabs query, no injection), and what it asserts is
+    // literally true right here — this content script is alive and handling an
+    // event. A worker that just restarted also lost its readiness cache, so
+    // the same message re-seeds this tab's entry for free.
+    //
+    // Top frame only, matching the send at the end of initApp: only the top
+    // frame registers the runtime message listener, so only the top frame can
+    // answer the ping that "ready" promises. A subframe claiming readiness
+    // would leave the background willing to activate a tab whose gestures are
+    // dead. Gestures started over an iframe therefore skip the pre-warm and
+    // pay cold start exactly as they do today — no regression, just no gain.
+    //
+    // Fire-and-forget and never awaited: this sits above the accumulation path
+    // on purpose, and a slow or failed wake must not delay, block, or alter
+    // the gesture it is warming.
+    if (isTopFrameContext && now - lastWorkerPrewarmAt >= WORKER_PREWARM_INTERVAL_MS) {
+      lastWorkerPrewarmAt = now;
+      void notifyTabWheelContentReady().catch(() => {});
+    }
     const deviceAdjustment = resolveActiveDeviceAdjustment();
     // Cross-tab handoff: the gesture that switched tabs committed in the
     // previous document, whose guard session died with its visibility. The
@@ -705,6 +739,6 @@ export function initApp(): void {
   };
 
   if (isTopFrameContext) {
-    void browser.runtime.sendMessage({ type: "TABWHEEL_CONTENT_READY" }).catch(() => {});
+    void notifyTabWheelContentReady().catch(() => {});
   }
 }

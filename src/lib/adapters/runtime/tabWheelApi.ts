@@ -14,6 +14,14 @@ export function getTabWheelOverviewWithRetry(
   );
 }
 
+// Doubles as the MV3 worker pre-warm (see appInit's wheelHandler): the
+// background handler for this type is fully synchronous, so it is the cheapest
+// way to wake a sleeping worker, and re-asserting readiness is exactly what a
+// restarted worker needs to hear from a live content script.
+export function notifyTabWheelContentReady(): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({ type: "TABWHEEL_CONTENT_READY" });
+}
+
 export function cycleTabWheel(
   direction: "prev" | "next",
   source: TabWheelCycleSource = "gesture",

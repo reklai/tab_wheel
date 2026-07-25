@@ -103,6 +103,11 @@ const WINDOW_TABS_CACHE_TTL_MS = 350;
 const SCROLL_MEMORY_SAVE_DEBOUNCE_MS = 120;
 const GESTURE_TARGET_PROBE_TIMEOUT_MS = 320;
 const MAX_GESTURE_PROBE_ATTEMPTS = 4;
+// How far the post-switch pre-probe looks in each cycle direction. Two covers
+// the tabs a continued gesture reaches within the next couple of cooldowns
+// (which is what the 320ms hot-path probe is currently paid for), while
+// keeping the speculative work per switch bounded at four tabs.
+const NEIGHBOR_PREPROBE_DEPTH = 2;
 const CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS = 2500;
 const GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS = [0, 80, 180] as const;
 const SCROLL_RESTORE_RETRY_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600] as const;
@@ -311,6 +316,7 @@ export function createTabWheelDomain(): TabWheelDomain {
   const activeTabIdsByWindowId = new Map<number, number>();
   const scrollRestoreTokensByTabId = new Map<number, number>();
   const contentScriptUnavailableUrlsByTabId = new Map<number, ContentScriptUnavailableEntry>();
+  const neighborWarmupTabIds = new Set<number>();
   const discardedWakeHoldByWindowId = new Map<number, DiscardedTabWakeHold>();
   let scrollRestoreSerial = 0;
   let scrollMemorySaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1053,6 +1059,78 @@ export function createTabWheelDomain(): TabWheelDomain {
     return null;
   }
 
+  // Walks the cycle's own target resolution outward from the tab just
+  // activated, so pre-probing inherits the exact scope (strip vs MRU) and
+  // wrap-around semantics the next real gesture will use instead of
+  // re-deriving them. Stops on a repeat: both resolvers hand back the tab they
+  // were given once a non-wrapping cycle reaches the edge, and a wrapping
+  // cycle in a short list comes back around to somewhere already collected.
+  function collectNeighborCandidateTabs(
+    originTab: Tabs.Tab,
+    candidateTabs: Tabs.Tab[],
+    settings: TabWheelSettings,
+  ): Tabs.Tab[] {
+    const neighborTabs: Tabs.Tab[] = [];
+    const seenTabIds = new Set<number>();
+    if (originTab.id != null) seenTabIds.add(originTab.id);
+    for (const direction of ["next", "prev"] as const) {
+      let cursorTab = originTab;
+      for (let step = 0; step < NEIGHBOR_PREPROBE_DEPTH; step += 1) {
+        const neighborTab = resolveCycleTargetTab(cursorTab, candidateTabs, direction, settings);
+        if (neighborTab?.id == null || seenTabIds.has(neighborTab.id)) break;
+        seenTabIds.add(neighborTab.id);
+        neighborTabs.push(neighborTab);
+        cursorTab = neighborTab;
+      }
+    }
+    return neighborTabs;
+  }
+
+  // Probing injects a content script, so a discarded tab is never a candidate:
+  // the browser unloaded it to reclaim memory, and speculative work has no
+  // right to spend the user's memory waking a tab they may never switch to.
+  // Only a real switch may do that. Tabs the caches have already answered for
+  // (ready, or known unavailable) are skipped too — the next cycle reads those
+  // answers without probing, so there is nothing left to warm.
+  function shouldWarmNeighborTab(tab: Tabs.Tab): boolean {
+    if (tab.id == null || tab.discarded === true) return false;
+    if (neighborWarmupTabIds.has(tab.id)) return false;
+    if (isContentScriptKnownUnavailable(tab)) return false;
+    const url = normalizePageUrl(tab.url);
+    if (!url) return false;
+    return contentScriptReadyUrlsByTabId.get(tab.id) !== url;
+  }
+
+  // Fire-and-forget speculation that pays down the 320ms-per-candidate probe
+  // the next gesture would otherwise pay in its hot path, before tabs.update.
+  // It is never awaited by the cycle that spawns it (see cycleUnlocked), so
+  // neither the cycle's response nor the serialized window queue waits on it.
+  //
+  // Probes run one at a time rather than in parallel so a cold window cannot
+  // turn a single switch into four simultaneous script injections, and
+  // neighborWarmupTabIds stops two overlapping chains — fast notching spawns
+  // one chain per switch, and consecutive switches share most of their
+  // neighborhood — from probing the same tab twice.
+  async function warmNeighborReadiness(
+    originTab: Tabs.Tab,
+    candidateTabs: Tabs.Tab[],
+    settings: TabWheelSettings,
+  ): Promise<void> {
+    // Probing during a cycle only happens on the restricted-page skip path, so
+    // with that off these injections would buy the next gesture nothing.
+    if (!settings.skipRestrictedPages) return;
+    for (const neighborTab of collectNeighborCandidateTabs(originTab, candidateTabs, settings)) {
+      const neighborTabId = neighborTab.id;
+      if (neighborTabId == null || !shouldWarmNeighborTab(neighborTab)) continue;
+      neighborWarmupTabIds.add(neighborTabId);
+      try {
+        await ensurePageGestureAvailable(neighborTab);
+      } finally {
+        neighborWarmupTabIds.delete(neighborTabId);
+      }
+    }
+  }
+
   async function activateTab(targetTab: Tabs.Tab, options: ActivateTabOptions = {}): Promise<boolean> {
     if (targetTab.id == null) return false;
     const didActivate = await browser.tabs
@@ -1120,6 +1198,12 @@ export function createTabWheelDomain(): TabWheelDomain {
     captureTabScrollUnlessWaking(activeTab, settings);
     const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });
     if (!didActivate) return { ok: false, reason: "Tab no longer exists" };
+    // Detached on purpose. `void` keeps these probes out of the promise this
+    // function returns, and that promise is the one runSerializedWindowTask
+    // chains the next queued gesture on — so a second gesture starts the
+    // moment this switch resolves, never behind up to four 320ms probes.
+    // Awaiting here would delay both the response and the next switch.
+    void warmNeighborReadiness(targetTab, candidateTabs, settings).catch(() => {});
     if (source === "gesture") {
       void recordFirstGestureCycle().catch(() => {});
     }
