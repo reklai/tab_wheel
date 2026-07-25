@@ -15,6 +15,10 @@ import {
 } from "../../common/contracts/tabWheel";
 import { resolveCycleTargetIndex } from "../../core/tabWheel/tabWheelCore";
 import {
+  isPageGestureRestrictedUrl,
+  normalizePageUrl,
+} from "../../core/tabWheel/restrictedPagesCore";
+import {
   createInFlightMemo,
   createKeyedTaskQueue,
   createWriteChain,
@@ -123,44 +127,6 @@ async function resolveWithTimeout<T>(
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
-}
-
-function normalizePageUrl(url: string | undefined): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "http:" || parsed.protocol === "https:"
-      ? parsed.href
-      : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-const KNOWN_BROWSER_STORE_RESTRICTED_HOSTS = new Set([
-  "addons.mozilla.org",
-  "chromewebstore.google.com",
-]);
-
-function normalizeHostname(hostname: string): string {
-  return hostname.toLowerCase().replace(/^www\./, "");
-}
-
-function isKnownBrowserStoreRestrictedUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    const hostname = normalizeHostname(parsed.hostname);
-    if (KNOWN_BROWSER_STORE_RESTRICTED_HOSTS.has(hostname)) return true;
-    return hostname === "chrome.google.com" && parsed.pathname.toLowerCase().startsWith("/webstore");
-  } catch (_) {
-    return false;
-  }
-}
-
-function isPageGestureRestrictedUrl(url: string | undefined): boolean {
-  return !normalizePageUrl(url) || isKnownBrowserStoreRestrictedUrl(url);
 }
 
 function normalizeScroll(scrollX: number, scrollY: number): { scrollX: number; scrollY: number } {
