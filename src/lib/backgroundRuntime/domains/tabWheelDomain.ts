@@ -24,6 +24,11 @@ import {
   createWriteChain,
   sleep,
 } from "../../common/utils/asyncFlow";
+import {
+  clearAllToolbarBadges,
+  forgetToolbarBadgeTab,
+  updateTabToolbarBadge,
+} from "./toolbarBadge";
 
 type ScrollMemoryByTabId = Record<string, TabWheelScrollMemoryEntry>;
 type MruTabIdsByWindowId = TabWheelMruState;
@@ -750,12 +755,39 @@ export function createTabWheelDomain(): TabWheelDomain {
     return result;
   }
 
+  // Badge decisions use only the cheap pure URL check (resolveToolbarBadge via
+  // updateTabToolbarBadge) — never gated behind content-script probing, so tab
+  // switching stays cheap.
+  async function applyToolbarBadgeForTab(tab: Tabs.Tab | null | undefined): Promise<void> {
+    if (!tab?.id) return;
+    const settings = await getSettings();
+    await updateTabToolbarBadge(tab.id, tab.url, settings.showRestrictedBadge);
+  }
+
+  async function applyToolbarBadgeForTabId(tabId: number): Promise<void> {
+    const tab = await browser.tabs.get(tabId).catch(() => null);
+    await applyToolbarBadgeForTab(tab);
+  }
+
+  async function applyToolbarBadgeForActiveTabs(): Promise<void> {
+    const windows = await browser.windows.getAll().catch(() => []);
+    await Promise.all(windows.map(async (win) => {
+      if (win.id == null) return;
+      const [activeTab] = await browser.tabs.query({ active: true, windowId: win.id }).catch(() => []);
+      await applyToolbarBadgeForTab(activeTab);
+    }));
+  }
+
   async function ensureActiveTabContentScripts(): Promise<void> {
     const windows = await browser.windows.getAll().catch(() => []);
     await Promise.all(windows.map(async (win) => {
       if (win.id == null) return;
       const [activeTab] = await browser.tabs.query({ active: true, windowId: win.id }).catch(() => []);
       if (!activeTab || activeTab.id == null) return;
+      // Prime the badge for every active tab (including restricted ones) each
+      // time the worker/event page (re)starts, before the content-script path
+      // below early-returns on restricted or discarded tabs.
+      void applyToolbarBadgeForTab(activeTab).catch(() => {});
       if (isPageGestureRestrictedUrl(activeTab.url) || activeTab.discarded === true) return;
       if (contentScriptReadyUrlsByTabId.get(activeTab.id) === normalizePageUrl(activeTab.url)) return;
       if (await pingContentScript(activeTab)) return;
@@ -1247,6 +1279,11 @@ export function createTabWheelDomain(): TabWheelDomain {
         scrollMemoryByTabId = {};
         void browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.scrollMemory).catch(() => {});
       }
+      if (previousSettings.showRestrictedBadge && !nextSettings.showRestrictedBadge) {
+        void clearAllToolbarBadges().catch(() => {});
+      } else if (!previousSettings.showRestrictedBadge && nextSettings.showRestrictedBadge) {
+        void applyToolbarBadgeForActiveTabs().catch(() => {});
+      }
     });
 
     browser.tabs.onCreated.addListener((createdTab: Tabs.Tab) => {
@@ -1263,6 +1300,7 @@ export function createTabWheelDomain(): TabWheelDomain {
       }
       void recordMruTab(activeInfo.tabId, activeInfo.windowId);
       void ensureContentScriptForActiveTab(activeInfo.tabId).catch(() => {});
+      void applyToolbarBadgeForTabId(activeInfo.tabId).catch(() => {});
     });
 
     browser.tabs.onMoved.addListener((_tabId: number, moveInfo: { windowId?: number }) => {
@@ -1285,6 +1323,7 @@ export function createTabWheelDomain(): TabWheelDomain {
       contentScriptUnavailableUrlsByTabId.delete(tabId);
       scrollRestoreTokensByTabId.delete(tabId);
       clearDiscardedWakeHoldForTab(tabId);
+      forgetToolbarBadgeTab(tabId);
       for (const [windowId, activeTabId] of activeTabIdsByWindowId) {
         if (activeTabId === tabId) activeTabIdsByWindowId.delete(windowId);
       }
@@ -1315,6 +1354,12 @@ export function createTabWheelDomain(): TabWheelDomain {
         contentScriptReadyUrlsByTabId.delete(tabId);
         contentScriptUnavailableUrlsByTabId.delete(tabId);
         cancelScrollRestore(tabId);
+      }
+      // Chrome clears tab-scoped badges on navigation, so re-apply on both the
+      // URL change and the load completing.
+      if (changeInfo.url || changeInfo.status === "complete") {
+        if (updatedTab) void applyToolbarBadgeForTab(updatedTab).catch(() => {});
+        else void applyToolbarBadgeForTabId(tabId).catch(() => {});
       }
     });
 
