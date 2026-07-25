@@ -157,10 +157,7 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
     skipPinnedTabs: normalizeEnabledFlag(settings.skipPinnedTabs, DEFAULT_TABWHEEL_SETTINGS.skipPinnedTabs),
     skipRestrictedPages: true,
     skipHiddenTabs: normalizeEnabledFlag(settings.skipHiddenTabs, DEFAULT_TABWHEEL_SETTINGS.skipHiddenTabs),
-    showRestrictedBadge: normalizeEnabledFlag(
-      settings.showRestrictedBadge,
-      DEFAULT_TABWHEEL_SETTINGS.showRestrictedBadge,
-    ),
+    showRestrictedBadge: true,
     wrapAround: normalizeEnabledFlag(settings.wrapAround, DEFAULT_TABWHEEL_SETTINGS.wrapAround),
     cycleWithinTabGroup: normalizeEnabledFlag(
       settings.cycleWithinTabGroup,

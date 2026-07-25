@@ -4,7 +4,7 @@ TabWheel does not collect, transmit, or share user data with developer-owned ser
 
 ## Data stored locally
 
-- **Settings** (`tabWheelSettings`): modifier, optional Shift requirement, preserved wheel direction, the Open settings/Off middle-click preference, cycle order, tab filters, whether cycling wraps around at the ends, whether cycling stays within the active tab's group, wheel feel, sensitivity, cooldown, acceleration, and whether a badge appears on browser-restricted pages. Reliability rules for page-position restore, editable fields, horizontal input, protected pages, and overshoot protection are stored as always enabled.
+- **Settings** (`tabWheelSettings`): modifier, optional Shift requirement, preserved wheel direction, the Open settings/Off middle-click preference, cycle order, tab filters, whether cycling wraps around at the ends, whether cycling stays within the active tab's group, wheel feel, sensitivity, cooldown, and acceleration. Reliability rules for page-position restore, editable fields, horizontal input, protected pages, overshoot protection, and a toolbar badge on browser-restricted pages are stored as always enabled.
 - **Onboarding state** (`tabWheelOnboarding`): whether the local demo was completed, whether the first real wheel cycle succeeded, and whether the one-time focused-release notice was seen.
 - **MRU state** (`tabWheelMruState`): recent tab IDs grouped by window for recently used cycling. It is cleared on browser startup and bounded to 100 tabs per window.
 - **Scroll memory** (`tabWheelScrollMemory`): tab and window IDs, the page URL used only to verify that restore targets the same page, root X/Y position, normalized position, page/viewport dimensions, and update time. It is bounded to 300 entries.

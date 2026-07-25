@@ -20,7 +20,7 @@ npm run release:package
 Feel and reliability release:
 
 - Added a momentum guard: an always-on internal reliability rule (no setting) that stops trackpad momentum-tail scrolling from firing extra unintended tab switches after a switch, including in the newly focused tab (the cross-tab arrival guard). A handed-off momentum tail is judged in the tab it lands in rather than re-accumulating into an unintended switch there, with one narrow, bounded exception: a wheel notch landing inside the 32ms post-switch arrival window can cost that one notch, the same tradeoff a trackpad accepts on every switch.
-- Added a toolbar badge for blocked pages (`showRestrictedBadge`, default On): a tab-scoped "!" badge on browser-restricted pages such as `chrome://`, `about:`, and extension stores.
+- Added a toolbar badge for blocked pages: an always-on internal reliability rule (no setting) that shows a tab-scoped "!" badge on browser-restricted pages such as `chrome://`, `about:`, and extension stores.
 - Pre-warmed the background service worker on the first gesture wheel event of a burst (rate-limited to once per 15 seconds), so Manifest V3's cold-start delay overlaps the wheel motion still to come instead of landing entirely on the switch. This helps where a gesture spans several wheel events, such as on a trackpad.
 - Added neighbor pre-probing: after each switch, TabWheel quietly prepares the two nearest tabs in each cycle direction (skipping sleeping/discarded tabs) so cycling on to them lands faster. This speculative warm-up can only make a future switch quicker — it never changes which tabs a cycle can reach.
 - Made the zero-reload guarantee test-enforced: `test/zero-reload.test.mjs` locks the install/update reinjection wiring behind automated assertions, in addition to the manual checklist below.
@@ -70,7 +70,7 @@ target browsers:
 5. Use the popup's "Refresh extension" control and confirm it reports the
    injected tab counts.
 6. Check the toolbar badge: a restricted tab shows "!", a normal tab shows no
-   badge, and toggling "Badge on blocked pages" off clears it.
+   badge.
 7. Arrival guard, on a clicky (detented) mouse wheel. On the Fast preset,
    notch quickly and deliberately across several tabs, including switching
    between them mid-notch. Expect the occasional swallowed notch: a notch

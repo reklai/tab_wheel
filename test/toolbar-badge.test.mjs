@@ -87,7 +87,7 @@ test("tabWheelDomain wires badge updates into onActivated, onUpdated, worker sta
 
   assert.match(
     domain,
-    /import\s*\{\s*clearAllToolbarBadges,\s*forgetToolbarBadgeTab,\s*updateTabToolbarBadge,\s*\}\s*from\s*"\.\/toolbarBadge"/,
+    /import\s*\{\s*forgetToolbarBadgeTab,\s*updateTabToolbarBadge,\s*\}\s*from\s*"\.\/toolbarBadge"/,
   );
 
   const onActivatedStart = domain.indexOf("browser.tabs.onActivated.addListener");
@@ -105,15 +105,6 @@ test("tabWheelDomain wires badge updates into onActivated, onUpdated, worker sta
   assert.match(onRemovedBody, /forgetToolbarBadgeTab\(tabId\)/);
   assert.match(onUpdatedBody, /changeInfo\.url\s*\|\|\s*changeInfo\.status === "complete"/);
   assert.match(onUpdatedBody, /applyToolbarBadgeForTab\(updatedTab\)/);
-
-  const storageChangedStart = domain.indexOf("browser.storage.onChanged.addListener");
-  const onCreatedStart = domain.indexOf("browser.tabs.onCreated.addListener", storageChangedStart);
-  const storageChangedBody = domain.slice(storageChangedStart, onCreatedStart);
-  assert.ok(storageChangedStart >= 0 && onCreatedStart > storageChangedStart);
-  assert.match(storageChangedBody, /showRestrictedBadge\s*&&\s*!nextSettings\.showRestrictedBadge/);
-  assert.match(storageChangedBody, /clearAllToolbarBadges\(\)/);
-  assert.match(storageChangedBody, /!previousSettings\.showRestrictedBadge\s*&&\s*nextSettings\.showRestrictedBadge/);
-  assert.match(storageChangedBody, /applyToolbarBadgeForActiveTabs\(\)/);
 
   const ensureActiveTabContentScriptsBody = domain.slice(
     domain.indexOf("async function ensureActiveTabContentScripts"),

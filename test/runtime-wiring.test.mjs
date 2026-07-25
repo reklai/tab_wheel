@@ -500,6 +500,7 @@ test("internal reliability rules are enforced and absent from user-facing contro
     "skipRestrictedPages",
     "horizontalWheel",
     "overshootGuard",
+    "showRestrictedBadge",
   ]) {
     assert.match(contract, new RegExp(`${key}: true`));
     assert.doesNotMatch(`${popup}\n${options}`, new RegExp(`id="${key}"`));
@@ -508,7 +509,7 @@ test("internal reliability rules are enforced and absent from user-facing contro
 });
 
 // wrapAround graduated from a forced internal rule (3.1.0) to a normal
-// user setting: it now normalizes like showRestrictedBadge and has controls
+// user setting: it now normalizes like skipHiddenTabs and has controls
 // in both mirrors. This pins that it stayed graduated.
 test("wrap-around is a normal user setting, not an internal reliability rule", () => {
   const contract = readText("src/lib/common/contracts/tabWheel.ts");
@@ -591,7 +592,6 @@ test("popup mirrors the full settings order with protected-page fallbacks", () =
     'id="skipHiddenTabs"',
     'id="wrapAround"',
     'id="cycleWithinTabGroup"',
-    'id="showRestrictedBadge"',
   ]);
   assert.match(html, /<strong>Where it works<\/strong>[\s\S]*<ul>/);
   assert.match(html, /id="refreshTabWheelBtn"[\s\S]*id="resetDefaults"/);
@@ -625,7 +625,6 @@ test("options has one live gesture title and the exact focused control order", (
     'id="skipHiddenTabs"',
     'id="wrapAround"',
     'id="cycleWithinTabGroup"',
-    'id="showRestrictedBadge"',
   ]);
   assert.match(html, /<strong>Where it works<\/strong>[\s\S]*<ul>/);
   assert.match(source, /moves through your \$\{direction\} tabs/);

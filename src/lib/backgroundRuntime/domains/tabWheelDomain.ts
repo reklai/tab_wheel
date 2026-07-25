@@ -25,7 +25,6 @@ import {
   sleep,
 } from "../../common/utils/asyncFlow";
 import {
-  clearAllToolbarBadges,
   forgetToolbarBadgeTab,
   updateTabToolbarBadge,
 } from "./toolbarBadge";
@@ -809,15 +808,6 @@ export function createTabWheelDomain(): TabWheelDomain {
     await applyToolbarBadgeForTab(tab);
   }
 
-  async function applyToolbarBadgeForActiveTabs(): Promise<void> {
-    const windows = await browser.windows.getAll().catch(() => []);
-    await Promise.all(windows.map(async (win) => {
-      if (win.id == null) return;
-      const [activeTab] = await browser.tabs.query({ active: true, windowId: win.id }).catch(() => []);
-      await applyToolbarBadgeForTab(activeTab);
-    }));
-  }
-
   async function ensureActiveTabContentScripts(): Promise<void> {
     const windows = await browser.windows.getAll().catch(() => []);
     await Promise.all(windows.map(async (win) => {
@@ -1455,11 +1445,6 @@ export function createTabWheelDomain(): TabWheelDomain {
       if (previousSettings.restorePagePosition && !nextSettings.restorePagePosition) {
         scrollMemoryByTabId = {};
         void browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.scrollMemory).catch(() => {});
-      }
-      if (previousSettings.showRestrictedBadge && !nextSettings.showRestrictedBadge) {
-        void clearAllToolbarBadges().catch(() => {});
-      } else if (!previousSettings.showRestrictedBadge && nextSettings.showRestrictedBadge) {
-        void applyToolbarBadgeForActiveTabs().catch(() => {});
       }
     });
 

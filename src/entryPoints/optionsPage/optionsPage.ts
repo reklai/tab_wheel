@@ -40,7 +40,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const skipHiddenTabs = byId<HTMLInputElement>("skipHiddenTabs");
   const wrapAround = byId<HTMLInputElement>("wrapAround");
   const cycleWithinTabGroup = byId<HTMLInputElement>("cycleWithinTabGroup");
-  const showRestrictedBadge = byId<HTMLInputElement>("showRestrictedBadge");
   const wheelSensitivityValue = byId<HTMLElement>("wheelSensitivityValue");
   const wheelCooldownValue = byId<HTMLElement>("wheelCooldownValue");
   const statusBar = byId<HTMLElement>("statusBar");
@@ -70,7 +69,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       skipHiddenTabs: skipHiddenTabs.checked,
       wrapAround: wrapAround.checked,
       cycleWithinTabGroup: cycleWithinTabGroup.checked,
-      showRestrictedBadge: showRestrictedBadge.checked,
     };
     return { ...next, wheelPreset: detectTabWheelPreset(next) };
   }
@@ -90,7 +88,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     skipHiddenTabs.checked = next.skipHiddenTabs;
     wrapAround.checked = next.wrapAround;
     cycleWithinTabGroup.checked = next.cycleWithinTabGroup;
-    showRestrictedBadge.checked = next.showRestrictedBadge;
     const combo = formatTabWheelModifierCombo(next.gestureModifier, next.gestureWithShift);
     const direction = next.invertScroll ? "previous" : "next";
     settingsTitle.textContent = `${combo} + wheel down moves through your ${direction} tabs.`;
@@ -136,7 +133,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     skipHiddenTabs,
     wrapAround,
     cycleWithinTabGroup,
-    showRestrictedBadge,
   ]) {
     control.addEventListener("change", () => void saveCurrent());
   }
