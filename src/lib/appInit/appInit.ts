@@ -27,6 +27,18 @@ import {
   TabWheelMiddleClickSession,
 } from "../core/tabWheel/middleClickCore";
 import {
+  addWheelSample,
+  classifyWheelDevice,
+  createWheelSampleWindow,
+  resolveDeviceTuningAdjustment,
+  TabWheelDeviceTuningAdjustment,
+} from "../core/tabWheel/deviceProfileCore";
+import {
+  createMomentumGuardSession,
+  MomentumGuardSession,
+  shouldBlockWheelDelta,
+} from "../core/tabWheel/momentumGuardCore";
+import {
   cycleTabWheel,
   openTabWheelOptions,
   saveTabWheelScrollPosition,
@@ -205,6 +217,10 @@ export function initApp(): void {
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
   let middleClickSession: TabWheelMiddleClickSession | null = null;
+  // Device evidence lives here and nowhere else: in-memory for this document
+  // only, never persisted, never messaged, never attached to settings.
+  const wheelSampleWindow = createWheelSampleWindow();
+  let momentumGuardSession: MomentumGuardSession | null = null;
 
   void loadTabWheelSettings()
     .then((loadedSettings) => {
@@ -375,38 +391,85 @@ export function initApp(): void {
       : 0;
   }
 
-  function runWheelCycle(direction: "prev" | "next", now: number): boolean {
-    if (now - lastWheelCycleAt < settings.wheelCooldownMs) return false;
+  // Classification is deliberately lazy: unmodified scrolling only feeds the
+  // sample window, and the heuristics run once per gesture wheel event. With
+  // device-aware tuning off we hold the neutral "unknown" posture, which is an
+  // exact identity for trigger distance and cooldown while still handing the
+  // momentum guard its lenient universal tuning.
+  function resolveActiveDeviceAdjustment(): TabWheelDeviceTuningAdjustment {
+    if (!settings.deviceAwareTuning) return resolveDeviceTuningAdjustment("unknown");
+    return resolveDeviceTuningAdjustment(classifyWheelDevice(wheelSampleWindow));
+  }
+
+  function runWheelCycle(
+    direction: "prev" | "next",
+    deltaDirection: 1 | -1,
+    now: number,
+    extraCooldownMs: number,
+  ): boolean {
+    if (now - lastWheelCycleAt < settings.wheelCooldownMs + extraCooldownMs) return false;
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
+    // The guard tracks raw delta sign, not the mapped prev/next direction, so
+    // an inverted-scroll setup still recognizes its own momentum tail.
+    momentumGuardSession = createMomentumGuardSession(now, deltaDirection);
     void cycleTabWheel(direction, "gesture").catch(() => {});
     return true;
   }
 
   function wheelHandler(event: WheelEvent): void {
-    if (!isKeyboardWheelEvent(event)) return;
+    if (!event.isTrusted) return;
     const wheelDelta = normalizeWheelDelta(
       event,
       window.innerHeight,
       window.innerWidth,
       settings.horizontalWheel,
     );
+    const now = Date.now();
+    // Sampled before the modifier check on purpose: plain scrolling and
+    // momentum tails are the evidence the classifier needs. Timing, deltaMode,
+    // and magnitude only — no direction, no target, no page content.
+    addWheelSample(wheelSampleWindow, {
+      timeStampMs: now,
+      deltaMode: event.deltaMode,
+      deltaMagnitudePx: Math.abs(wheelDelta),
+    });
+    if (!isKeyboardWheelEvent(event)) return;
     if (wheelDelta === 0) return;
     suppressPageEvent(event);
-    const now = Date.now();
+    const deviceAdjustment = resolveActiveDeviceAdjustment();
+    if (
+      momentumGuardSession
+      && shouldBlockWheelDelta(
+        momentumGuardSession,
+        wheelDelta,
+        now,
+        deviceAdjustment.momentumGuardTuning,
+      )
+    ) {
+      return;
+    }
     wheelAccumulator += wheelDelta;
     const baseDistance = resolveWheelTriggerDistance(
       WHEEL_TRIGGER_THRESHOLD_PX,
       settings.wheelSensitivity,
     );
-    const triggerDistance = resolveAcceleratedWheelTriggerDistance(
+    const acceleratedDistance = resolveAcceleratedWheelTriggerDistance(
       baseDistance,
       computeNextBurstCount(now),
       settings.wheelAcceleration,
     );
+    // Effective distance only: stored sensitivity, presets, and the settings
+    // UI never see this. A 1.0 multiplier is an exact no-op.
+    const triggerDistance = acceleratedDistance * deviceAdjustment.triggerDistanceMultiplier;
     if (Math.abs(wheelAccumulator) < triggerDistance) return;
     const direction = resolveWheelDirection(wheelAccumulator, settings.invertScroll);
-    const cycleRan = runWheelCycle(direction, now);
+    const cycleRan = runWheelCycle(
+      direction,
+      wheelAccumulator > 0 ? 1 : -1,
+      now,
+      deviceAdjustment.extraCooldownMs,
+    );
     if (cycleRan || settings.overshootGuard) {
       wheelAccumulator = 0;
       return;
@@ -421,6 +484,7 @@ export function initApp(): void {
     wheelAccumulator = 0;
     lastWheelCycleAt = 0;
     wheelBurstCount = 0;
+    momentumGuardSession = null;
   }
 
   function storageChangedHandler(

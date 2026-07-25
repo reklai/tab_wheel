@@ -48,6 +48,45 @@ test("content script owns the wheel chord and only the focused middle-click exce
   assert.doesNotMatch(app, /pageScrollSpeedMultiplier|pageScrollViewportCapRatio|scalePageScroll/);
 });
 
+test("wheel sampling, device tuning, and the momentum guard are wired into the gesture path", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+
+  // Sampling has to precede the modifier check: unmodified scrolling and
+  // momentum tails are the evidence the classifier needs. The guard is
+  // consulted before accumulation so a blocked delta is dropped, not banked.
+  assertOrdered(app, [
+    "if (!event.isTrusted) return;",
+    "addWheelSample(",
+    "if (!isKeyboardWheelEvent(event)) return;",
+    "shouldBlockWheelDelta(",
+    "wheelAccumulator += wheelDelta;",
+  ]);
+  assert.match(app, /suppressPageEvent\(event\);[\s\S]{0,200}shouldBlockWheelDelta\(/);
+  assert.match(app, /momentumGuardSession\s*\n\s*&& shouldBlockWheelDelta\(/);
+
+  // Samples stay content-free and local: timing, deltaMode, magnitude only.
+  assertOrdered(app, [
+    "timeStampMs: now",
+    "deltaMode: event.deltaMode",
+    "deltaMagnitudePx: Math.abs(wheelDelta)",
+  ]);
+  assert.doesNotMatch(app, /storage\.local\.set|JSON\.stringify/);
+
+  // Classification is lazy and gated: off means an exact identity adjustment.
+  assert.match(app, /if \(!settings\.deviceAwareTuning\) return resolveDeviceTuningAdjustment\("unknown"\);/);
+  assert.match(app, /return resolveDeviceTuningAdjustment\(classifyWheelDevice\(wheelSampleWindow\)\);/);
+
+  // Effective values only — stored settings and presets are untouched.
+  assert.match(app, /const triggerDistance = acceleratedDistance \* deviceAdjustment\.triggerDistanceMultiplier;/);
+  assert.match(app, /settings\.wheelCooldownMs \+ extraCooldownMs/);
+  assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection\);/);
+
+  // Every existing reset path drops the guard session with the gesture state.
+  assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*momentumGuardSession = null;/);
+  assert.match(app, /settings = normalizeTabWheelSettings\(settingsChange\.newValue\);[\s\S]{0,400}resetWheelGestureState\(\);/);
+  assert.match(app, /document\.visibilityState !== "hidden"\) return;[\s\S]{0,200}resetWheelGestureState\(\);/);
+});
+
 test("defaults support a predictable first run", () => {
   const contract = readText("src/lib/common/contracts/tabWheel.ts");
 
