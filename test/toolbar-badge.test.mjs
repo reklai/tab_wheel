@@ -32,12 +32,46 @@ test("every badge text call is tab-scoped", () => {
   assert.doesNotMatch(adapter, /setBadgeText\(\{\s*text:\s*[^,}]*\s*\}\)/);
 });
 
-test("badge background color is applied once via setBadgeBackgroundColor", () => {
+test("badge background color guard actually gates the call, in source order", () => {
   const adapter = readText("src/lib/backgroundRuntime/domains/toolbarBadge.ts");
 
-  assert.match(adapter, /setBadgeBackgroundColor/);
   assert.match(adapter, /#b45309/);
-  assert.match(adapter, /badgeBackgroundColorApplied/);
+
+  const ensureBackgroundColorBody = adapter.slice(
+    adapter.indexOf("async function ensureBadgeBackgroundColor"),
+    adapter.indexOf("// Always tab-scoped"),
+  );
+  assert.ok(ensureBackgroundColorBody.length > 0, "ensureBadgeBackgroundColor body should be found");
+
+  // The once-guard must be read (and short-circuit) before the call it
+  // gates, not merely present somewhere in the file.
+  const guardCheckIndex = ensureBackgroundColorBody.indexOf(
+    "if (badgeBackgroundColorApplied || typeof api.setBadgeBackgroundColor !== \"function\") return;",
+  );
+  const setColorCallIndex = ensureBackgroundColorBody.indexOf("api.setBadgeBackgroundColor(");
+  assert.ok(guardCheckIndex >= 0, "expected the once-guard's early-return check");
+  assert.ok(setColorCallIndex > guardCheckIndex, "the once-guard must run before the setBadgeBackgroundColor call it gates");
+
+  // The guard flag must also be set before the (possibly slow) call, so a
+  // second concurrent invocation can't race past the guard.
+  const flagSetIndex = ensureBackgroundColorBody.indexOf("badgeBackgroundColorApplied = true;");
+  assert.ok(flagSetIndex > guardCheckIndex && flagSetIndex < setColorCallIndex);
+});
+
+test("the badge-clear branch is never gated on Set membership (worker restarts must not strand a stale badge)", () => {
+  const adapter = readText("src/lib/backgroundRuntime/domains/toolbarBadge.ts");
+
+  const updateBody = adapter.slice(adapter.indexOf("export async function updateTabToolbarBadge"));
+  const clearBranch = updateBody.slice(updateBody.indexOf("if (badge) {"));
+
+  // Regression lock: the clear call must run unconditionally once badge is
+  // null — no `if (!badgedTabIds.has(tabId)) return;` (or equivalent
+  // membership check) short-circuiting it before setBadgeText clears.
+  assert.doesNotMatch(clearBranch, /badgedTabIds\.has\(tabId\)/);
+  assert.match(clearBranch, /await api\.setBadgeText\(\{ text: "", tabId \}\);/);
+  // The Set write for the clear path is a `delete` (bookkeeping), not a
+  // gate on whether the browser call happens.
+  assert.match(clearBranch, /badgedTabIds\.delete\(tabId\)/);
 });
 
 test("clearAllToolbarBadges clears every tracked tab and tolerates gone tabs", () => {

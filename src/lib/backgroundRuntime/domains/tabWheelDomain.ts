@@ -759,7 +759,7 @@ export function createTabWheelDomain(): TabWheelDomain {
   // updateTabToolbarBadge) — never gated behind content-script probing, so tab
   // switching stays cheap.
   async function applyToolbarBadgeForTab(tab: Tabs.Tab | null | undefined): Promise<void> {
-    if (!tab?.id) return;
+    if (tab?.id == null) return;
     const settings = await getSettings();
     await updateTabToolbarBadge(tab.id, tab.url, settings.showRestrictedBadge);
   }

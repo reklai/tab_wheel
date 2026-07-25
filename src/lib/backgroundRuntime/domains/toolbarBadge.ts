@@ -67,7 +67,11 @@ export async function updateTabToolbarBadge(
     return;
   }
 
-  if (!badgedTabIds.has(tabId)) return;
+  // Always issue the clear call, even if this tabId isn't in badgedTabIds:
+  // the Set is wiped on every MV3 service-worker idle restart / MV2
+  // event-page suspend, so a badge applied before a restart would otherwise
+  // be un-clearable — gating this on Set membership would leave a stale "!"
+  // on a backgrounded tab that navigates away after the worker restarts.
   try {
     await api.setBadgeText({ text: "", tabId });
   } catch (_) {
