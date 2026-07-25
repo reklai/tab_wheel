@@ -94,11 +94,21 @@ function hasSustainedMagnitudeTrend(samples: WheelObservation[]): boolean {
 // the same magnitude, so almost all samples land within a tight band around
 // the window median. A hand-driven trackpad plateau (a fast two-finger drag
 // that hasn't started decaying yet) can also be "sustained" by the trend
-// test above, but it is measurably noisier event-to-event. Hand-verified
-// against real jitter (~6-7% median deviation) and adversarial trackpad
-// plateaus (two-finger drag ~9-15%, precision-touchpad drag ~11-27%): 9% is
-// the tightest ratio that still passes genuine spin jitter (documented
-// elsewhere as ≈8-9%) while rejecting both plateaus tested.
+// test above, but a *noisy* hand-driven plateau is measurably jumpier
+// event-to-event than a wheel notch. Hand-verified against real jitter
+// (~6-7% median deviation) and two adversarial noisy plateaus (two-finger
+// drag ~9-15%, precision-touchpad drag ~11-27%): 9% is the tightest ratio
+// that still passes genuine spin jitter (documented elsewhere as ≈8-9%)
+// while rejecting both noisy plateaus tested. This only separates spins
+// from *noisy* plateaus — a hand can also sustain a smooth, near-constant-
+// velocity drag at ≥60px/frame with dispersion near 0, tighter than genuine
+// spin jitter; no dispersion tolerance can tell that apart from a real
+// spin, so it's a known leak into freeSpinWheel. Accepted: the only
+// consequence is a wrong calibration label (live tuning is identical for
+// freeSpinWheel and unknown — see resolveDeviceTuningAdjustment), and the
+// durable discriminator to add once real captures are available is notch
+// quantization (a wheel's magnitude repeats a small set of discrete values;
+// a smooth drag's does not), not a tighter dispersion ratio.
 const FREE_SPIN_DISPERSION_TOLERANCE_RATIO = 0.09;
 // 0.7 mirrors the other "dominant fraction" gates in this module — the
 // large majority of samples must sit inside the tolerance band, not just a
