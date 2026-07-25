@@ -876,9 +876,10 @@ export function createTabWheelDomain(): TabWheelDomain {
   }
 
   // Also the MV3 worker pre-warm target (see appInit's wheelHandler), which is
-  // why it is chosen: keep this handler synchronous and free of side effects
-  // beyond seeding the readiness caches, or every gesture chord starts paying
-  // for whatever gets added here.
+  // why it is chosen: it returns without awaiting anything. Keep it that way
+  // and keep its side effects to seeding the readiness caches — the MRU touch
+  // below is deliberately detached and a no-op for an already-current tab —
+  // or every gesture chord starts paying for whatever gets added here.
   function markContentScriptReady(tab?: Tabs.Tab): TabWheelActionResult {
     if (!tab?.id) return { ok: false, reason: "No sender tab" };
     if (isPageGestureRestrictedUrl(tab.url)) return { ok: false, reason: "Unsupported page" };

@@ -18,3 +18,26 @@ test("verifyUpgrade script succeeds on fixture snapshots", () => {
   );
 });
 
+
+// The shared device profile is deliberately NOT a settings key: it is
+// evidence, so it must survive every upgrade untouched (no fixture or schema
+// bump is involved) and must equally survive "reset to defaults", which clears
+// preferences only. This locks the passthrough that makes both true.
+test("migrations carry the device profile through untouched", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { transform } = await import("esbuild");
+  const source = readFileSync(resolve(root, "src/lib/common/utils/storageMigrations.ts"), "utf8");
+  const transformed = await transform(source, { loader: "ts", format: "esm", target: "es2022" });
+  const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
+  const migrations = await import(`data:text/javascript;base64,${encoded}`);
+
+  const deviceProfile = { kind: "discreteWheel", notchMagnitudePx: 48, updatedAtMs: 1 };
+  const result = migrations.migrateStorageSnapshot({
+    storageSchemaVersion: 12,
+    tabWheelSettings: { wheelSensitivity: 1 },
+    tabWheelDeviceProfile: deviceProfile,
+  });
+
+  assert.deepEqual(result.migratedStorage.tabWheelDeviceProfile, deviceProfile);
+  assert.equal(result.toVersion, migrations.STORAGE_SCHEMA_VERSION);
+});

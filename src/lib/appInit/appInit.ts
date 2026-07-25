@@ -4,9 +4,11 @@
 import browser from "webextension-polyfill";
 import {
   DEFAULT_TABWHEEL_SETTINGS,
-  loadTabWheelSettings,
+  loadTabWheelGestureState,
   MIN_WHEEL_COOLDOWN_MS,
+  normalizeTabWheelDeviceProfile,
   normalizeTabWheelSettings,
+  saveTabWheelDeviceProfile,
   TABWHEEL_STORAGE_KEYS,
 } from "../common/contracts/tabWheel";
 import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
@@ -29,10 +31,11 @@ import {
 } from "../core/tabWheel/middleClickCore";
 import {
   addWheelSample,
-  classifyWheelDevice,
   createWheelSampleWindow,
-  resolveDetentedNotchMagnitudePx,
   resolveDeviceTuningAdjustment,
+  resolveEffectiveDeviceProfile,
+  resolveLocalDeviceProfile,
+  shouldPersistDeviceProfile,
   TabWheelDeviceTuningAdjustment,
 } from "../core/tabWheel/deviceProfileCore";
 import {
@@ -261,11 +264,16 @@ export function initApp(): void {
   // Device evidence lives here and nowhere else: in-memory for this document
   // only, never persisted, never messaged, never attached to settings.
   const wheelSampleWindow = createWheelSampleWindow();
+  // What some other tab already worked out about this device. Read once here
+  // and kept live by storageChangedHandler, so a tab that was already open
+  // when another tab learned the device still benefits without a reload.
+  let storedDeviceProfile: TabWheelDeviceProfile | null = null;
   let momentumGuardSession: MomentumGuardSession | null = null;
 
-  void loadTabWheelSettings()
-    .then((loadedSettings) => {
-      settings = loadedSettings;
+  void loadTabWheelGestureState()
+    .then((loadedState) => {
+      settings = loadedState.settings;
+      storedDeviceProfile = loadedState.deviceProfile;
     })
     .finally(() => {
       areSettingsLoaded = true;
@@ -437,9 +445,32 @@ export function initApp(): void {
   // device-aware tuning off we hold the neutral "unknown" posture, which is an
   // exact identity for trigger distance and cooldown while still handing the
   // momentum guard its lenient universal tuning.
-  function resolveActiveDeviceAdjustment(): TabWheelDeviceTuningAdjustment {
-    if (!settings.deviceAwareTuning) return resolveDeviceTuningAdjustment("unknown");
-    return resolveDeviceTuningAdjustment(classifyWheelDevice(wheelSampleWindow));
+  // The effective profile behind every device-aware decision below: this
+  // document's own reading when it has one, otherwise whatever another tab
+  // already learned. Null is the neutral posture (tuning off, or nobody has
+  // classified this device yet) and is an exact identity for trigger distance
+  // and cooldown, while still handing the momentum guard its lenient tuning.
+  function resolveActiveDeviceProfile(nowMs: number): TabWheelDeviceProfile | null {
+    if (!settings.deviceAwareTuning) return null;
+    return resolveEffectiveDeviceProfile(wheelSampleWindow, storedDeviceProfile, nowMs);
+  }
+
+  function resolveActiveDeviceAdjustment(
+    deviceProfile: TabWheelDeviceProfile | null,
+  ): TabWheelDeviceTuningAdjustment {
+    return resolveDeviceTuningAdjustment(deviceProfile?.kind ?? "unknown");
+  }
+
+  // Share what this document learned, so the next tab the user lands on does
+  // not start from scratch. Fire-and-forget, and rare by construction: only a
+  // confident reading that actually disagrees with the shared one writes at
+  // all (see shouldPersistDeviceProfile). The in-memory copy is updated first
+  // so a burst of notches cannot queue a second write behind the round trip.
+  function persistDeviceProfileIfChanged(nowMs: number): void {
+    const localProfile = resolveLocalDeviceProfile(wheelSampleWindow, nowMs);
+    if (!localProfile || !shouldPersistDeviceProfile(localProfile, storedDeviceProfile)) return;
+    storedDeviceProfile = localProfile;
+    void saveTabWheelDeviceProfile(localProfile).catch(() => {});
   }
 
   function runWheelCycle(
@@ -498,11 +529,13 @@ export function initApp(): void {
     // Pre-warm the background worker as soon as the chord is recognized, so a
     // cold start overlaps the accumulation below instead of delaying the
     // switch that ends it. TABWHEEL_CONTENT_READY is reused rather than adding
-    // a wake type: its handler is the only fully synchronous one in the router
-    // (no storage read, no tabs query, no injection), and what it asserts is
-    // literally true right here — this content script is alive and handling an
-    // event. A worker that just restarted also lost its readiness cache, so
-    // the same message re-seeds this tab's entry for free.
+    // a wake type: its handler is the only one in the router that returns
+    // without awaiting anything (no tabs query, no injection; the one MRU
+    // touch it triggers is detached and a no-op for a tab that is already
+    // current), and what it asserts is literally true right here — this
+    // content script is alive and handling an event. A worker that just
+    // restarted also lost its readiness cache, so the same message re-seeds
+    // this tab's entry for free.
     //
     // Top frame only, matching the send at the end of initApp: only the top
     // frame registers the runtime message listener, so only the top frame can
@@ -518,7 +551,9 @@ export function initApp(): void {
       lastWorkerPrewarmAt = now;
       void notifyTabWheelContentReady().catch(() => {});
     }
-    const deviceAdjustment = resolveActiveDeviceAdjustment();
+    const deviceProfile = resolveActiveDeviceProfile(now);
+    const deviceAdjustment = resolveActiveDeviceAdjustment(deviceProfile);
+    persistDeviceProfileIfChanged(now);
     // Cross-tab handoff: the gesture that switched tabs committed in the
     // previous document, whose guard session died with its visibility. The
     // rest of that tail is delivered here, to a tab with no session and no
@@ -572,9 +607,13 @@ export function initApp(): void {
     // A detented wheel's notch should map to one switch, not whatever
     // multiple of the balanced 80px default its notch happens to be (2 on
     // Firefox's 48px and Linux Chrome's ~53px). Only engaged when tuning is
-    // on and the classifier is confident enough to call the stream out as
-    // discreteWheel with a real notch (resolveDetentedNotchMagnitudePx's
-    // own ≥30px cluster floor) — this repeats that same floor at 40px
+    // on and some document has been confident enough to call the stream out
+    // as discreteWheel with a real notch — this document's own window if it
+    // has one, otherwise the profile another tab shared, which is what makes
+    // the second and later tabs of a traversal behave like the first
+    // (resolveDetentedNotchMagnitudePx's own ≥30px cluster floor applies
+    // either way, since that is where the number came from) — this repeats
+    // that same floor at 40px
     // (NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX) as a second, stricter gate purely
     // for this feature, so a 30-40px cluster that ever misclassifies as
     // detented can't produce a hair-trigger. min() with the accelerated,
@@ -598,9 +637,7 @@ export function initApp(): void {
     // resolveWheelTriggerDistance(80, 0.8) = 100, never adapted down toward
     // the notch — see tabwheel-core.test.mjs and runtime-wiring.test.mjs
     // for the pinned worked example).
-    const notchMagnitudePx = settings.deviceAwareTuning
-      ? resolveDetentedNotchMagnitudePx(wheelSampleWindow)
-      : null;
+    const notchMagnitudePx = deviceProfile?.notchMagnitudePx ?? null;
     const effectiveTriggerDistance =
       settings.wheelSensitivity >= 1
       && notchMagnitudePx !== null
@@ -651,6 +688,18 @@ export function initApp(): void {
     areaName: string,
   ): void {
     if (areaName !== "local") return;
+    // Adopt a profile another tab just learned, without disturbing anything
+    // else. This branch must stay above the settings guard (a profile-only
+    // change never reaches past it) and must never fall into the reset path
+    // below: profile writes land MID-GESTURE — a sibling tab can classify the
+    // device while this tab is part-way through accumulating toward a switch —
+    // and zeroing the accumulator here would silently eat the switch the user
+    // is actively scrolling toward. Filtering by key is what keeps the reset
+    // scoped to a real settings change.
+    const deviceProfileChange = changes[TABWHEEL_STORAGE_KEYS.deviceProfile];
+    if (deviceProfileChange) {
+      storedDeviceProfile = normalizeTabWheelDeviceProfile(deviceProfileChange.newValue);
+    }
     const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
     if (!settingsChange) return;
     settings = normalizeTabWheelSettings(settingsChange.newValue);

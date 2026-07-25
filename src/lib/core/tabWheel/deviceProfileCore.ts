@@ -313,6 +313,70 @@ export function resolveDetentedNotchMagnitudePx(sampleWindow: WheelSampleWindow)
   return dominantCluster ? dominantCluster.representativeMagnitudePx : null;
 }
 
+// Classification is per-document, but the device is per-user. Without sharing,
+// the second and later tabs of a traversal are always cold — an empty sample
+// window classifies as "unknown", so a detented wheel pays the balanced 80px
+// trigger and the full cooldown again in every tab it lands in, which is most
+// of the tabs in any real traversal. These three functions are the whole
+// sharing contract, kept pure so the merge rule is testable without storage.
+
+// Reuses CLUSTER_BUCKET_PX: a stored notch and a freshly measured one that
+// round into the same 4px cluster bucket are the same notch as far as every
+// consumer is concerned, so a difference that small is jitter, not evidence,
+// and must not cause a write.
+const DEVICE_PROFILE_NOTCH_DRIFT_TOLERANCE_PX = CLUSTER_BUCKET_PX;
+
+// Null means "this window has nothing confident to say" — either too few
+// samples (classifyWheelDevice already returns "unknown" below
+// MIN_SAMPLES_FOR_CLASSIFICATION) or a stream the heuristics decline to guess
+// at. Callers treat null as "defer to whatever was shared", never as evidence.
+export function resolveLocalDeviceProfile(
+  sampleWindow: WheelSampleWindow,
+  nowMs: number,
+): TabWheelDeviceProfile | null {
+  const kind = classifyWheelDevice(sampleWindow);
+  if (kind === "unknown") return null;
+  return {
+    kind,
+    notchMagnitudePx: resolveDetentedNotchMagnitudePx(sampleWindow),
+    updatedAtMs: nowMs,
+  };
+}
+
+// Local evidence always beats a shared profile: this document is watching the
+// device the user's hand is on right now. The shared profile only fills the
+// gap before this document has seen enough to speak for itself, which is
+// exactly the cold-tab case. No TTL — a device change is rare, and the first
+// confident window on the new device overwrites the profile anyway, so an age
+// check could only ever discard a still-correct answer.
+export function resolveEffectiveDeviceProfile(
+  sampleWindow: WheelSampleWindow,
+  storedProfile: TabWheelDeviceProfile | null,
+  nowMs: number,
+): TabWheelDeviceProfile | null {
+  return resolveLocalDeviceProfile(sampleWindow, nowMs) ?? storedProfile;
+}
+
+function hasNotchDrifted(localNotchPx: number | null, storedNotchPx: number | null): boolean {
+  if (localNotchPx == null && storedNotchPx == null) return false;
+  if (localNotchPx == null || storedNotchPx == null) return true;
+  return Math.abs(localNotchPx - storedNotchPx) > DEVICE_PROFILE_NOTCH_DRIFT_TOLERANCE_PX;
+}
+
+// Writes are rare by construction: only a confident local reading may write
+// ("unknown" never does, so a fresh tab can never erase a good profile), and
+// only when it actually disagrees with what is already shared. Steady-state
+// scrolling on a known device writes nothing at all.
+export function shouldPersistDeviceProfile(
+  localProfile: TabWheelDeviceProfile | null,
+  storedProfile: TabWheelDeviceProfile | null,
+): boolean {
+  if (!localProfile) return false;
+  if (!storedProfile) return true;
+  if (localProfile.kind !== storedProfile.kind) return true;
+  return hasNotchDrifted(localProfile.notchMagnitudePx, storedProfile.notchMagnitudePx);
+}
+
 // Trackpad momentum streams are easy to over-trigger, so guard strictly:
 // wider tail cadence, a higher bar for what counts as a fresh flick, and more
 // evidence required before releasing a run as steady input. Wheel devices

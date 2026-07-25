@@ -439,3 +439,211 @@ test("resolveSuggestedPreset maps device kind to the closest wheel feel preset",
   assert.equal(resolveSuggestedPreset("discreteWheel"), "balanced");
   assert.equal(resolveSuggestedPreset("unknown"), "balanced");
 });
+
+// --- Shared device profile -------------------------------------------------
+// Classification is per-document but the device is per-user. These cover the
+// merge rule that lets a tab with no evidence of its own behave like the tab
+// that measured the wheel.
+
+async function loadModule(relativePath) {
+  const source = readFileSync(resolve(ROOT, relativePath), "utf8");
+  const transformed = await transform(source, { loader: "ts", format: "esm", target: "es2022" });
+  const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
+  return import(`data:text/javascript;base64,${encoded}`);
+}
+
+// Firefox reports a clicky wheel in line mode; appInit normalizes 3 lines to
+// 48px before recording, which is the stream this whole lever exists for.
+function detentedWindow(createWheelSampleWindow, addWheelSample, notchPx = 48) {
+  return fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 80, 1, Array.from({ length: 10 }, () => notchPx)),
+  );
+}
+
+test("a confident local window produces a shareable profile; a thin one produces nothing", async () => {
+  const { createWheelSampleWindow, addWheelSample, resolveLocalDeviceProfile } = await loadCore();
+
+  const confident = resolveLocalDeviceProfile(
+    detentedWindow(createWheelSampleWindow, addWheelSample),
+    1234,
+  );
+  assert.equal(confident.kind, "discreteWheel");
+  assert.equal(Math.round(confident.notchMagnitudePx), 48);
+  assert.equal(confident.updatedAtMs, 1234);
+
+  // Under MIN_SAMPLES_FOR_CLASSIFICATION the window has nothing to say, and
+  // "nothing to say" must never be written as evidence.
+  const thin = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 80, 1, [48, 48, 48]),
+  );
+  assert.equal(resolveLocalDeviceProfile(thin, 1234), null);
+});
+
+test("the effective profile prefers local evidence and falls back to the shared one", async () => {
+  const {
+    createWheelSampleWindow, addWheelSample, resolveEffectiveDeviceProfile,
+  } = await loadCore();
+  const sharedTrackpad = { kind: "trackpad", notchMagnitudePx: null, updatedAtMs: 1 };
+
+  // A cold tab (empty window) adopts whatever another tab worked out. This is
+  // the entire cross-tab fix: without it this resolves to null and the tab
+  // pays the balanced 80px trigger and full cooldown.
+  const cold = createWheelSampleWindow();
+  assert.deepEqual(resolveEffectiveDeviceProfile(cold, sharedTrackpad, 9), sharedTrackpad);
+  assert.equal(resolveEffectiveDeviceProfile(cold, null, 9), null);
+
+  // A tab watching the hardware right now outranks a stale shared answer, so
+  // plugging in a different device is corrected locally on first evidence.
+  const localDetented = detentedWindow(createWheelSampleWindow, addWheelSample);
+  const effective = resolveEffectiveDeviceProfile(localDetented, sharedTrackpad, 9);
+  assert.equal(effective.kind, "discreteWheel");
+
+  // No TTL: an old shared profile is still the best available answer, since a
+  // fresh confident reading would have replaced it above.
+  const ancient = { kind: "discreteWheel", notchMagnitudePx: 53, updatedAtMs: 0 };
+  assert.deepEqual(resolveEffectiveDeviceProfile(cold, ancient, 1e12), ancient);
+});
+
+test("profile writes happen only on real disagreement, and never write unknown", async () => {
+  const { shouldPersistDeviceProfile } = await loadCore();
+  const stored = { kind: "discreteWheel", notchMagnitudePx: 48, updatedAtMs: 0 };
+
+  // No local evidence never writes — a fresh tab cannot erase a good profile.
+  assert.equal(shouldPersistDeviceProfile(null, stored), false);
+  assert.equal(shouldPersistDeviceProfile(null, null), false);
+  // First evidence on a clean profile writes.
+  assert.equal(shouldPersistDeviceProfile(stored, null), true);
+  // Steady state writes nothing at all.
+  assert.equal(shouldPersistDeviceProfile({ ...stored, updatedAtMs: 999 }, stored), false);
+  // A kind change is always evidence worth sharing.
+  assert.equal(
+    shouldPersistDeviceProfile({ kind: "trackpad", notchMagnitudePx: null, updatedAtMs: 1 }, stored),
+    true,
+  );
+  // Notch jitter inside one 4px cluster bucket is not evidence...
+  assert.equal(shouldPersistDeviceProfile({ ...stored, notchMagnitudePx: 51 }, stored), false);
+  // ...but a real notch-size change (48px Firefox -> 53px Linux Chrome) is.
+  assert.equal(shouldPersistDeviceProfile({ ...stored, notchMagnitudePx: 53 }, stored), true);
+  // Gaining or losing a notch entirely is a change either way.
+  assert.equal(shouldPersistDeviceProfile({ ...stored, notchMagnitudePx: null }, stored), true);
+});
+
+// Two documents, two independent state instances, same pipeline order as
+// appInit.ts — the shape of the momentum-guard handoff tests. Tab A has been
+// scrolled in (so it has a full sample window); tab B is every later tab of a
+// traversal: freshly activated, empty window, nothing local to go on.
+async function runTraversalTab(options) {
+  const deviceCore = await loadCore();
+  const wheelCore = await loadModule("src/lib/core/tabWheel/tabWheelCore.ts");
+  const { sampleWindow, storedProfile, notchPx, notchCount, sensitivity, cooldownMs } = options;
+
+  const NOTCH_MIN_PX = 40;
+  const NOTCH_RATIO = 0.85;
+  let accumulator = 0;
+  let lastCycleAt = 0;
+  let switches = 0;
+  let notchesSpent = 0;
+
+  for (let index = 0; index < notchCount; index += 1) {
+    // 120ms apart: a real moderate-pace detented cadence, and deliberately
+    // above the *detented* effective cooldown (max(60, 160 - 60) = 100ms), so
+    // this measures trigger distance alone. At 90ms the cooldown itself starts
+    // eating alternate notches — a real effect, but a different lever's.
+    const now = 1e6 + index * 120;
+    notchesSpent += 1;
+    const profile = deviceCore.resolveEffectiveDeviceProfile(sampleWindow, storedProfile, now);
+    const adjustment = deviceCore.resolveDeviceTuningAdjustment(profile?.kind ?? "unknown");
+    accumulator += notchPx;
+
+    const triggerDistance = wheelCore.resolveAcceleratedWheelTriggerDistance(
+      wheelCore.resolveWheelTriggerDistance(80, sensitivity),
+      0,
+      false,
+    ) * adjustment.triggerDistanceMultiplier;
+    const notchMagnitudePx = profile?.notchMagnitudePx ?? null;
+    const effectiveTrigger = sensitivity >= 1 && notchMagnitudePx !== null && notchMagnitudePx >= NOTCH_MIN_PX
+      ? Math.min(triggerDistance, Math.max(NOTCH_MIN_PX, notchMagnitudePx * NOTCH_RATIO))
+      : triggerDistance;
+
+    if (Math.abs(accumulator) < effectiveTrigger) continue;
+    const effectiveCooldownMs = Math.max(60, cooldownMs + adjustment.extraCooldownMs);
+    if (now - lastCycleAt >= effectiveCooldownMs) {
+      lastCycleAt = now;
+      switches += 1;
+    }
+    accumulator = 0;
+  }
+  return { switches, notchesSpent };
+}
+
+test("a traversal's second tab switches one notch at a time via the shared profile", async () => {
+  const { createWheelSampleWindow, addWheelSample, resolveLocalDeviceProfile } = await loadCore();
+  const balanced = { notchPx: 48, notchCount: 4, sensitivity: 1, cooldownMs: 160 };
+
+  // Tab A measured the wheel and shared what it found.
+  const warmWindow = detentedWindow(createWheelSampleWindow, addWheelSample);
+  const sharedProfile = resolveLocalDeviceProfile(warmWindow, 0);
+  const tabA = await runTraversalTab({ ...balanced, sampleWindow: warmWindow, storedProfile: null });
+  assert.deepEqual(tabA, { switches: 4, notchesSpent: 4 }, "the classifying tab already switched per notch");
+
+  // Tab B is cold: empty window, no local evidence, exactly the state every
+  // tab after the first is in. Before the profile was shared this resolved to
+  // "unknown" and paid the balanced 80px trigger — 2 notches per switch.
+  const coldWithoutProfile = await runTraversalTab({
+    ...balanced,
+    sampleWindow: createWheelSampleWindow(),
+    storedProfile: null,
+  });
+  assert.equal(coldWithoutProfile.switches, 2, "a cold tab without the shared profile pays 2 notches per switch");
+
+  // With the profile shared, the cold tab behaves like the warm one.
+  const coldWithProfile = await runTraversalTab({
+    ...balanced,
+    sampleWindow: createWheelSampleWindow(),
+    storedProfile: sharedProfile,
+  });
+  assert.deepEqual(coldWithProfile, tabA, "the shared profile makes a cold tab behave like the classifying tab");
+});
+
+test("a four-switch traversal costs four notches once the profile is shared, not seven", async () => {
+  const { createWheelSampleWindow, addWheelSample, resolveLocalDeviceProfile } = await loadCore();
+  const sharedProfile = resolveLocalDeviceProfile(
+    detentedWindow(createWheelSampleWindow, addWheelSample),
+    0,
+  );
+
+  // The reviewer's end-to-end simulation: 4 switches across 4 tabs. Tab 1 is
+  // warm (it did the classifying); tabs 2-4 are cold. Without sharing, the
+  // first switch costs 1 notch and each later one costs 2 -> 7 notches for 4
+  // switches. With sharing, every tab costs 1.
+  async function traverse(storedProfile) {
+    const warmWindow = detentedWindow(createWheelSampleWindow, addWheelSample);
+    let notches = 0;
+    for (let tabIndex = 0; tabIndex < 4; tabIndex += 1) {
+      const sampleWindow = tabIndex === 0 ? warmWindow : createWheelSampleWindow();
+      // Keep feeding notches to this tab until it hands off one switch.
+      for (let notchCount = 1; notchCount <= 4; notchCount += 1) {
+        const result = await runTraversalTab({
+          sampleWindow,
+          storedProfile,
+          notchPx: 48,
+          notchCount,
+          sensitivity: 1,
+          cooldownMs: 160,
+        });
+        if (result.switches >= 1) {
+          notches += notchCount;
+          break;
+        }
+      }
+    }
+    return notches;
+  }
+
+  assert.equal(await traverse(null), 7, "unshared profile: 1 + 2 + 2 + 2 notches for 4 switches");
+  assert.equal(await traverse(sharedProfile), 4, "shared profile: one notch per switch across every tab");
+});

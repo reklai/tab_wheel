@@ -78,9 +78,14 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // recorded as an observation.
   assert.match(app, /if \(wheelMagnitudePx > 0\) \{\s*\n\s*addWheelSample\(/);
 
-  // Classification is lazy and gated: off means an exact identity adjustment.
-  assert.match(app, /if \(!settings\.deviceAwareTuning\) return resolveDeviceTuningAdjustment\("unknown"\);/);
-  assert.match(app, /return resolveDeviceTuningAdjustment\(classifyWheelDevice\(wheelSampleWindow\)\);/);
+  // Classification is lazy and gated: off means an exact identity adjustment
+  // (a null profile resolves to the neutral "unknown" tuning).
+  assert.match(app, /if \(!settings\.deviceAwareTuning\) return null;/);
+  assert.match(
+    app,
+    /return resolveEffectiveDeviceProfile\(wheelSampleWindow, storedDeviceProfile, nowMs\);/,
+  );
+  assert.match(app, /return resolveDeviceTuningAdjustment\(deviceProfile\?\.kind \?\? "unknown"\);/);
 
   // Effective values only — stored settings and presets are untouched.
   assert.match(app, /const triggerDistance = acceleratedDistance \* deviceAdjustment\.triggerDistanceMultiplier;/);
@@ -94,10 +99,9 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // produce a hair-trigger.
   assert.match(app, /const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;/);
   assert.match(app, /const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0\.85;/);
-  assert.match(
-    app,
-    /const notchMagnitudePx = settings\.deviceAwareTuning\s*\n\s*\? resolveDetentedNotchMagnitudePx\(wheelSampleWindow\)\s*\n\s*: null;/,
-  );
+  // The notch now comes off the effective profile, so a cold tab in the middle
+  // of a traversal adapts to the same notch the first tab measured.
+  assert.match(app, /const notchMagnitudePx = deviceProfile\?\.notchMagnitudePx \?\? null;/);
   // Product rule (mutation-checked): device tuning adjusts effective values
   // but must never narrow the trigger past explicit user intent. A user on
   // Precise (wheelSensitivity 0.8) or a manually lowered slider asked for
@@ -188,10 +192,11 @@ test("the gesture path pre-warms the MV3 worker on a rate limit, off the accumul
 
   // Deliberate contract decision: the pre-warm reuses an existing routed type
   // instead of adding a wake message. TABWHEEL_CONTENT_READY's handler is the
-  // only fully synchronous one in the router (no storage read, no tabs query,
-  // no injection), and what it asserts is literally true when a live content
-  // script sends it mid-gesture. Adding a wake type would widen the runtime
-  // contract for nothing, so this pin is where that choice gets revisited.
+  // only one in the router that returns without awaiting anything (its MRU
+  // touch is detached, and a no-op for an already-current tab), and what it
+  // asserts is literally true when a live content script sends it mid-gesture.
+  // Adding a wake type would widen the runtime contract for nothing, so this
+  // pin is where that choice gets revisited.
   assert.doesNotMatch(`${contract}\n${api}`, /TABWHEEL_WAKE|TABWHEEL_PREWARM/);
   assert.match(
     handler,
@@ -222,13 +227,72 @@ test("the gesture path pre-warms the MV3 worker on a rate limit, off the accumul
   );
   assert.doesNotMatch(wheelHandlerSource, /await notifyTabWheelContentReady/);
 
-  // Only after the modifier chord is recognized (plain scrolling never wakes
-  // the worker), and strictly before the accumulation it exists to overlap.
+  // Bookended on both sides, because the position encodes two decisions.
+  // Before: the chord is recognized and the event already suppressed, so plain
+  // scrolling never wakes the worker. After: both momentum-guard steps still
+  // follow, which locks in the deliberate choice that a delta the guard goes
+  // on to drop *still* warms the worker — the wake is about the user's hand
+  // being on the wheel, not about whether this particular delta commits.
   assertOrdered(wheelHandlerSource, [
     "if (!isKeyboardWheelEvent(event)) return;",
+    "suppressPageEvent(event);",
     "void notifyTabWheelContentReady()",
+    "createMomentumGuardSession(",
+    "shouldBlockWheelDelta(",
     "wheelAccumulator += wheelDelta;",
   ]);
+});
+
+test("the device profile is shared across tabs so a traversal's later tabs are not cold", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+  const contract = readText("src/lib/common/contracts/tabWheel.ts");
+
+  // Storage, not a message type: the profile has to be readable by a document
+  // that starts up long after the classifying tab did.
+  assert.match(contract, /deviceProfile: "tabWheelDeviceProfile",/);
+  assert.match(contract, /export function normalizeTabWheelDeviceProfile\(value: unknown\): TabWheelDeviceProfile \| null \{/);
+  // A stored "unknown" would be indistinguishable from a real classification
+  // downstream, and a notch is meaningless off a detented wheel.
+  assert.match(contract, /if \(kind === "unknown"\) return null;/);
+  assert.match(contract, /kind === "discreteWheel" && Number\.isFinite\(notchMagnitudePx\)/);
+
+  // READ: one batched get at init, alongside settings.
+  assert.match(
+    contract,
+    /const data = await browser\.storage\.local\.get\(\[\s*\n\s*TABWHEEL_STORAGE_KEYS\.settings,\s*\n\s*TABWHEEL_STORAGE_KEYS\.deviceProfile,\s*\n\s*\]\);/,
+  );
+  assert.match(app, /void loadTabWheelGestureState\(\)/);
+  assert.match(app, /storedDeviceProfile = loadedState\.deviceProfile;/);
+
+  // WRITE: fire-and-forget, gated on a confident local reading that actually
+  // disagrees with what is already shared, with the in-memory copy updated
+  // first so a burst cannot queue a second write behind the round trip.
+  assert.match(
+    app,
+    /const localProfile = resolveLocalDeviceProfile\(wheelSampleWindow, nowMs\);\s*\n\s*if \(!localProfile \|\| !shouldPersistDeviceProfile\(localProfile, storedDeviceProfile\)\) return;\s*\n\s*storedDeviceProfile = localProfile;\s*\n\s*void saveTabWheelDeviceProfile\(localProfile\)\.catch\(\(\) => \{\}\);/,
+  );
+
+  // CRITICAL: profile writes land mid-gesture, so the storage listener must
+  // filter by key. A profile-only change adopts the value and returns before
+  // the settings reset path — zeroing the accumulator on a sibling tab's
+  // classification would silently eat the switch the user is scrolling toward.
+  const storageHandlerSource = app.slice(
+    app.indexOf("function storageChangedHandler("),
+    app.indexOf("function messageHandler("),
+  );
+  assert.ok(storageHandlerSource.length > 0, "storageChangedHandler should be found in source");
+  assertOrdered(storageHandlerSource, [
+    "const deviceProfileChange = changes[TABWHEEL_STORAGE_KEYS.deviceProfile];",
+    "storedDeviceProfile = normalizeTabWheelDeviceProfile(deviceProfileChange.newValue);",
+    "const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];",
+    "if (!settingsChange) return;",
+    "resetWheelGestureState();",
+  ]);
+  const profileBranch = storageHandlerSource.slice(
+    storageHandlerSource.indexOf("const deviceProfileChange"),
+    storageHandlerSource.indexOf("const settingsChange"),
+  );
+  assert.doesNotMatch(profileBranch, /resetWheelGestureState|wheelAccumulator|resetMiddleClickSession/);
 });
 
 test("a completed cycle pre-probes its neighbors off the hot path without waking discarded tabs", () => {

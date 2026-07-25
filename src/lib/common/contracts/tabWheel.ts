@@ -11,7 +11,14 @@ export const TABWHEEL_STORAGE_KEYS = {
   scrollMemory: "tabWheelScrollMemory",
   mruState: "tabWheelMruState",
   onboarding: "tabWheelOnboarding",
+  deviceProfile: "tabWheelDeviceProfile",
 } as const;
+export const TABWHEEL_DEVICE_KINDS: readonly TabWheelDeviceKind[] = [
+  "discreteWheel",
+  "freeSpinWheel",
+  "trackpad",
+  "unknown",
+];
 export const TABWHEEL_MODIFIER_KEYS: readonly TabWheelModifierKey[] = ["alt", "ctrl", "meta"];
 export const TABWHEEL_CYCLE_SCOPES: readonly TabWheelCycleScope[] = ["general", "mru"];
 export const TABWHEEL_PRESETS: readonly TabWheelPreset[] = ["precise", "balanced", "fast", "custom"];
@@ -234,6 +241,55 @@ export function formatTabWheelCycleScopeLabel(scope: TabWheelCycleScope): string
 
 export function formatTabWheelMiddleClickAction(action: TabWheelMiddleClickAction): string {
   return action === "openSettings" ? "Open settings" : "Off";
+}
+
+// Returns null rather than a default profile: "no shared evidence yet" and
+// "the shared evidence says unknown" must stay distinguishable, and a stored
+// "unknown" would be indistinguishable from a real classification downstream.
+// A notch size is only meaningful for a detented wheel, so it is dropped for
+// every other kind rather than trusted from storage.
+export function normalizeTabWheelDeviceProfile(value: unknown): TabWheelDeviceProfile | null {
+  if (typeof value !== "object" || value === null) return null;
+  const profile = value as Partial<TabWheelDeviceProfile>;
+  if (!TABWHEEL_DEVICE_KINDS.includes(profile.kind as TabWheelDeviceKind)) return null;
+  const kind = profile.kind as TabWheelDeviceKind;
+  if (kind === "unknown") return null;
+  const notchMagnitudePx = Number(profile.notchMagnitudePx);
+  const updatedAtMs = Number(profile.updatedAtMs);
+  return {
+    kind,
+    notchMagnitudePx: kind === "discreteWheel" && Number.isFinite(notchMagnitudePx) && notchMagnitudePx > 0
+      ? notchMagnitudePx
+      : null,
+    updatedAtMs: Number.isFinite(updatedAtMs) ? updatedAtMs : 0,
+  };
+}
+
+// One storage read for both, because the content script needs both before it
+// can judge the first wheel event and a second round trip would just widen
+// the window where a gesture is handled with stale defaults.
+export async function loadTabWheelGestureState(): Promise<{
+  settings: TabWheelSettings;
+  deviceProfile: TabWheelDeviceProfile | null;
+}> {
+  try {
+    const data = await browser.storage.local.get([
+      TABWHEEL_STORAGE_KEYS.settings,
+      TABWHEEL_STORAGE_KEYS.deviceProfile,
+    ]);
+    return {
+      settings: normalizeTabWheelSettings(data[TABWHEEL_STORAGE_KEYS.settings]),
+      deviceProfile: normalizeTabWheelDeviceProfile(data[TABWHEEL_STORAGE_KEYS.deviceProfile]),
+    };
+  } catch (_) {
+    return { settings: { ...DEFAULT_TABWHEEL_SETTINGS }, deviceProfile: null };
+  }
+}
+
+export async function saveTabWheelDeviceProfile(profile: TabWheelDeviceProfile): Promise<void> {
+  await browser.storage.local.set({
+    [TABWHEEL_STORAGE_KEYS.deviceProfile]: profile,
+  });
 }
 
 export async function loadTabWheelSettings(): Promise<TabWheelSettings> {

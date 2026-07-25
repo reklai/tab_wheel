@@ -33,6 +33,15 @@ type TabWheelContentScriptStatus = "ready" | "unavailable";
 type TabWheelMruState = Record<string, number[]>;
 type TabWheelDeviceKind = "discreteWheel" | "freeSpinWheel" | "trackpad" | "unknown";
 
+// The device evidence one document learned, shared with every other document
+// through local storage. Not a preference: it is overwritten whenever fresh
+// evidence disagrees, and "reset to defaults" deliberately leaves it alone.
+interface TabWheelDeviceProfile {
+  kind: TabWheelDeviceKind;
+  notchMagnitudePx: number | null;
+  updatedAtMs: number;
+}
+
 interface TabWheelContentScriptActivationResult {
   attempted: number;
   injected: number;
