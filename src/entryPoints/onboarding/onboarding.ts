@@ -113,7 +113,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     tabs.forEach((tab, index) => tab.classList.toggle("active", index === activeDemoTab));
     demoAccumulator = 0;
     demo.classList.add("success");
-    demoStatus.textContent = "Perfect — that is the whole gesture.";
+    demoStatus.textContent = "Perfect — that is the whole gesture, and it works anywhere on a page.";
     continueDemoBtn.disabled = false;
     void markDemoComplete();
   }, { passive: false });
