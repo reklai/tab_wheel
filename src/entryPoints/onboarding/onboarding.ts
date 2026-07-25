@@ -1,6 +1,8 @@
 import browser from "webextension-polyfill";
 import {
+  applyTabWheelPreset,
   formatTabWheelModifierCombo,
+  formatTabWheelPresetLabel,
   loadTabWheelOnboardingState,
   loadTabWheelSettings,
   saveTabWheelOnboardingState,
@@ -13,9 +15,23 @@ import {
   resolveWheelTriggerDistance,
 } from "../../lib/core/tabWheel/tabWheelCore";
 import {
+  addWheelSample,
+  classifyWheelDevice,
+  createWheelSampleWindow,
+  resolveSuggestedPreset,
+} from "../../lib/core/tabWheel/deviceProfileCore";
+import {
   populateMiddleClickActionSelect,
   populateModifierSelect,
 } from "../../lib/ui/settings/settingsControls";
+
+// Purely presentational: no shared surface needs a device-kind label today,
+// so this stays local instead of joining the enum formatters in the contract.
+function formatDetectedDeviceLabel(kind: TabWheelDeviceKind): string {
+  if (kind === "trackpad") return "Trackpad";
+  if (kind === "freeSpinWheel") return "Free-spin wheel";
+  return "Clicky wheel";
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -105,6 +121,58 @@ document.addEventListener("DOMContentLoaded", async () => {
   demo.addEventListener("click", () => demo.focus());
   continueDemoBtn.addEventListener("click", () => showStep(2));
   byId<HTMLButtonElement>("skipDemoBtn").addEventListener("click", () => showStep(2));
+
+  // Calibration evidence lives here only: in-memory for this page, never
+  // persisted, never messaged. Mirrors how the content script's own sample
+  // window feeds classifyWheelDevice (see appInit.ts), but sourced from
+  // natural, unmodified scrolling instead of the gesture chord.
+  const calibrationSampleRegion = byId<HTMLElement>("calibrationSampleRegion");
+  const calibrationResult = byId<HTMLElement>("calibrationResult");
+  const useSuggestedFeelBtn = byId<HTMLButtonElement>("useSuggestedFeelBtn");
+  const calibrationSampleWindow = createWheelSampleWindow();
+  const CALIBRATION_MIN_SAMPLES = 12;
+  let calibrationObservedCount = 0;
+  let suggestedDevicePreset: TabWheelPreset | null = null;
+
+  function renderCalibrationResult(kind: TabWheelDeviceKind): void {
+    calibrationResult.hidden = false;
+    if (kind === "unknown") {
+      suggestedDevicePreset = null;
+      calibrationResult.textContent = "Couldn't detect a specific device — the Balanced default works well.";
+      useSuggestedFeelBtn.hidden = true;
+      return;
+    }
+    suggestedDevicePreset = resolveSuggestedPreset(kind);
+    calibrationResult.textContent =
+      `Detected: ${formatDetectedDeviceLabel(kind)} — we suggest the ${formatTabWheelPresetLabel(suggestedDevicePreset)} feel.`;
+    useSuggestedFeelBtn.hidden = false;
+  }
+
+  calibrationSampleRegion.addEventListener("wheel", (event) => {
+    const magnitudePx = Math.abs(normalizeWheelDelta(
+      event,
+      calibrationSampleRegion.clientHeight,
+      calibrationSampleRegion.clientWidth,
+      false,
+    ));
+    addWheelSample(calibrationSampleWindow, {
+      timeStampMs: Date.now(),
+      deltaMode: event.deltaMode,
+      deltaMagnitudePx: magnitudePx,
+    });
+    calibrationObservedCount += 1;
+    if (calibrationObservedCount < CALIBRATION_MIN_SAMPLES) return;
+    renderCalibrationResult(classifyWheelDevice(calibrationSampleWindow));
+  }, { passive: true });
+
+  byId<HTMLButtonElement>("skipCalibrationBtn").addEventListener("click", () => showStep(3));
+  useSuggestedFeelBtn.addEventListener("click", async () => {
+    if (!suggestedDevicePreset) return;
+    settings = applyTabWheelPreset(settings, suggestedDevicePreset);
+    await saveTabWheelSettings(settings);
+    showStep(3);
+  });
+
   byId<HTMLButtonElement>("saveChoicesBtn").addEventListener("click", async () => {
     settings = {
       ...settings,
@@ -114,9 +182,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
     await saveTabWheelSettings(settings);
     renderCombo();
-    showStep(3);
+    showStep(4);
   });
-  document.querySelector<HTMLButtonElement>("[data-back='1']")?.addEventListener("click", () => showStep(1));
+  document.querySelector<HTMLButtonElement>("[data-back='2']")?.addEventListener("click", () => showStep(2));
   byId<HTMLButtonElement>("openSettingsBtn").addEventListener("click", openSettings);
   byId<HTMLButtonElement>("finishBtn").addEventListener("click", async () => {
     onboarding = { ...onboarding, version: 1 };

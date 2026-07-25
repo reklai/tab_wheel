@@ -18,10 +18,11 @@
         <span class="active" data-progress="1"></span>
         <span data-progress="2"></span>
         <span data-progress="3"></span>
+        <span data-progress="4"></span>
       </div>
 
       <section class="step-panel" data-step="1">
-        <p class="eyebrow">Step 1 of 3</p>
+        <p class="eyebrow">Step 1 of 4</p>
         <h1>Switch tabs without chasing the tab bar.</h1>
         <p class="lead">Hold <strong id="demoCombo">Alt / Option</strong> and scroll inside the test area.</p>
 
@@ -46,7 +47,40 @@
       </section>
 
       <section class="step-panel" data-step="2" hidden>
-        <p class="eyebrow">Step 2 of 3</p>
+        <p class="eyebrow">Step 2 of 4</p>
+        <h1>Calibrate your scrolling</h1>
+        <p class="lead">Scroll up and down in the box below the way you normally would.</p>
+
+        <div class="calibration-sample" id="calibrationSampleRegion" tabindex="0" role="application" aria-label="Scroll here to calibrate your device">
+          <div class="calibration-row">Inbox</div>
+          <div class="calibration-row">Calendar</div>
+          <div class="calibration-row">Docs</div>
+          <div class="calibration-row">Notes</div>
+          <div class="calibration-row">Photos</div>
+          <div class="calibration-row">Music library</div>
+          <div class="calibration-row">Video calls</div>
+          <div class="calibration-row">Downloads</div>
+          <div class="calibration-row">Team chat</div>
+          <div class="calibration-row">Support tickets</div>
+          <div class="calibration-row">Analytics</div>
+          <div class="calibration-row">Code review</div>
+          <div class="calibration-row">Design board</div>
+          <div class="calibration-row">Roadmap</div>
+          <div class="calibration-row">Budget sheet</div>
+          <div class="calibration-row">Travel plans</div>
+          <div class="calibration-row">Recipe box</div>
+          <div class="calibration-row">Reading list</div>
+        </div>
+        <p class="calibration-result" id="calibrationResult" hidden></p>
+
+        <div class="step-actions">
+          <button class="text-button" id="skipCalibrationBtn" type="button">Skip</button>
+          <button class="primary-button" id="useSuggestedFeelBtn" type="button" hidden>Use suggested feel</button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="3" hidden>
+        <p class="eyebrow">Step 3 of 4</p>
         <h1>Make the gesture yours.</h1>
         <p class="lead">Choose the gesture that fits your setup. Everything else already has safe defaults.</p>
 
@@ -66,13 +100,13 @@
         </div>
 
         <div class="step-actions">
-          <button class="text-button" data-back="1" type="button">Back</button>
+          <button class="text-button" data-back="2" type="button">Back</button>
           <button class="primary-button" id="saveChoicesBtn" type="button">Save and continue</button>
         </div>
       </section>
 
-      <section class="step-panel" data-step="3" hidden>
-        <p class="eyebrow">Step 3 of 3</p>
+      <section class="step-panel" data-step="4" hidden>
+        <p class="eyebrow">Step 4 of 4</p>
         <h1>You’re ready to roll.</h1>
         <p class="lead">Use <strong id="readyCombo">Alt / Option + wheel</strong> on any normal web page.</p>
 

@@ -175,6 +175,31 @@ test("install and pre-v3 update flows open the appropriate onboarding page once"
   assert.match(onboarding, /resolveWheelDirection/);
 });
 
+test("onboarding install flow adds a fourth calibration step that samples natural scrolling", () => {
+  const html = readText("src/entryPoints/onboarding/onboarding.html");
+  const source = readText("src/entryPoints/onboarding/onboarding.ts");
+
+  assert.match(html, /<span class="active" data-progress="1">/);
+  assert.match(html, /<span data-progress="4">/);
+  assertOrdered(html, [
+    'data-step="1"',
+    'data-step="2"',
+    "Calibrate your scrolling",
+    'id="calibrationSampleRegion"',
+    'id="skipCalibrationBtn"',
+    'id="useSuggestedFeelBtn"',
+    'data-step="3"',
+    'id="gestureModifier"',
+    'data-step="4"',
+  ]);
+  assert.match(source, /classifyWheelDevice/);
+  assert.match(source, /resolveSuggestedPreset/);
+  assert.match(source, /addWheelSample\(calibrationSampleWindow/);
+  assert.match(source, /applyTabWheelPreset\(settings,\s*suggestedDevicePreset\)/);
+  assert.match(source, /showStep\(3\)/);
+  assert.match(source, /showStep\(4\)/);
+});
+
 test("popup mirrors the full settings order with protected-page fallbacks", () => {
   const html = readText("src/entryPoints/toolbarPopup/toolbarPopup.html");
   const source = readText("src/entryPoints/toolbarPopup/toolbarPopup.ts");
