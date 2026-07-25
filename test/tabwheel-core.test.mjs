@@ -104,3 +104,16 @@ test("sensitivity and acceleration keep bounded trigger distances", async () => 
   assert.equal(resolveAcceleratedWheelTriggerDistance(80, 3, true), 62);
   assert.equal(resolveAcceleratedWheelTriggerDistance(44, 20, true), 40);
 });
+
+// The Precise preset's base trigger, real-computed by the same function
+// appInit calls. This is the "core" half of the notch-adaptive sensitivity
+// gate's worked example (see appInit.ts's wheelSensitivity >= 1 comment and
+// the mutation-checked pin in runtime-wiring.test.mjs): at sensitivity 0.8,
+// appInit's notch-adaptive min() never engages regardless of the detected
+// notch (e.g. a 53px Linux Chrome cluster — see device-profile-core.test.mjs),
+// so this 100px base is the effective trigger a Precise user actually gets.
+test("Precise preset's sensitivity (0.8) resolves the 100px base trigger the notch-adaptive gate must never narrow", async () => {
+  const { resolveWheelTriggerDistance } = await loadCore();
+
+  assert.equal(resolveWheelTriggerDistance(80, 0.8), 100);
+});

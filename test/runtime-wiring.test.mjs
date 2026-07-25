@@ -98,9 +98,19 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
     app,
     /const notchMagnitudePx = settings\.deviceAwareTuning\s*\n\s*\? resolveDetentedNotchMagnitudePx\(wheelSampleWindow\)\s*\n\s*: null;/,
   );
+  // Product rule (mutation-checked): device tuning adjusts effective values
+  // but must never narrow past explicit user intent. A user on Precise
+  // (wheelSensitivity 0.8) or a manually lowered slider asked for more
+  // deliberate switching, so the notch-adaptive min() below is only ever
+  // reachable at sensitivity >= 1 (Balanced's 1, Fast's 1.35, the default).
+  // Worked example: sensitivity 0.8 + a 53px detented notch clears every
+  // other condition (deviceAwareTuning on, notch >= 40) but fails this one,
+  // so triggerDistance stays resolveWheelTriggerDistance(80, 0.8) = 100 —
+  // pinned numerically in tabwheel-core.test.mjs. Deleting the
+  // `settings.wheelSensitivity >= 1 &&` clause breaks this exact match.
   assert.match(
     app,
-    /notchMagnitudePx !== null && notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX\s*\n\s*\? Math\.min\(\s*\n\s*triggerDistance,\s*\n\s*Math\.max\(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx \* NOTCH_ADAPTIVE_TRIGGER_RATIO\),\s*\n\s*\)\s*\n\s*: triggerDistance;/,
+    /const effectiveTriggerDistance =\s*\n\s*settings\.wheelSensitivity >= 1\s*\n\s*&& notchMagnitudePx !== null\s*\n\s*&& notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX\s*\n\s*\? Math\.min\(\s*\n\s*triggerDistance,\s*\n\s*Math\.max\(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx \* NOTCH_ADAPTIVE_TRIGGER_RATIO\),\s*\n\s*\)\s*\n\s*: triggerDistance;/,
   );
   assert.match(app, /if \(Math\.abs\(wheelAccumulator\) < effectiveTriggerDistance\) return;/);
   assertOrdered(app, [
@@ -108,10 +118,13 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
     "const effectiveTriggerDistance =",
     "if (Math.abs(wheelAccumulator) < effectiveTriggerDistance) return;",
   ]);
-  // The overshoot cap (cooldown-blocked cycle, overshootGuard off) caps to
-  // the same effective trigger that gated it, not the pre-notch-adaptive
-  // value, so a detented wheel's held-over accumulator reflects its own
-  // smaller notch distance rather than the wider balanced default.
+  // The overshoot cap is dead in the shipped product today —
+  // normalizeTabWheelSettings force-trues overshootGuard, so the
+  // `cycleRan || settings.overshootGuard` branch above always returns first
+  // and this line never runs. It is pinned anyway as defense-in-depth: if
+  // that guard is ever relaxed, capping to the effective (notch-adaptive)
+  // trigger rather than the pre-adaptive one keeps a detented wheel's
+  // held-over accumulator sized to its own notch distance.
   assert.match(
     app,
     /wheelAccumulator = Math\.sign\(wheelAccumulator\) \* Math\.min\(\s*\n\s*Math\.abs\(wheelAccumulator\),\s*\n\s*effectiveTriggerDistance,\s*\n\s*\);/,

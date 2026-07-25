@@ -66,11 +66,15 @@ const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
 // balanced 80px trigger silently taxes 2 notches per switch on Firefox
 // (48px/notch) and Linux Chrome (~53px/notch). 0.85 keeps a small margin
 // below the measured notch size so ordinary per-notch jitter (a slightly
-// short sample) still clears the gate; the same 40 both floors the computed
-// trigger (a faster preset's device multiplier can't push it below half the
-// balanced default) and gates which notch sizes are trusted enough to
-// adapt to in the first place, matching deviceProfileCore's own
-// CLUSTER_MIN_MODAL_MAGNITUDE_PX floor for what counts as a real notch.
+// short sample) still clears the gate. 40 is the same value as
+// MIN_ACCELERATED_TRIGGER_DISTANCE_PX in tabWheelCore.ts: this floors
+// max(40, notch * 0.85) below, that one floors acceleratedDistance (which
+// feeds triggerDistance, the other side of the min() in wheelHandler) — the
+// two 40s must move together, or the min() of the two branches could drop
+// under 40. The same 40 also gates which notch sizes are trusted enough to
+// adapt to in the first place, so a borderline 30-40px cluster (real per
+// deviceProfileCore's own CLUSTER_MIN_MODAL_MAGNITUDE_PX floor) can't
+// produce a hair-trigger.
 const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;
 const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0.85;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
@@ -434,9 +438,10 @@ export function initApp(): void {
     extraCooldownMs: number,
   ): boolean {
     // Detented wheels carry extraCooldownMs of -60 (see
-    // resolveDeviceTuningAdjustment), which would otherwise let a fast
-    // trackpad-tuned +40 and a fast detented -60 both push past the
-    // settings floor in opposite directions. Clamping to the same
+    // resolveDeviceTuningAdjustment) — the only adjustment steep enough to
+    // push settings.wheelCooldownMs + extraCooldownMs under the settings
+    // floor; trackpad's +40 only ever raises the sum further above it, so
+    // it can never breach a floor from below. Clamping to the same
     // MIN_WHEEL_COOLDOWN_MS the settings UI already enforces means a
     // detented wheel's cooldown can shed all the way down to it, but never
     // below — fast notching stops getting eaten by cooldown without
@@ -541,11 +546,26 @@ export function initApp(): void {
     // detented can't produce a hair-trigger. min() with the accelerated,
     // device-multiplied trigger means this can only tighten the gate, never
     // loosen it past whatever acceleration/presets/multiplier already chose.
+    //
+    // wheelSensitivity >= 1 additionally gates the whole adjustment: device
+    // tuning adjusts effective values, but it must never narrow past what
+    // the user explicitly asked for. A user who chose Precise (0.8) or
+    // manually lowered the sensitivity slider asked for more deliberate
+    // switching — the trackpad multiplier above only ever widens the
+    // trigger, never narrows it, and this is the mirror rule on the
+    // narrowing side. Balanced (1), Fast (1.35), and the default all clear
+    // the gate and get one-notch switching; Precise keeps its configured
+    // feel untouched (e.g. sensitivity 0.8 with a 53px detented notch:
+    // triggerDistance stays resolveWheelTriggerDistance(80, 0.8) = 100,
+    // never adapted down toward the notch — see tabwheel-core.test.mjs and
+    // runtime-wiring.test.mjs for the pinned worked example).
     const notchMagnitudePx = settings.deviceAwareTuning
       ? resolveDetentedNotchMagnitudePx(wheelSampleWindow)
       : null;
     const effectiveTriggerDistance =
-      notchMagnitudePx !== null && notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX
+      settings.wheelSensitivity >= 1
+      && notchMagnitudePx !== null
+      && notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX
         ? Math.min(
             triggerDistance,
             Math.max(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx * NOTCH_ADAPTIVE_TRIGGER_RATIO),
@@ -564,6 +584,15 @@ export function initApp(): void {
       lastGestureMagnitudePx = 0;
       return;
     }
+    // Dead in the shipped product today: normalizeTabWheelSettings
+    // force-trues overshootGuard, so `cycleRan || settings.overshootGuard`
+    // above is always true and this line never runs. Kept as
+    // defense-in-depth in case that ever changes (a future settings
+    // relaxation, or an unnormalized settings object reaching here) — if it
+    // does run, capping to effectiveTriggerDistance rather than the
+    // pre-adaptive triggerDistance keeps a detented wheel's held-over
+    // accumulator sized to its own notch distance, not the wider balanced
+    // default.
     wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
       Math.abs(wheelAccumulator),
       effectiveTriggerDistance,
