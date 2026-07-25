@@ -99,10 +99,15 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
     /const notchMagnitudePx = settings\.deviceAwareTuning\s*\n\s*\? resolveDetentedNotchMagnitudePx\(wheelSampleWindow\)\s*\n\s*: null;/,
   );
   // Product rule (mutation-checked): device tuning adjusts effective values
-  // but must never narrow past explicit user intent. A user on Precise
-  // (wheelSensitivity 0.8) or a manually lowered slider asked for more
-  // deliberate switching, so the notch-adaptive min() below is only ever
-  // reachable at sensitivity >= 1 (Balanced's 1, Fast's 1.35, the default).
+  // but must never narrow the trigger past explicit user intent. A user on
+  // Precise (wheelSensitivity 0.8) or a manually lowered slider asked for
+  // more deliberate switching, so the notch-adaptive min() below is only
+  // ever reachable at sensitivity >= 1 (Balanced's 1, Fast's 1.35, the
+  // default). The cooldown's -60 stays ungated by design (see
+  // resolveDeviceTuningAdjustment / runWheelCycle's clamp): narrowing the
+  // trigger risks accidental switches the user asked to avoid, while
+  // shortening the cooldown only lets intentional fast notching register
+  // instead of being silently eaten, so it carries no equivalent risk.
   // Worked example: sensitivity 0.8 + a 53px detented notch clears every
   // other condition (deviceAwareTuning on, notch >= 40) but fails this one,
   // so triggerDistance stays resolveWheelTriggerDistance(80, 0.8) = 100 —

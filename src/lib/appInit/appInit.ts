@@ -548,17 +548,22 @@ export function initApp(): void {
     // loosen it past whatever acceleration/presets/multiplier already chose.
     //
     // wheelSensitivity >= 1 additionally gates the whole adjustment: device
-    // tuning adjusts effective values, but it must never narrow past what
-    // the user explicitly asked for. A user who chose Precise (0.8) or
-    // manually lowered the sensitivity slider asked for more deliberate
-    // switching — the trackpad multiplier above only ever widens the
-    // trigger, never narrows it, and this is the mirror rule on the
-    // narrowing side. Balanced (1), Fast (1.35), and the default all clear
-    // the gate and get one-notch switching; Precise keeps its configured
-    // feel untouched (e.g. sensitivity 0.8 with a 53px detented notch:
-    // triggerDistance stays resolveWheelTriggerDistance(80, 0.8) = 100,
-    // never adapted down toward the notch — see tabwheel-core.test.mjs and
-    // runtime-wiring.test.mjs for the pinned worked example).
+    // tuning adjusts effective values, but it must never narrow the trigger
+    // past what the user explicitly asked for. A user who chose Precise
+    // (0.8) or manually lowered the sensitivity slider asked for more
+    // deliberate switching — the trackpad multiplier above only ever widens
+    // the trigger, never narrows it, and this is the mirror rule on the
+    // narrowing side. The cooldown's -60 (see resolveDeviceTuningAdjustment)
+    // stays ungated by design: narrowing the trigger risks accidental
+    // switches the user asked to avoid, while shortening the cooldown only
+    // lets intentional fast notching register instead of being silently
+    // eaten, so it carries no equivalent risk. Balanced (1), Fast (1.35),
+    // and the default all clear the gate and get one-notch switching;
+    // Precise keeps its configured feel untouched (e.g. sensitivity 0.8
+    // with a 53px detented notch: triggerDistance stays
+    // resolveWheelTriggerDistance(80, 0.8) = 100, never adapted down toward
+    // the notch — see tabwheel-core.test.mjs and runtime-wiring.test.mjs
+    // for the pinned worked example).
     const notchMagnitudePx = settings.deviceAwareTuning
       ? resolveDetentedNotchMagnitudePx(wheelSampleWindow)
       : null;
