@@ -14,7 +14,7 @@ test("focused v14 migration preserves core state and removes retired state", () 
   assert.match(contract, /scrollMemory:\s*"tabWheelScrollMemory"/);
   assert.match(contract, /mruState:\s*"tabWheelMruState"/);
   assert.match(contract, /onboarding:\s*"tabWheelOnboarding"/);
-  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 16/);
+  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 17/);
   assert.match(migrations, /focusTabWheelSettings\(migratedStorage\)/);
   assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_SEARCH_HISTORY_KEY\)/);
   assert.match(migrations, /"leftClickAction"/);
@@ -51,6 +51,21 @@ test("focused v16 migration removes the retired auto-tuning state", () => {
   assert.match(migrations, /deleteSettingKey\(storage, "deviceAwareTuning"\)/);
   assert.match(migrations, /const TABWHEEL_DEVICE_PROFILE_KEY = "tabWheelDeviceProfile";/);
   assert.match(migrations, /deleteKey\(storage, TABWHEEL_DEVICE_PROFILE_KEY\)/);
+});
+
+test("focused v17 migration backfills the cycle-within-group setting it introduced", () => {
+  const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+
+  assert.match(migrations, /if \(fromVersion < 17\)/);
+  assert.match(migrations, /backfillCycleWithinTabGroupSetting\(migratedStorage\)/);
+  assert.match(migrations, /typeof nextSettings\.cycleWithinTabGroup !== "boolean"/);
+  assert.match(migrations, /nextSettings\.cycleWithinTabGroup = false;/);
+  // wrapAround needs no v17 backfill of its own: every upgrading profile
+  // already has a value because the v14 step has forced it true since then.
+  assert.doesNotMatch(
+    migrations.slice(migrations.indexOf("function backfillCycleWithinTabGroupSetting(")),
+    /wrapAround/,
+  );
 });
 
 test("migration does not downgrade storage created by a future release", () => {

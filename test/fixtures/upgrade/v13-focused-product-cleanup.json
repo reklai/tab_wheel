@@ -29,7 +29,7 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 16,
+    "storageSchemaVersion": 17,
     "tabWheelMruState": {
       "1": [
         9,
@@ -52,7 +52,8 @@
       "allowGesturesInEditableFields": true,
       "skipRestrictedPages": true,
       "wrapAround": true,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false
     }
   },
   "expectedChanged": true

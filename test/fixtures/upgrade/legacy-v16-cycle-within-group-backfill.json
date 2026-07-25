@@ -1,8 +1,9 @@
 {
   "input": {
-    "storageSchemaVersion": 14,
+    "storageSchemaVersion": 16,
     "tabWheelSettings": {
-      "invertScroll": false
+      "invertScroll": false,
+      "showRestrictedBadge": true
     },
     "futureKey": true
   },

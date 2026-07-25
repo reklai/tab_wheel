@@ -30,7 +30,7 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 16,
+    "storageSchemaVersion": 17,
     "tabWheelScrollMemory": {
       "8": {
         "tabId": 8,
@@ -55,7 +55,8 @@
       "restorePagePosition": true,
       "skipHiddenTabs": true,
       "wrapAround": true,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false
     }
   },
   "expectedChanged": true

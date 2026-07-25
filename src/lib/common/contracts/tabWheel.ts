@@ -60,6 +60,7 @@ export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   skipHiddenTabs: true,
   showRestrictedBadge: true,
   wrapAround: true,
+  cycleWithinTabGroup: false,
   wheelPreset: "balanced",
   wheelSensitivity: 1,
   wheelCooldownMs: 160,
@@ -160,7 +161,11 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
       settings.showRestrictedBadge,
       DEFAULT_TABWHEEL_SETTINGS.showRestrictedBadge,
     ),
-    wrapAround: true,
+    wrapAround: normalizeEnabledFlag(settings.wrapAround, DEFAULT_TABWHEEL_SETTINGS.wrapAround),
+    cycleWithinTabGroup: normalizeEnabledFlag(
+      settings.cycleWithinTabGroup,
+      DEFAULT_TABWHEEL_SETTINGS.cycleWithinTabGroup,
+    ),
     wheelPreset: normalizeWheelPreset(settings.wheelPreset),
     wheelSensitivity: normalizeNumberInRange(
       settings.wheelSensitivity,

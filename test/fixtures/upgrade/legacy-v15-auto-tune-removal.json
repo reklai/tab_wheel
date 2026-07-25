@@ -14,10 +14,11 @@
     "futureKey": true
   },
   "expected": {
-    "storageSchemaVersion": 16,
+    "storageSchemaVersion": 17,
     "tabWheelSettings": {
       "invertScroll": false,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false
     },
     "futureKey": true
   },

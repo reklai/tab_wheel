@@ -31,7 +31,7 @@
     ]
   },
   "expected": {
-    "storageSchemaVersion": 16,
+    "storageSchemaVersion": 17,
     "tabWheelSettings": {
       "allowGesturesInEditableFields": true,
       "middleClickAction": "openSettings",
@@ -46,7 +46,8 @@
       "restorePagePosition": true,
       "skipHiddenTabs": true,
       "wrapAround": true,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false
     },
     "tabManagerList": [
       {

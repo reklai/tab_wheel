@@ -22,7 +22,7 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 16,
+    "storageSchemaVersion": 17,
     "tabWheelSettings": {
       "invertScroll": false,
       "gestureModifier": "alt",
@@ -41,7 +41,8 @@
       "overshootGuard": true,
       "restorePagePosition": true,
       "skipHiddenTabs": true,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false
     }
   },
   "expectedChanged": true

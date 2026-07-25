@@ -360,6 +360,7 @@ test("defaults support a predictable first run", () => {
   assert.match(contract, /skipRestrictedPages:\s*true/);
   assert.match(contract, /skipHiddenTabs:\s*true/);
   assert.match(contract, /wrapAround:\s*true/);
+  assert.match(contract, /cycleWithinTabGroup:\s*false/);
   assert.match(contract, /wheelPreset:\s*"balanced"/);
   assert.match(contract, /horizontalWheel:\s*true/);
   assert.match(contract, /allowGesturesInEditableFields:\s*true/);
@@ -375,6 +376,84 @@ test("successful real gestures mark first success locally", () => {
   assert.match(domain, /recordFirstGestureCycle/);
   assert.match(domain, /firstGestureCycleCompleted:\s*true/);
   assert.match(domain, /saveTabWheelOnboardingState/);
+});
+
+test("cycling within the active tab's group filters eligibility from the active tab's groupId", () => {
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+
+  // Ungrouped tabs (-1, or undefined where tabGroups is unsupported) all
+  // normalize to the same id, so a browser with no group support only ever
+  // has one implicit group and the filter below degrades to a no-op there.
+  assert.match(domain, /function normalizeTabGroupId\(groupId: number \| undefined\): number \{\s*\n\s*return groupId \?\? -1;\s*\n\s*\}/);
+
+  const eligibleTabsSource = domain.slice(
+    domain.indexOf("function getEligibleTabs("),
+    domain.indexOf("function hasSameNumberList("),
+  );
+  assert.ok(eligibleTabsSource.length > 0, "getEligibleTabs should be found in source");
+  assert.match(eligibleTabsSource, /activeTabGroupId\?:\s*number,/);
+  // Ordered last among the eligibility predicates: the cheaper, more commonly
+  // active filters (pinned/hidden/restricted) short-circuit first, and the
+  // group check only runs when the setting is actually on.
+  assertOrdered(eligibleTabsSource, [
+    "!settings.skipPinnedTabs",
+    "!settings.skipHiddenTabs",
+    "!settings.skipRestrictedPages",
+    "!settings.cycleWithinTabGroup",
+    "normalizeTabGroupId(tab.groupId) === normalizeTabGroupId(activeTabGroupId)",
+  ]);
+
+  // getGestureEligibleTabs is the sole choke point that turns an active tab
+  // into the groupId the filter above compares against.
+  const gestureEligibleSource = domain.slice(
+    domain.indexOf("async function getGestureEligibleTabs("),
+    domain.indexOf("function beginScrollRestore("),
+  );
+  assert.ok(gestureEligibleSource.length > 0, "getGestureEligibleTabs should be found in source");
+  assert.match(gestureEligibleSource, /activeTab:\s*Tabs\.Tab \| null,/);
+  assert.match(
+    gestureEligibleSource,
+    /getEligibleTabs\(tabs, settings, collapsedTabGroupIds, activeTab\?\.groupId\)/,
+  );
+
+  // Both callers already resolve the active tab before asking for eligible
+  // tabs, so wiring it through is passing an existing value, not resolving a
+  // new one.
+  assert.match(
+    domain,
+    /const eligibleTabs = await getGestureEligibleTabs\(tabs, settings, resolvedWindowId, activeTab\);/,
+  );
+  assert.match(
+    domain,
+    /const eligibleTabs = await getGestureEligibleTabs\(tabs, settings, activeTab\.windowId, activeTab\);/,
+  );
+});
+
+test("wrap-around and the group filter compose: both act on the same candidate list", () => {
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+  const cycleSource = domain.slice(
+    domain.indexOf("async function cycleUnlocked("),
+    domain.indexOf("async function cycle("),
+  );
+  assert.ok(cycleSource.length > 0, "cycleUnlocked should be found in source");
+
+  // candidateTabs is derived from eligibleTabs (already group-filtered when
+  // the setting is on) before either wrap-around resolver or the neighbor
+  // pre-probe ever sees it — neither needs its own group awareness.
+  assertOrdered(cycleSource, [
+    "const eligibleTabs = await getGestureEligibleTabs(tabs, settings, activeTab.windowId, activeTab);",
+    "const candidateTabs = settings.cycleScope",
+    "resolveAvailableCycleTargetTab(activeTab, candidateTabs, direction, settings)",
+    "warmNeighborReadiness(targetTab, candidateTabs, settings)",
+  ]);
+  assert.match(
+    domain,
+    /resolveMruCycleTargetTab\(activeTab, candidateTabs, direction, settings\.wrapAround\)/,
+  );
+  assert.match(
+    domain,
+    /resolveStripTargetTab\(activeTab, candidateTabs, direction, settings\.wrapAround\)/,
+  );
 });
 
 test("reset to defaults clears preferences and position state, and nothing else", () => {
@@ -411,7 +490,6 @@ test("internal reliability rules are enforced and absent from user-facing contro
     "allowGesturesInEditableFields",
     "restorePagePosition",
     "skipRestrictedPages",
-    "wrapAround",
     "horizontalWheel",
     "overshootGuard",
   ]) {
@@ -419,6 +497,30 @@ test("internal reliability rules are enforced and absent from user-facing contro
     assert.doesNotMatch(`${popup}\n${options}`, new RegExp(`id="${key}"`));
   }
   assert.doesNotMatch(`${popup}\n${options}`, /id="direction"|id="invertScroll"|<details/);
+});
+
+// wrapAround graduated from a forced internal rule (pre-3.1.1) to a normal
+// user setting: it now normalizes like showRestrictedBadge and has controls
+// in both mirrors. This pins that it stayed graduated.
+test("wrap-around is a normal user setting, not an internal reliability rule", () => {
+  const contract = readText("src/lib/common/contracts/tabWheel.ts");
+  const popup = readText("src/entryPoints/toolbarPopup/toolbarPopup.html");
+  const options = readText("src/entryPoints/optionsPage/optionsPage.html");
+  const normalizerSource = contract.slice(
+    contract.indexOf("export function normalizeTabWheelSettings("),
+    contract.indexOf("export function normalizeTabWheelOnboardingState("),
+  );
+  assert.ok(normalizerSource.length > 0, "normalizeTabWheelSettings should be found in source");
+
+  assert.match(
+    normalizerSource,
+    /wrapAround:\s*normalizeEnabledFlag\(settings\.wrapAround,\s*DEFAULT_TABWHEEL_SETTINGS\.wrapAround\)/,
+  );
+  // Force-true would silently ignore whatever the mirrors write; it must be
+  // gone from the normalizer now that the control is user-facing.
+  assert.doesNotMatch(normalizerSource, /wrapAround:\s*true,/);
+  assert.match(popup, /id="wrapAround"/);
+  assert.match(options, /id="wrapAround"/);
 });
 
 test("install and pre-v3 update flows open the appropriate onboarding page once", () => {
@@ -479,6 +581,8 @@ test("popup mirrors the full settings order with protected-page fallbacks", () =
     'id="wheelAcceleration"',
     'id="skipPinnedTabs"',
     'id="skipHiddenTabs"',
+    'id="wrapAround"',
+    'id="cycleWithinTabGroup"',
     'id="showRestrictedBadge"',
   ]);
   assert.match(html, /<strong>Where it works<\/strong>[\s\S]*<ul>/);
@@ -511,6 +615,8 @@ test("options has one live gesture title and the exact focused control order", (
     'id="wheelAcceleration"',
     'id="skipPinnedTabs"',
     'id="skipHiddenTabs"',
+    'id="wrapAround"',
+    'id="cycleWithinTabGroup"',
     'id="showRestrictedBadge"',
   ]);
   assert.match(html, /<strong>Where it works<\/strong>[\s\S]*<ul>/);

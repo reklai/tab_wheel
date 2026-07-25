@@ -52,6 +52,7 @@ interface TabWheelSettings {
   skipHiddenTabs: boolean;
   showRestrictedBadge: boolean;
   wrapAround: boolean;
+  cycleWithinTabGroup: boolean;
   wheelPreset: TabWheelPreset;
   wheelSensitivity: number;
   wheelCooldownMs: number;

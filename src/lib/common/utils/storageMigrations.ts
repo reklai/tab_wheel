@@ -6,7 +6,7 @@ const TABWHEEL_SEARCH_HISTORY_KEY = "tabWheelSearchHistory";
 const TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs";
 const TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList";
 const TABWHEEL_DEVICE_PROFILE_KEY = "tabWheelDeviceProfile";
-export const STORAGE_SCHEMA_VERSION = 16;
+export const STORAGE_SCHEMA_VERSION = 17;
 
 type StorageSnapshot = Record<string, unknown>;
 
@@ -260,6 +260,25 @@ function removeDeviceTuningState(storage: StorageSnapshot): boolean {
   return changed;
 }
 
+// v17 turns wrapAround into a normal user setting (see normalizeTabWheelSettings)
+// and introduces cycleWithinTabGroup. wrapAround already has a value on every
+// upgrading profile — earlier steps have forced it true since v14 — so it
+// needs no backfill here; only the newly introduced key does.
+function backfillCycleWithinTabGroupSetting(storage: StorageSnapshot): boolean {
+  const settings = storage[TABWHEEL_SETTINGS_KEY];
+  const hasExistingSettings = typeof settings === "object" && settings !== null && !Array.isArray(settings);
+  const nextSettings = hasExistingSettings ? { ...(settings as Record<string, unknown>) } : {};
+  let changed = !hasExistingSettings;
+
+  if (typeof nextSettings.cycleWithinTabGroup !== "boolean") {
+    nextSettings.cycleWithinTabGroup = false;
+    changed = true;
+  }
+
+  if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
+  return changed;
+}
+
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== "string") return false;
   try {
@@ -394,6 +413,9 @@ export function migrateStorageSnapshot(input: StorageSnapshot): StorageMigration
   }
   if (fromVersion < 16) {
     changed = removeDeviceTuningState(migratedStorage) || changed;
+  }
+  if (fromVersion < 17) {
+    changed = backfillCycleWithinTabGroupSetting(migratedStorage) || changed;
   }
 
   if (migratedStorage[STORAGE_SCHEMA_VERSION_KEY] !== STORAGE_SCHEMA_VERSION) {

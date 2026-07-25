@@ -295,16 +295,27 @@ function isCollapsedGroupTab(tab: Tabs.Tab, collapsedTabGroupIds: ReadonlySet<nu
   return tab.groupId != null && collapsedTabGroupIds.has(tab.groupId);
 }
 
+// Ungrouped tabs (groupId -1, or undefined on browsers with no tabGroups
+// support) all normalize to the same implicit group, so a browser without
+// group support never has more than one group and the filter below is a
+// no-op there — a graceful degrade rather than a special case.
+function normalizeTabGroupId(groupId: number | undefined): number {
+  return groupId ?? -1;
+}
+
 function getEligibleTabs(
   tabs: Tabs.Tab[],
   settings: TabWheelSettings,
   collapsedTabGroupIds: ReadonlySet<number> = new Set(),
+  activeTabGroupId?: number,
 ): Tabs.Tab[] {
   return tabs
     .filter((tab) => tab.id != null
       && (!settings.skipPinnedTabs || tab.pinned !== true)
       && (!settings.skipHiddenTabs || (tab.hidden !== true && !isCollapsedGroupTab(tab, collapsedTabGroupIds)))
-      && (!settings.skipRestrictedPages || !isRestrictedTab(tab)))
+      && (!settings.skipRestrictedPages || !isRestrictedTab(tab))
+      && (!settings.cycleWithinTabGroup
+        || normalizeTabGroupId(tab.groupId) === normalizeTabGroupId(activeTabGroupId)))
     .sort((left, right) => getTabIndex(left) - getTabIndex(right));
 }
 
@@ -523,9 +534,10 @@ export function createTabWheelDomain(): TabWheelDomain {
     tabs: Tabs.Tab[],
     settings: TabWheelSettings,
     windowId: number,
+    activeTab: Tabs.Tab | null,
   ): Promise<Tabs.Tab[]> {
     const collapsedTabGroupIds = await getCollapsedTabGroupIds(windowId, tabs, settings);
-    const eligibleTabs = getEligibleTabs(tabs, settings, collapsedTabGroupIds);
+    const eligibleTabs = getEligibleTabs(tabs, settings, collapsedTabGroupIds, activeTab?.groupId);
     return settings.skipRestrictedPages
       ? eligibleTabs.filter((tab) => !isContentScriptKnownUnavailable(tab))
       : eligibleTabs;
@@ -1007,7 +1019,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     const activeTab = await resolveActiveTab(tab, resolvedWindowId);
     const tabs = await getWindowTabs(resolvedWindowId);
     await reconcileMruWindow(resolvedWindowId, tabs);
-    const eligibleTabs = await getGestureEligibleTabs(tabs, settings, resolvedWindowId);
+    const eligibleTabs = await getGestureEligibleTabs(tabs, settings, resolvedWindowId, activeTab);
     const scopeTabs = getCycleTabs(resolvedWindowId, eligibleTabs, settings);
     const activeIndex = activeTab
       ? scopeTabs.findIndex((candidate) => candidate.id === activeTab.id)
@@ -1255,7 +1267,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     const settings = await getSettings();
     const tabs = await getWindowTabs(activeTab.windowId);
     await reconcileMruWindow(activeTab.windowId, tabs);
-    const eligibleTabs = await getGestureEligibleTabs(tabs, settings, activeTab.windowId);
+    const eligibleTabs = await getGestureEligibleTabs(tabs, settings, activeTab.windowId, activeTab);
     if (eligibleTabs.length === 0) return { ok: false, reason: "No eligible tabs" };
 
     const candidateTabs = settings.cycleScope === "mru"

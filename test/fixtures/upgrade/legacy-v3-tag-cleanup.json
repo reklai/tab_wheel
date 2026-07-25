@@ -25,7 +25,7 @@
     ]
   },
   "expected": {
-    "storageSchemaVersion": 16,
+    "storageSchemaVersion": 17,
     "tabWheelSettings": {
       "invertScroll": true,
       "allowGesturesInEditableFields": true,
@@ -41,7 +41,8 @@
       "restorePagePosition": true,
       "skipHiddenTabs": true,
       "wrapAround": true,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false
     }
   },
   "expectedChanged": true
