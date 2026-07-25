@@ -441,14 +441,19 @@ export function initApp(): void {
       settings.horizontalWheel,
     );
     const now = Date.now();
+    const wheelMagnitudePx = Math.abs(wheelDelta);
     // Sampled before the modifier check on purpose: plain scrolling and
     // momentum tails are the evidence the classifier needs. Timing, deltaMode,
-    // and magnitude only — no direction, no target, no page content.
-    addWheelSample(wheelSampleWindow, {
-      timeStampMs: now,
-      deltaMode: event.deltaMode,
-      deltaMagnitudePx: Math.abs(wheelDelta),
-    });
+    // and magnitude only — no direction, no target, no page content. A
+    // zero-magnitude event carries no cadence evidence, so it is not recorded
+    // as an observation.
+    if (wheelMagnitudePx > 0) {
+      addWheelSample(wheelSampleWindow, {
+        timeStampMs: now,
+        deltaMode: event.deltaMode,
+        deltaMagnitudePx: wheelMagnitudePx,
+      });
+    }
     if (!isKeyboardWheelEvent(event)) return;
     if (wheelDelta === 0) return;
     suppressPageEvent(event);
@@ -462,11 +467,12 @@ export function initApp(): void {
     //
     // A fresh tab has an empty sample window, so classification is "unknown"
     // and there is no cadence history: deltaMode and arrival timing are the
-    // only device evidence the first event carries. Line mode is detented by
-    // definition and can never be a momentum tail, so it never seeds.
+    // only device evidence the first event carries. Only pixel mode seeds:
+    // line mode is detented by definition, and page mode is a synthetic
+    // multi-line jump — neither can be a momentum tail.
     if (
       !momentumGuardSession
-      && event.deltaMode !== 1
+      && event.deltaMode === 0
       && now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS
     ) {
       momentumGuardSession = createMomentumGuardSession(

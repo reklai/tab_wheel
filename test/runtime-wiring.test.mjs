@@ -71,9 +71,12 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   assertOrdered(app, [
     "timeStampMs: now",
     "deltaMode: event.deltaMode",
-    "deltaMagnitudePx: Math.abs(wheelDelta)",
+    "deltaMagnitudePx: wheelMagnitudePx",
   ]);
   assert.doesNotMatch(app, /storage\.local\.set|JSON\.stringify/);
+  // A zero-magnitude event carries no cadence evidence and must not be
+  // recorded as an observation.
+  assert.match(app, /if \(wheelMagnitudePx > 0\) \{\s*\n\s*addWheelSample\(/);
 
   // Classification is lazy and gated: off means an exact identity adjustment.
   assert.match(app, /if \(!settings\.deviceAwareTuning\) return resolveDeviceTuningAdjustment\("unknown"\);/);
@@ -95,12 +98,14 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // a visibility gain seeds a session there instead of being accumulated.
   // The window must stay under a detented wheel's ~40ms cadence, or a clicky
   // wheel pays a swallowed notch on every switch — and every gesture switch is
-  // a cross-tab handoff. Line mode is detented by definition and never seeds.
+  // a cross-tab handoff. Only pixel mode (deltaMode 0) seeds: line mode is
+  // detented by definition and page mode is a synthetic jump, so neither can
+  // be a momentum tail.
   assert.match(app, /const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;/);
   assert.match(app, /lastVisibleAtMs = Date\.now\(\);/);
   assert.match(
     app,
-    /!momentumGuardSession\s*\n\s*&& event\.deltaMode !== 1\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
+    /!momentumGuardSession\s*\n\s*&& event\.deltaMode === 0\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
   );
   assert.match(app, /wheelDelta > 0 \? 1 : -1,\s*\n\s*Math\.abs\(wheelDelta\),/);
 

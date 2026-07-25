@@ -153,8 +153,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       event,
       calibrationSampleRegion.clientHeight,
       calibrationSampleRegion.clientWidth,
-      false,
+      true,
     ));
+    // A zero-magnitude sample carries no cadence evidence — it must not count
+    // toward CALIBRATION_MIN_SAMPLES, the same rule the live content script
+    // applies in appInit.ts.
+    if (magnitudePx === 0) return;
     addWheelSample(calibrationSampleWindow, {
       timeStampMs: Date.now(),
       deltaMode: event.deltaMode,

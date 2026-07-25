@@ -245,7 +245,7 @@ async function runTabHandoffTail(options) {
     if (
       !session
       && useArrivalGuard
-      && deltaMode !== 1
+      && deltaMode === 0
       && now - becameVisibleAt <= ARRIVAL_WINDOW_MS
     ) {
       session = guardCore.createMomentumGuardSession(now, Math.sign(deltaPx), Math.abs(deltaPx));
@@ -385,26 +385,29 @@ test("detented wheels pay no arrival tax on a cross-tab handoff", async () => {
   }
 });
 
-test("line-mode events never arrival-seed, whatever their timing", async () => {
-  // Firefox reports detented wheels in line mode. Belt and braces for a slow
-  // switch round-trip that could otherwise land a notch inside the window: a
-  // deltaMode 1 event is detented by definition and can never be a tail.
+test("line-mode and page-mode events never arrival-seed, whatever their timing", async () => {
+  // Firefox reports detented wheels in line mode, and page mode is a
+  // synthetic multi-line jump — belt and braces for a slow switch round-trip
+  // that could otherwise land one inside the window: only deltaMode 0 (pixel)
+  // is evidence of a real momentum tail.
   const { lenient } = await loadShippedTunings();
-  const options = {
-    tuning: lenient,
-    sensitivity: 1,
-    cooldownMs: 160,
-    gapMs: 100,
-    firstEventOffsetMs: 8,
-    deltaMode: 1,
-    tailMagnitudes: Array.from({ length: 12 }, () => 48),
-  };
-  const unguarded = await runTabHandoffTail({ ...options, useArrivalGuard: false });
-  const guarded = await runTabHandoffTail({ ...options, useArrivalGuard: true });
+  for (const deltaMode of [1, 2]) {
+    const options = {
+      tuning: lenient,
+      sensitivity: 1,
+      cooldownMs: 160,
+      gapMs: 100,
+      firstEventOffsetMs: 8,
+      deltaMode,
+      tailMagnitudes: Array.from({ length: 12 }, () => 48),
+    };
+    const unguarded = await runTabHandoffTail({ ...options, useArrivalGuard: false });
+    const guarded = await runTabHandoffTail({ ...options, useArrivalGuard: true });
 
-  assert.ok(unguarded.commitTimes.length > 0, "line-mode train produced no commits");
-  assert.equal(guarded.arrivalSeeds, 0, "line mode must never arrival-seed");
-  assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, "line mode paid an arrival tax");
+    assert.ok(unguarded.commitTimes.length > 0, `deltaMode ${deltaMode} train produced no commits`);
+    assert.equal(guarded.arrivalSeeds, 0, `deltaMode ${deltaMode} must never arrival-seed`);
+    assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, `deltaMode ${deltaMode} paid an arrival tax`);
+  }
 });
 
 test("the arrival guard yields to deliberate input in the new tab", async () => {
