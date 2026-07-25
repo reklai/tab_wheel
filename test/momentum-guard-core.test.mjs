@@ -28,6 +28,10 @@ const TUNING = {
   steadyEventCount: 5,
 };
 
+// Mirrors WHEEL_ARRIVAL_GUARD_WINDOW_MS in appInit.ts, whose value is pinned
+// separately by test/runtime-wiring.test.mjs.
+const ARRIVAL_WINDOW_MS = 32;
+
 // The tunings the product actually ships, so these requirements are pinned to
 // shipped behavior rather than to numbers invented by the test.
 async function loadShippedTunings() {
@@ -223,19 +227,29 @@ async function runWheelPipeline(options) {
 async function runTabHandoffTail(options) {
   const guardCore = await loadCore();
   const wheelCore = await loadModule("src/lib/core/tabWheel/tabWheelCore.ts");
-  const { useArrivalGuard, tuning, sensitivity, cooldownMs, gapMs, tailMagnitudes, arrivalWindowMs } = options;
+  const {
+    useArrivalGuard, tuning, sensitivity, cooldownMs, gapMs, tailMagnitudes,
+    firstEventOffsetMs = gapMs, deltaMode = 0,
+  } = options;
 
   // Tab B, freshly activated at `becameVisibleAt`. Nothing carried over.
   const becameVisibleAt = 1e6;
   let accumulator = 0;
   let lastCycleAt = 0;
   let session = null;
+  let arrivalSeeds = 0;
   const commitTimes = [];
 
   tailMagnitudes.forEach((deltaPx, index) => {
-    const now = becameVisibleAt + (index + 1) * gapMs;
-    if (!session && useArrivalGuard && now - becameVisibleAt <= arrivalWindowMs) {
+    const now = becameVisibleAt + firstEventOffsetMs + index * gapMs;
+    if (
+      !session
+      && useArrivalGuard
+      && deltaMode !== 1
+      && now - becameVisibleAt <= ARRIVAL_WINDOW_MS
+    ) {
       session = guardCore.createMomentumGuardSession(now, Math.sign(deltaPx), Math.abs(deltaPx));
+      arrivalSeeds += 1;
       return;
     }
     if (session && guardCore.shouldBlockWheelDelta(session, deltaPx, now, tuning)) return;
@@ -253,7 +267,7 @@ async function runTabHandoffTail(options) {
     }
     accumulator = 0;
   });
-  return commitTimes;
+  return { commitTimes, arrivalSeeds };
 }
 
 test("the guard costs no switches and no latency in the free-spin fast path", async () => {
@@ -326,23 +340,71 @@ test("the arrival guard stops a handed-off tail from switching again in the new 
   const decayingTailFrom = (peakPx, rate, count) =>
     Array.from({ length: count }, (_, index) => peakPx * (1 - rate) ** index);
 
-  for (const [peakPx, rate] of [[60, 0.08], [60, 0.15], [110, 0.1]]) {
+  // A handed-off tail is a continuous stream, so its first event in the new
+  // tab lands within one event period (8-16ms) of the visibility gain.
+  for (const [peakPx, rate, gapMs] of [[60, 0.08, 8], [60, 0.15, 8], [110, 0.1, 8], [60, 0.1, 16]]) {
     const options = {
       tuning: lenient,
       sensitivity: 1,
       cooldownMs: 160,
-      gapMs: 8,
-      arrivalWindowMs: 300,
+      gapMs,
       tailMagnitudes: decayingTailFrom(peakPx, rate, 40),
     };
-    const label = `${peakPx}px tail decaying ${rate * 100}%/event`;
+    const label = `${peakPx}px tail decaying ${rate * 100}%/event at ${gapMs}ms`;
 
     const unguarded = await runTabHandoffTail({ ...options, useArrivalGuard: false });
     const guarded = await runTabHandoffTail({ ...options, useArrivalGuard: true });
 
-    assert.ok(unguarded.length >= 1, `${label} should re-trigger without the arrival guard`);
-    assert.deepEqual(guarded, [], `${label} should not re-trigger with the arrival guard`);
+    assert.ok(unguarded.commitTimes.length >= 1, `${label} should re-trigger without the arrival guard`);
+    assert.deepEqual(guarded.commitTimes, [], `${label} should not re-trigger with the arrival guard`);
+    assert.equal(guarded.arrivalSeeds, 1, `${label} should seed exactly once`);
   }
+});
+
+test("detented wheels pay no arrival tax on a cross-tab handoff", async () => {
+  // Every gesture switch is a cross-tab handoff, so an arrival guard that
+  // cannot tell a notch from a tail taxes one notch per switch — 2N notches to
+  // traverse N tabs. A notch cannot arrive faster than its own ~40ms cadence,
+  // which is what keeps it outside the arrival window.
+  const { lenient } = await loadShippedTunings();
+  for (const gapMs of [60, 100]) {
+    const options = {
+      tuning: lenient,
+      sensitivity: 1,
+      cooldownMs: 160,
+      gapMs,
+      firstEventOffsetMs: 35,
+      tailMagnitudes: Array.from({ length: 12 }, () => 100),
+    };
+    const unguarded = await runTabHandoffTail({ ...options, useArrivalGuard: false });
+    const guarded = await runTabHandoffTail({ ...options, useArrivalGuard: true });
+
+    assert.ok(unguarded.commitTimes.length > 0, `100px @ ${gapMs}ms produced no commits`);
+    assert.equal(guarded.arrivalSeeds, 0, `100px @ ${gapMs}ms should never arrival-seed`);
+    assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, `100px @ ${gapMs}ms paid an arrival tax`);
+  }
+});
+
+test("line-mode events never arrival-seed, whatever their timing", async () => {
+  // Firefox reports detented wheels in line mode. Belt and braces for a slow
+  // switch round-trip that could otherwise land a notch inside the window: a
+  // deltaMode 1 event is detented by definition and can never be a tail.
+  const { lenient } = await loadShippedTunings();
+  const options = {
+    tuning: lenient,
+    sensitivity: 1,
+    cooldownMs: 160,
+    gapMs: 100,
+    firstEventOffsetMs: 8,
+    deltaMode: 1,
+    tailMagnitudes: Array.from({ length: 12 }, () => 48),
+  };
+  const unguarded = await runTabHandoffTail({ ...options, useArrivalGuard: false });
+  const guarded = await runTabHandoffTail({ ...options, useArrivalGuard: true });
+
+  assert.ok(unguarded.commitTimes.length > 0, "line-mode train produced no commits");
+  assert.equal(guarded.arrivalSeeds, 0, "line mode must never arrival-seed");
+  assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, "line mode paid an arrival tax");
 });
 
 test("the arrival guard yields to deliberate input in the new tab", async () => {
@@ -350,19 +412,41 @@ test("the arrival guard yields to deliberate input in the new tab", async () => 
   // first delta seeds the session and the steady window releases it, so a
   // deliberate gesture still lands instead of being swallowed indefinitely.
   const { lenient } = await loadShippedTunings();
-  const commits = await runTabHandoffTail({
+  const { commitTimes } = await runTabHandoffTail({
     useArrivalGuard: true,
     tuning: lenient,
     sensitivity: 1,
     cooldownMs: 160,
     gapMs: 12,
-    arrivalWindowMs: 300,
     tailMagnitudes: Array.from({ length: 40 }, () => 100),
   });
 
-  assert.ok(commits.length >= 1, "steady deliberate input must still switch tabs");
+  assert.ok(commitTimes.length >= 1, "steady deliberate input must still switch tabs");
   assert.ok(
-    commits[0] <= 12 * (lenient.steadyEventCount + 2),
-    `first deliberate switch took ${commits[0]}ms, longer than the steady budget`,
+    commitTimes[0] <= 12 * (lenient.steadyEventCount + 2),
+    `first deliberate switch took ${commitTimes[0]}ms, longer than the steady budget`,
   );
+});
+
+test("a 3%-per-event tail stays blocked under the lenient tuning", async () => {
+  // This is the design's thinnest margin and it is deliberate, so pin it: with
+  // steadyEventCount 4 the window spans 3 intervals, and a 3%/event tail shows
+  // 1 - 0.97^3 = 0.0873 net decay against a 0.08 steadyDecayFraction. Raising
+  // steadyDecayFraction above ~0.087, or dropping steadyEventCount to 3, would
+  // silently release slow real tails on wheel-tuned devices. If this test
+  // fails after a tuning change, that trade is what changed.
+  const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
+  const { lenient } = await loadShippedTunings();
+
+  const windowIntervals = lenient.steadyEventCount - 1;
+  assert.ok(
+    1 - 0.97 ** windowIntervals > lenient.steadyDecayFraction,
+    "a 3%/event tail no longer clears the steady threshold",
+  );
+
+  const session = createMomentumGuardSession(1000, 1, 50);
+  const results = Array.from({ length: 30 }, (_, index) => 50 * 0.97 ** (index + 1))
+    .map((magnitude, index) => shouldBlockWheelDelta(session, magnitude, 1008 + index * 8, lenient));
+
+  assert.ok(results.every((blocked) => blocked === true), "a 3%/event tail was released");
 });

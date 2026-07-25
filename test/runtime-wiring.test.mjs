@@ -93,11 +93,14 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
   // Arrival guard: a session dies with the committing tab's visibility, so the
   // tail lands in a tab with no session and no cooldown. The first delta after
   // a visibility gain seeds a session there instead of being accumulated.
-  assert.match(app, /const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 300;/);
+  // The window must stay under a detented wheel's ~40ms cadence, or a clicky
+  // wheel pays a swallowed notch on every switch — and every gesture switch is
+  // a cross-tab handoff. Line mode is detented by definition and never seeds.
+  assert.match(app, /const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;/);
   assert.match(app, /lastVisibleAtMs = Date\.now\(\);/);
   assert.match(
     app,
-    /!momentumGuardSession\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
+    /!momentumGuardSession\s*\n\s*&& event\.deltaMode !== 1\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
   );
   assert.match(app, /wheelDelta > 0 \? 1 : -1,\s*\n\s*Math\.abs\(wheelDelta\),/);
 

@@ -54,8 +54,12 @@ const SCROLL_SAVE_DEBOUNCE_MS = 700;
 const SCROLL_RESTORE_SUPPRESS_SAVE_MS = 450;
 const WHEEL_TRIGGER_THRESHOLD_PX = 80;
 // How long after a tab becomes visible a wheel event can still be the tail of
-// the gesture that switched to it, rather than new input from the user.
-const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 300;
+// the gesture that switched to it, rather than new input from the user. A
+// handed-off tail is a continuous 8-16ms stream, so its next event lands almost
+// immediately; a detented notch cannot arrive faster than its own ~40ms cadence.
+// Keeping this window under that cadence is what stops clicky wheels paying an
+// arrival tax on every switch.
+const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
 const STATUS_TIMEOUT_MS = 1500;
 const STATUS_ID = "tw-status-indicator";
@@ -455,8 +459,14 @@ export function initApp(): void {
     // cooldown, where it would re-accumulate into an unintended switch. Seed a
     // session from the first delta to arrive so the tail is judged in the tab
     // it landed in. The seeding delta is evidence, not input: it is dropped.
+    //
+    // A fresh tab has an empty sample window, so classification is "unknown"
+    // and there is no cadence history: deltaMode and arrival timing are the
+    // only device evidence the first event carries. Line mode is detented by
+    // definition and can never be a momentum tail, so it never seeds.
     if (
       !momentumGuardSession
+      && event.deltaMode !== 1
       && now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS
     ) {
       momentumGuardSession = createMomentumGuardSession(
