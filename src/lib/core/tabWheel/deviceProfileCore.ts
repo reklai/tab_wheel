@@ -56,24 +56,11 @@ function computeGapsMs(samples: WheelObservation[]): number[] {
   return gaps;
 }
 
-// Chrome reports one wheel notch as a fixed pixel step (100 or 120px, and
-// small multiples of it for accelerated notches). Trackpads and free-spin
-// wheels never land this cleanly on a shared step.
-const QUANTIZATION_STEPS_PX = [100, 120];
-const QUANTIZATION_TOLERANCE_PX = 12;
-
-function isQuantizedToCommonStep(magnitudePx: number): boolean {
-  return QUANTIZATION_STEPS_PX.some((step) => {
-    const remainder = magnitudePx % step;
-    const distanceToStep = Math.min(remainder, step - remainder);
-    return distanceToStep <= QUANTIZATION_TOLERANCE_PX;
-  });
-}
-
 // A momentum tail (trackpad flick) shrinks tick over tick; a held free-spin
 // wheel keeps delivering roughly the same magnitude. This is the same
 // decaying-run signal the momentum guard reacts to, used here only to tell
-// the two device shapes apart.
+// the two device shapes apart. Real trackpad streams (jitter + inertia) both
+// satisfy this, which is correct for the trackpad branch below.
 function hasDecayingRuns(samples: WheelObservation[]): boolean {
   if (samples.length < 2) return false;
   let decreasingPairs = 0;
@@ -83,16 +70,76 @@ function hasDecayingRuns(samples: WheelObservation[]): boolean {
   return decreasingPairs / (samples.length - 1) >= 0.4;
 }
 
+// A held free-spin wheel keeps delivering roughly the same magnitude over
+// the whole window even though the OS jitters each individual notch by a
+// few pixels (real hardware, unlike a synthetic constant stream, makes
+// roughly half of consecutive pairs "decreasing" — pairwise comparison
+// can't tell a jittery spin from decay). Comparing first-half vs
+// second-half medians cancels the jitter and isolates the trend: a
+// sustained spin holds its median, a decaying inertia tail collapses well
+// below it.
+const FREE_SPIN_SUSTAINED_TREND_RATIO = 0.7;
+
+function hasSustainedMagnitudeTrend(samples: WheelObservation[]): boolean {
+  const halfIndex = Math.floor(samples.length / 2);
+  const firstHalfMedian = median(samples.slice(0, halfIndex).map((sample) => sample.deltaMagnitudePx));
+  const secondHalfMedian = median(samples.slice(halfIndex).map((sample) => sample.deltaMagnitudePx));
+  return secondHalfMedian >= firstHalfMedian * FREE_SPIN_SUSTAINED_TREND_RATIO;
+}
+
+// A detented wheel emits a near-identical pixel delta per notch regardless
+// of platform (~53px Linux Chrome, 100px Windows Chrome, 120px hi-res
+// Windows Chrome) — unlike a fixed step list, clustering on the observed
+// modal magnitude generalizes across all of them without hardcoding
+// per-platform numbers.
+const CLUSTER_BUCKET_PX = 4;
+const CLUSTER_TOLERANCE_PX = 12;
+const CLUSTER_DOMINANT_FRACTION = 0.7;
+// One line-height's worth of pixels; keeps trackpad-jitter magnitudes (which
+// cluster tightly near 0) from reading as a detented wheel.
+const CLUSTER_MIN_MODAL_MAGNITUDE_PX = 16;
+
+function hasDominantMagnitudeCluster(samples: WheelObservation[]): boolean {
+  if (samples.length === 0) return false;
+  const bucketCounts = new Map<number, number>();
+  for (const sample of samples) {
+    const bucket = Math.round(sample.deltaMagnitudePx / CLUSTER_BUCKET_PX) * CLUSTER_BUCKET_PX;
+    bucketCounts.set(bucket, (bucketCounts.get(bucket) ?? 0) + 1);
+  }
+  let modalBucket = 0;
+  let modalCount = -1;
+  for (const [bucket, count] of bucketCounts) {
+    if (count > modalCount) {
+      modalBucket = bucket;
+      modalCount = count;
+    }
+  }
+  if (modalBucket < CLUSTER_MIN_MODAL_MAGNITUDE_PX) return false;
+
+  const clusterFraction = fractionMatching(
+    samples,
+    (sample) => Math.abs(sample.deltaMagnitudePx - modalBucket) <= CLUSTER_TOLERANCE_PX,
+  );
+  return clusterFraction >= CLUSTER_DOMINANT_FRACTION;
+}
+
 const LINE_MODE_DOMINANT_FRACTION = 0.5;
 const PIXEL_MODE_MIN_FRACTION = 0.75;
-const QUANTIZED_DOMINANT_FRACTION = 0.7;
 const DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS = 40;
 const TRACKPAD_MAX_MEDIAN_GAP_MS = 20;
 const TRACKPAD_SMALL_MAGNITUDE_PX = 30;
 const TRACKPAD_SMALL_DOMINANT_FRACTION = 0.6;
-const FREE_SPIN_MAX_MEDIAN_GAP_MS = 16;
+// 16.7ms = 60Hz frame cadence, the fastest gap real browsers deliver wheel
+// events at; raised from 16 so a genuine 60Hz spin isn't excluded by
+// rounding. Still excludes 25ms+ cadences (trackpad flicks read faster than
+// this; discrete wheels read much slower — see DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS).
+const FREE_SPIN_MAX_MEDIAN_GAP_MS = 18;
 const FREE_SPIN_MIN_MAGNITUDE_PX = 60;
 const FREE_SPIN_LARGE_DOMINANT_FRACTION = 0.7;
+// A genuine spin floods events; this floor keeps a short burst of a handful
+// of large deltas (which could be a hard trackpad flick) from reading as a
+// sustained free-spin.
+const FREE_SPIN_MIN_SAMPLE_COUNT = 12;
 
 export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDeviceKind {
   const samples = sampleWindow.samples;
@@ -108,13 +155,18 @@ export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDe
 
   const medianGapMs = median(computeGapsMs(pixelModeSamples));
 
-  // Chrome reports clicky wheels in pixel mode, quantized to a fixed step
-  // and gated by physical detents (slower cadence than a smooth surface).
-  const quantizedFraction = fractionMatching(pixelModeSamples, (sample) => isQuantizedToCommonStep(sample.deltaMagnitudePx));
-  if (quantizedFraction >= QUANTIZED_DOMINANT_FRACTION && medianGapMs > DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS) {
+  // Chrome reports clicky wheels in pixel mode, clustered on a per-notch
+  // magnitude and gated by physical detents (slower cadence than a smooth
+  // surface).
+  if (hasDominantMagnitudeCluster(pixelModeSamples) && medianGapMs > DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS) {
     return "discreteWheel";
   }
 
+  // Checked before free-spin below. Raising the free-spin gap ceiling to
+  // 18ms grows its overlap with this branch's <20ms window, but the two
+  // stay disjoint on magnitude: trackpad needs >=60% of samples under 30px,
+  // free-spin needs >=70% at 60px+ — both fractions can't hold at once (they'd
+  // sum past 1 over the same window), so a stream can only ever satisfy one.
   const smallMagnitudeFraction = fractionMatching(
     pixelModeSamples,
     (sample) => sample.deltaMagnitudePx < TRACKPAD_SMALL_MAGNITUDE_PX,
@@ -132,9 +184,10 @@ export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDe
     (sample) => sample.deltaMagnitudePx >= FREE_SPIN_MIN_MAGNITUDE_PX,
   );
   if (
-    medianGapMs < FREE_SPIN_MAX_MEDIAN_GAP_MS
+    medianGapMs <= FREE_SPIN_MAX_MEDIAN_GAP_MS
     && largeMagnitudeFraction >= FREE_SPIN_LARGE_DOMINANT_FRACTION
-    && !hasDecayingRuns(pixelModeSamples)
+    && pixelModeSamples.length >= FREE_SPIN_MIN_SAMPLE_COUNT
+    && hasSustainedMagnitudeTrend(pixelModeSamples)
   ) {
     return "freeSpinWheel";
   }
