@@ -341,16 +341,94 @@ test("resolveDeviceTuningAdjustment keeps multipliers mild and matches device ki
   assert.ok(trackpadTuning.extraCooldownMs > 0);
   assert.ok(trackpadTuning.momentumGuardTuning);
 
-  for (const kind of ["freeSpinWheel", "discreteWheel", "unknown"]) {
+  for (const kind of ["freeSpinWheel", "unknown"]) {
     const tuning = resolveDeviceTuningAdjustment(kind);
     assert.equal(tuning.triggerDistanceMultiplier, 1.0);
     assert.equal(tuning.extraCooldownMs, 0);
     assert.ok(tuning.momentumGuardTuning);
   }
 
+  // discreteWheel keeps the neutral trigger multiplier (notch-adaptation is
+  // a separate appInit-level min(), not a multiplier) but sheds cooldown: a
+  // detented notch can't produce a momentum tail, so nothing needs the
+  // shared cooldown's slack.
+  const discreteTuning = resolveDeviceTuningAdjustment("discreteWheel");
+  assert.equal(discreteTuning.triggerDistanceMultiplier, 1.0);
+  assert.equal(discreteTuning.extraCooldownMs, -60);
+  assert.ok(discreteTuning.momentumGuardTuning);
+
   for (const kind of ["trackpad", "freeSpinWheel", "discreteWheel", "unknown"]) {
     assert.ok(resolveDeviceTuningAdjustment(kind).triggerDistanceMultiplier <= 1.3);
   }
+});
+
+test("resolveDetentedNotchMagnitudePx returns the normalized line-mode notch size", async () => {
+  const { createWheelSampleWindow, addWheelSample, resolveDetentedNotchMagnitudePx } = await loadCore();
+
+  // Firefox line mode: 3 lines/notch * 16px/line, already normalized to px
+  // by the caller before the sample is recorded (see normalizeWheelDelta).
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 80, 1, [48, 48, 48, 48, 48, 48, 48, 48, 48, 48]),
+  );
+
+  assert.equal(resolveDetentedNotchMagnitudePx(sampleWindow), 48);
+});
+
+test("resolveDetentedNotchMagnitudePx returns the pixel cluster's representative magnitude", async () => {
+  const { createWheelSampleWindow, addWheelSample, resolveDetentedNotchMagnitudePx } = await loadCore();
+
+  // Same Linux Chrome ~53px fixture used to regress classifyWheelDevice
+  // above; the representative is the cluster's mean, not the rounded bucket
+  // label, so it lands close to but not exactly on 53.
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 90, 0, [53, 52, 54, 53, 51, 55, 53, 52, 54, 53]),
+  );
+
+  const notchMagnitudePx = resolveDetentedNotchMagnitudePx(sampleWindow);
+  assert.ok(notchMagnitudePx !== null);
+  assert.ok(Math.abs(notchMagnitudePx - 53) <= 2, `expected ~53, got ${notchMagnitudePx}`);
+});
+
+test("resolveDetentedNotchMagnitudePx is null for non-discrete device kinds", async () => {
+  const { createWheelSampleWindow, addWheelSample, resolveDetentedNotchMagnitudePx } = await loadCore();
+
+  const trackpadWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 10, 0, [25, 22, 18, 15, 12, 10, 8, 6, 5, 4]),
+  );
+  assert.equal(resolveDetentedNotchMagnitudePx(trackpadWindow), null);
+
+  const freeSpinWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 10, 0, [70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70]),
+  );
+  assert.equal(resolveDetentedNotchMagnitudePx(freeSpinWindow), null);
+
+  const unknownWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 80, 0, [8, 20, 33, 47, 58, 71, 85, 14, 40, 65]),
+  );
+  assert.equal(resolveDetentedNotchMagnitudePx(unknownWindow), null);
+});
+
+test("resolveDeviceTuningAdjustment gives discreteWheel a faster cooldown than the shared baseline", async () => {
+  const { resolveDeviceTuningAdjustment } = await loadCore();
+
+  // A detented wheel notch is a single, physically-bounded event (no
+  // momentum tail — see the momentum-guard tuning comment below), so it can
+  // afford to release the cooldown faster than the shared 0ms baseline
+  // without risking a momentum re-trigger. -60 is validated end to end in
+  // appInit's runWheelCycle clamp (max(60, wheelCooldownMs + this)).
+  const discreteTuning = resolveDeviceTuningAdjustment("discreteWheel");
+  assert.equal(discreteTuning.extraCooldownMs, -60);
+  assert.equal(discreteTuning.triggerDistanceMultiplier, 1.0);
 });
 
 test("resolveSuggestedPreset maps device kind to the closest wheel feel preset", async () => {

@@ -5,6 +5,7 @@ import browser from "webextension-polyfill";
 import {
   DEFAULT_TABWHEEL_SETTINGS,
   loadTabWheelSettings,
+  MIN_WHEEL_COOLDOWN_MS,
   normalizeTabWheelSettings,
   TABWHEEL_STORAGE_KEYS,
 } from "../common/contracts/tabWheel";
@@ -30,6 +31,7 @@ import {
   addWheelSample,
   classifyWheelDevice,
   createWheelSampleWindow,
+  resolveDetentedNotchMagnitudePx,
   resolveDeviceTuningAdjustment,
   TabWheelDeviceTuningAdjustment,
 } from "../core/tabWheel/deviceProfileCore";
@@ -60,6 +62,17 @@ const WHEEL_TRIGGER_THRESHOLD_PX = 80;
 // Keeping this window under that cadence is what stops clicky wheels paying an
 // arrival tax on every switch.
 const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
+// One notch on a detented wheel should be one switch: without this, the
+// balanced 80px trigger silently taxes 2 notches per switch on Firefox
+// (48px/notch) and Linux Chrome (~53px/notch). 0.85 keeps a small margin
+// below the measured notch size so ordinary per-notch jitter (a slightly
+// short sample) still clears the gate; the same 40 both floors the computed
+// trigger (a faster preset's device multiplier can't push it below half the
+// balanced default) and gates which notch sizes are trusted enough to
+// adapt to in the first place, matching deviceProfileCore's own
+// CLUSTER_MIN_MODAL_MAGNITUDE_PX floor for what counts as a real notch.
+const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;
+const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0.85;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
 const STATUS_TIMEOUT_MS = 1500;
 const STATUS_ID = "tw-status-indicator";
@@ -420,7 +433,16 @@ export function initApp(): void {
     now: number,
     extraCooldownMs: number,
   ): boolean {
-    if (now - lastWheelCycleAt < settings.wheelCooldownMs + extraCooldownMs) return false;
+    // Detented wheels carry extraCooldownMs of -60 (see
+    // resolveDeviceTuningAdjustment), which would otherwise let a fast
+    // trackpad-tuned +40 and a fast detented -60 both push past the
+    // settings floor in opposite directions. Clamping to the same
+    // MIN_WHEEL_COOLDOWN_MS the settings UI already enforces means a
+    // detented wheel's cooldown can shed all the way down to it, but never
+    // below — fast notching stops getting eaten by cooldown without
+    // opening a window the momentum guard wasn't built to cover.
+    const effectiveCooldownMs = Math.max(MIN_WHEEL_COOLDOWN_MS, settings.wheelCooldownMs + extraCooldownMs);
+    if (now - lastWheelCycleAt < effectiveCooldownMs) return false;
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
     // The guard tracks raw delta sign, not the mapped prev/next direction, so
@@ -508,7 +530,28 @@ export function initApp(): void {
     // Effective distance only: stored sensitivity, presets, and the settings
     // UI never see this. A 1.0 multiplier is an exact no-op.
     const triggerDistance = acceleratedDistance * deviceAdjustment.triggerDistanceMultiplier;
-    if (Math.abs(wheelAccumulator) < triggerDistance) return;
+    // A detented wheel's notch should map to one switch, not whatever
+    // multiple of the balanced 80px default its notch happens to be (2 on
+    // Firefox's 48px and Linux Chrome's ~53px). Only engaged when tuning is
+    // on and the classifier is confident enough to call the stream out as
+    // discreteWheel with a real notch (resolveDetentedNotchMagnitudePx's
+    // own ≥30px cluster floor) — this repeats that same floor at 40px
+    // (NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX) as a second, stricter gate purely
+    // for this feature, so a 30-40px cluster that ever misclassifies as
+    // detented can't produce a hair-trigger. min() with the accelerated,
+    // device-multiplied trigger means this can only tighten the gate, never
+    // loosen it past whatever acceleration/presets/multiplier already chose.
+    const notchMagnitudePx = settings.deviceAwareTuning
+      ? resolveDetentedNotchMagnitudePx(wheelSampleWindow)
+      : null;
+    const effectiveTriggerDistance =
+      notchMagnitudePx !== null && notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX
+        ? Math.min(
+            triggerDistance,
+            Math.max(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx * NOTCH_ADAPTIVE_TRIGGER_RATIO),
+          )
+        : triggerDistance;
+    if (Math.abs(wheelAccumulator) < effectiveTriggerDistance) return;
     const direction = resolveWheelDirection(wheelAccumulator, settings.invertScroll);
     const cycleRan = runWheelCycle(
       direction,
@@ -523,7 +566,7 @@ export function initApp(): void {
     }
     wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
       Math.abs(wheelAccumulator),
-      triggerDistance,
+      effectiveTriggerDistance,
     );
   }
 

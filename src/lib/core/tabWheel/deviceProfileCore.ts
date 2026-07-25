@@ -210,6 +210,8 @@ function hasDominantMagnitudeCluster(samples: WheelObservation[]): boolean {
   return dominantCluster.inToleranceFraction >= CLUSTER_DOMINANT_FRACTION;
 }
 
+// Shared with classifyWheelDevice's own line-mode gate below so this stays
+// the exact same "is this stream line mode" test the classifier used.
 const LINE_MODE_DOMINANT_FRACTION = 0.5;
 const PIXEL_MODE_MIN_FRACTION = 0.75;
 const DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS = 40;
@@ -287,6 +289,30 @@ export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDe
   return "unknown";
 }
 
+// A detented wheel's per-notch pixel size, so appInit can size the trigger
+// distance to one notch instead of paying whatever multiple of it the
+// balanced 80px default happens to be (2 notches on Firefox/Linux). Reuses
+// classifyWheelDevice's own branch split rather than re-deriving it: the
+// line-mode branch already normalizes deltaMagnitudePx to real px (16px per
+// line, applied before the sample is recorded), so the same cluster math
+// that finds the pixel branch's representative works unchanged against the
+// line-mode samples. Filtering to just the samples of the branch that
+// actually classified the stream (rather than the full mixed-mode window)
+// keeps the representative from being skewed by a handful of stray events
+// in the other mode.
+export function resolveDetentedNotchMagnitudePx(sampleWindow: WheelSampleWindow): number | null {
+  const samples = sampleWindow.samples;
+  if (classifyWheelDevice(sampleWindow) !== "discreteWheel") return null;
+
+  const isLineMode = fractionMatching(samples, (sample) => sample.deltaMode === 1) >= LINE_MODE_DOMINANT_FRACTION;
+  const clusterSamples = isLineMode
+    ? samples.filter((sample) => sample.deltaMode === 1)
+    : samples.filter((sample) => sample.deltaMode === 0);
+
+  const dominantCluster = selectDominantCluster(buildMagnitudeClusters(clusterSamples));
+  return dominantCluster ? dominantCluster.representativeMagnitudePx : null;
+}
+
 // Trackpad momentum streams are easy to over-trigger, so guard strictly:
 // wider tail cadence, a higher bar for what counts as a fresh flick, and more
 // evidence required before releasing a run as steady input. Wheel devices
@@ -318,7 +344,21 @@ export function resolveDeviceTuningAdjustment(kind: TabWheelDeviceKind): TabWhee
       momentumGuardTuning: STRICT_MOMENTUM_GUARD_TUNING,
     };
   }
-  // "freeSpinWheel", "discreteWheel", and "unknown" all keep the base feel.
+  if (kind === "discreteWheel") {
+    // A detented notch is a single physically-bounded click, not a stream a
+    // momentum tail can ride on (the guard is already out of scope for it —
+    // see maxTailGapMs above), so the shared cooldown's slack is pure
+    // latency here. -60 is deliberately steep: appInit's runWheelCycle
+    // clamps the result to a 60ms floor (settings' own minimum), so this
+    // can only ever shorten the cooldown down to that floor, never below
+    // it, regardless of the configured preset.
+    return {
+      triggerDistanceMultiplier: 1.0,
+      extraCooldownMs: -60,
+      momentumGuardTuning: LENIENT_MOMENTUM_GUARD_TUNING,
+    };
+  }
+  // "freeSpinWheel" and "unknown" both keep the base feel.
   return {
     triggerDistanceMultiplier: 1.0,
     extraCooldownMs: 0,

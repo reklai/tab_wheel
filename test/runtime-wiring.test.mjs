@@ -84,7 +84,49 @@ test("wheel sampling, device tuning, and the momentum guard are wired into the g
 
   // Effective values only — stored settings and presets are untouched.
   assert.match(app, /const triggerDistance = acceleratedDistance \* deviceAdjustment\.triggerDistanceMultiplier;/);
-  assert.match(app, /settings\.wheelCooldownMs \+ extraCooldownMs/);
+
+  // Notch-adaptive trigger: a detented wheel's own notch magnitude can only
+  // tighten the accelerated+device-multiplied trigger, never loosen it, so
+  // one notch reliably reads as one switch on Firefox (48px) and Linux
+  // Chrome (~53px) instead of paying two notches against the balanced 80px
+  // default. Gated on deviceAwareTuning and a 40px floor shared with the
+  // formula's own max() so a borderline 30-40px misclassified cluster can't
+  // produce a hair-trigger.
+  assert.match(app, /const NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX = 40;/);
+  assert.match(app, /const NOTCH_ADAPTIVE_TRIGGER_RATIO = 0\.85;/);
+  assert.match(
+    app,
+    /const notchMagnitudePx = settings\.deviceAwareTuning\s*\n\s*\? resolveDetentedNotchMagnitudePx\(wheelSampleWindow\)\s*\n\s*: null;/,
+  );
+  assert.match(
+    app,
+    /notchMagnitudePx !== null && notchMagnitudePx >= NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX\s*\n\s*\? Math\.min\(\s*\n\s*triggerDistance,\s*\n\s*Math\.max\(NOTCH_ADAPTIVE_MIN_MAGNITUDE_PX, notchMagnitudePx \* NOTCH_ADAPTIVE_TRIGGER_RATIO\),\s*\n\s*\)\s*\n\s*: triggerDistance;/,
+  );
+  assert.match(app, /if \(Math\.abs\(wheelAccumulator\) < effectiveTriggerDistance\) return;/);
+  assertOrdered(app, [
+    "const triggerDistance = acceleratedDistance * deviceAdjustment.triggerDistanceMultiplier;",
+    "const effectiveTriggerDistance =",
+    "if (Math.abs(wheelAccumulator) < effectiveTriggerDistance) return;",
+  ]);
+  // The overshoot cap (cooldown-blocked cycle, overshootGuard off) caps to
+  // the same effective trigger that gated it, not the pre-notch-adaptive
+  // value, so a detented wheel's held-over accumulator reflects its own
+  // smaller notch distance rather than the wider balanced default.
+  assert.match(
+    app,
+    /wheelAccumulator = Math\.sign\(wheelAccumulator\) \* Math\.min\(\s*\n\s*Math\.abs\(wheelAccumulator\),\s*\n\s*effectiveTriggerDistance,\s*\n\s*\);/,
+  );
+
+  // Detented cooldown reduction: a detented notch can't produce a momentum
+  // tail, so its cooldown (extraCooldownMs -60 from resolveDeviceTuningAdjustment)
+  // sheds down to the same MIN_WHEEL_COOLDOWN_MS floor a configured cooldown
+  // already respects, never below it — fast notching stops getting eaten by
+  // cooldown without opening a window the momentum guard wasn't built for.
+  assert.match(
+    app,
+    /const effectiveCooldownMs = Math\.max\(MIN_WHEEL_COOLDOWN_MS, settings\.wheelCooldownMs \+ extraCooldownMs\);/,
+  );
+  assert.match(app, /if \(now - lastWheelCycleAt < effectiveCooldownMs\) return false;/);
   // The guard session inherits the magnitude the committing gesture ended on,
   // and a blocked delta can never seed it because it returns before this.
   assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection, lastGestureMagnitudePx\);/);
