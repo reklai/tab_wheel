@@ -89,6 +89,10 @@ input[type="checkbox"]:checked::after { transform: translateX(20px); background:
 .ready-grid small { margin-top: 5px; color: var(--muted); }
 .constraint { padding: 15px 18px; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: rgba(118, 170, 255, 0.08); color: var(--muted); font-size: 12px; }
 .constraint.warning { border-left-color: var(--warn); background: rgba(242, 193, 78, 0.16); color: #ece4d2; font-size: 13px; }
+.constraint-title { display: block; margin-bottom: 8px; color: var(--warn); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.constraint ul { margin: 0; padding-left: 18px; }
+.constraint li + li { margin-top: 6px; }
+.constraint li strong { color: #fdf3dc; }
 .update-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 28px 0; }
 .update-columns > div { padding: 22px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-2); }
 .update-columns ul { margin: 12px 0 0; padding-left: 20px; color: var(--muted); }
