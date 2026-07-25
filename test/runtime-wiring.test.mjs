@@ -51,18 +51,25 @@ test("content script owns the wheel chord and only the focused middle-click exce
 test("the momentum guard and the arrival guard are wired into the gesture path", () => {
   const app = readText("src/lib/appInit/appInit.ts");
 
-  // Suppression comes before both guard steps so a swallowed tail cannot
-  // scroll the page either, and both run before accumulation so their deltas
-  // are dropped, not banked.
+  // The chord check leads, and it subsumes the isTrusted test, so a plain
+  // scroll — the overwhelming majority of wheel events on any page — exits
+  // before normalization or a clock read. Suppression then comes before both
+  // guard steps so a swallowed tail cannot scroll the page either, and both
+  // run before accumulation so their deltas are dropped, not banked.
   const wheelHandlerSource = app.slice(app.indexOf("function wheelHandler"));
   assertOrdered(wheelHandlerSource, [
-    "if (!event.isTrusted) return;",
     "if (!isKeyboardWheelEvent(event)) return;",
+    "const wheelDelta = normalizeWheelDelta(",
+    "if (wheelDelta === 0) return;",
+    "const now = Date.now();",
     "suppressPageEvent(event);",
     "createMomentumGuardSession(",
     "shouldBlockWheelDelta(",
     "wheelAccumulator += wheelDelta;",
   ]);
+  // isTrusted is checked once, inside the chord predicate — not again here.
+  assert.match(app, /function isKeyboardWheelEvent\(event: WheelEvent\): boolean \{[\s\S]{0,200}event\.isTrusted/);
+  assert.doesNotMatch(wheelHandlerSource, /if \(!event\.isTrusted\) return;/);
   assert.match(app, /momentumGuardSession\s*\n\s*&& shouldBlockWheelDelta\(/);
 
   // Nothing about the wheel is measured, recorded, or written anywhere: wheel
@@ -368,6 +375,31 @@ test("successful real gestures mark first success locally", () => {
   assert.match(domain, /recordFirstGestureCycle/);
   assert.match(domain, /firstGestureCycleCompleted:\s*true/);
   assert.match(domain, /saveTabWheelOnboardingState/);
+});
+
+test("reset to defaults clears preferences and position state, and nothing else", () => {
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+  const resetSource = domain.slice(
+    domain.indexOf("async function resetState("),
+    domain.indexOf("async function activateExistingContentScripts("),
+  );
+  assert.ok(resetSource.length > 0, "resetState should be found in source");
+
+  // Exactly three keys, because "reset to defaults" is a promise about the
+  // user's preferences and the position state derived from their browsing —
+  // widening this list silently deletes something they never asked to lose.
+  assert.match(
+    resetSource,
+    /await browser\.storage\.local\.remove\(\[\s*\n\s*TABWHEEL_STORAGE_KEYS\.settings,\s*\n\s*TABWHEEL_STORAGE_KEYS\.mruState,\s*\n\s*TABWHEEL_STORAGE_KEYS\.scrollMemory,\s*\n\s*\]\)/,
+  );
+  // The worker keeps both of those maps in memory, so clearing storage alone
+  // would leave a live worker serving state it just deleted.
+  assert.match(resetSource, /mruTabIdsByWindowId = \{\};/);
+  assert.match(resetSource, /scrollMemoryByTabId = \{\};/);
+  assert.match(resetSource, /updateSettingsCache\(undefined\);/);
+  // Onboarding completion is deliberately NOT cleared: restoring settings must
+  // not reopen the first-run coach on a user who has already finished it.
+  assert.doesNotMatch(resetSource, /onboarding/i);
 });
 
 test("internal reliability rules are enforced and absent from user-facing controls", () => {

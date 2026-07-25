@@ -106,11 +106,8 @@ test("sensitivity and acceleration keep bounded trigger distances", async () => 
 });
 
 // The Precise preset's base trigger, real-computed by the same function
-// appInit calls. This only pins the base-trigger arithmetic at sensitivity
-// 0.8 — it does not exercise appInit's notch-adaptive gate itself. The gate
-// that keeps this 100px base from ever being narrowed toward a detented
-// notch (wheelSensitivity >= 1) is pinned separately, as a mutation-checked
-// source assertion, in runtime-wiring.test.mjs.
+// appInit calls: a preset's feel is exactly this arithmetic, with nothing
+// adjusting it afterwards.
 test("Precise preset's sensitivity (0.8) resolves to a 100px base trigger distance", async () => {
   const { resolveWheelTriggerDistance } = await loadCore();
 

@@ -427,16 +427,19 @@ export function initApp(): void {
   }
 
   function wheelHandler(event: WheelEvent): void {
-    if (!event.isTrusted) return;
+    // Cheapest possible exit for plain scrolling, which is the overwhelming
+    // majority of wheel events on any page: the chord check (which includes
+    // the isTrusted test) runs before any work, so an unmodified scroll never
+    // pays normalization or a clock read.
+    if (!isKeyboardWheelEvent(event)) return;
     const wheelDelta = normalizeWheelDelta(
       event,
       window.innerHeight,
       window.innerWidth,
       settings.horizontalWheel,
     );
-    const now = Date.now();
-    if (!isKeyboardWheelEvent(event)) return;
     if (wheelDelta === 0) return;
+    const now = Date.now();
     suppressPageEvent(event);
     // Pre-warm the background worker as soon as the chord is recognized, so a
     // cold start overlaps the accumulation below instead of delaying the
