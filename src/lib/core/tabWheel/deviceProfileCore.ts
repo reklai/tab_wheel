@@ -59,8 +59,9 @@ function computeGapsMs(samples: WheelObservation[]): number[] {
 // A momentum tail (trackpad flick) shrinks tick over tick; a held free-spin
 // wheel keeps delivering roughly the same magnitude. This is the same
 // decaying-run signal the momentum guard reacts to, used here only to tell
-// the two device shapes apart. Real trackpad streams (jitter + inertia) both
-// satisfy this, which is correct for the trackpad branch below.
+// the two device shapes apart. Most real trackpad streams (jitter riding on
+// a decelerating flick) satisfy this; a rising, still-accelerating drag does
+// not — that case is deliberately left as "unknown" rather than guessed at.
 function hasDecayingRuns(samples: WheelObservation[]): boolean {
   if (samples.length < 2) return false;
   let decreasingPairs = 0;
@@ -77,7 +78,9 @@ function hasDecayingRuns(samples: WheelObservation[]): boolean {
 // can't tell a jittery spin from decay). Comparing first-half vs
 // second-half medians cancels the jitter and isolates the trend: a
 // sustained spin holds its median, a decaying inertia tail collapses well
-// below it.
+// below it. 0.7 leaves headroom for a spin that eases off slightly without
+// truly decaying, while still catching a real inertia tail (which typically
+// halves or worse across the window).
 const FREE_SPIN_SUSTAINED_TREND_RATIO = 0.7;
 
 function hasSustainedMagnitudeTrend(samples: WheelObservation[]): boolean {
@@ -87,40 +90,114 @@ function hasSustainedMagnitudeTrend(samples: WheelObservation[]): boolean {
   return secondHalfMedian >= firstHalfMedian * FREE_SPIN_SUSTAINED_TREND_RATIO;
 }
 
+// A held wheel notch is mechanically consistent: every event is close to
+// the same magnitude, so almost all samples land within a tight band around
+// the window median. A hand-driven trackpad plateau (a fast two-finger drag
+// that hasn't started decaying yet) can also be "sustained" by the trend
+// test above, but it is measurably noisier event-to-event. Hand-verified
+// against real jitter (~6-7% median deviation) and adversarial trackpad
+// plateaus (two-finger drag ~9-15%, precision-touchpad drag ~11-27%): 9% is
+// the tightest ratio that still passes genuine spin jitter (documented
+// elsewhere as ≈8-9%) while rejecting both plateaus tested.
+const FREE_SPIN_DISPERSION_TOLERANCE_RATIO = 0.09;
+// 0.7 mirrors the other "dominant fraction" gates in this module — the
+// large majority of samples must sit inside the tolerance band, not just a
+// bare majority.
+const FREE_SPIN_DISPERSION_DOMINANT_FRACTION = 0.7;
+
+function hasTightMagnitudeDispersion(samples: WheelObservation[]): boolean {
+  const windowMedian = median(samples.map((sample) => sample.deltaMagnitudePx));
+  if (windowMedian <= 0) return false;
+  const tolerancePx = windowMedian * FREE_SPIN_DISPERSION_TOLERANCE_RATIO;
+  const tightFraction = fractionMatching(
+    samples,
+    (sample) => Math.abs(sample.deltaMagnitudePx - windowMedian) <= tolerancePx,
+  );
+  return tightFraction >= FREE_SPIN_DISPERSION_DOMINANT_FRACTION;
+}
+
 // A detented wheel emits a near-identical pixel delta per notch regardless
 // of platform (~53px Linux Chrome, 100px Windows Chrome, 120px hi-res
 // Windows Chrome) — unlike a fixed step list, clustering on the observed
 // modal magnitude generalizes across all of them without hardcoding
 // per-platform numbers.
+// 4px: coarse enough that jitter within one notch collapses into a single
+// bucket, fine enough not to merge genuinely distinct notch sizes together.
 const CLUSTER_BUCKET_PX = 4;
+// 12px: the per-notch jitter budget observed across platforms (Linux/macOS
+// wheels wobble a few px per detent); wide enough to keep one notch's
+// samples together without blurring into a neighboring notch size.
 const CLUSTER_TOLERANCE_PX = 12;
+// 0.7: same "large majority, not bare majority" bar as the other dominant-
+// fraction gates in this module.
 const CLUSTER_DOMINANT_FRACTION = 0.7;
-// One line-height's worth of pixels; keeps trackpad-jitter magnitudes (which
-// cluster tightly near 0) from reading as a detented wheel.
-const CLUSTER_MIN_MODAL_MAGNITUDE_PX = 16;
+// No detented wheel on any supported platform emits under ~30px per notch
+// (Linux Chrome ~53px, Windows Chrome 100px, hi-res Windows Chrome 120px);
+// a tight cluster below this is a slow trackpad drag, not a wheel notch.
+const CLUSTER_MIN_MODAL_MAGNITUDE_PX = 30;
+
+// A detented wheel's magnitude cluster, keyed by its representative
+// (mean) magnitude so CLUSTER_TOLERANCE_PX and CLUSTER_MIN_MODAL_MAGNITUDE_PX
+// are compared against what the cluster actually measures, not against the
+// 4px-rounded bucket label used only to group samples.
+interface MagnitudeCluster {
+  representativeMagnitudePx: number;
+  sampleCount: number;
+  inToleranceFraction: number;
+}
+
+function buildMagnitudeClusters(samples: WheelObservation[]): MagnitudeCluster[] {
+  const bucketedSamples = new Map<number, WheelObservation[]>();
+  for (const sample of samples) {
+    const bucket = Math.round(sample.deltaMagnitudePx / CLUSTER_BUCKET_PX) * CLUSTER_BUCKET_PX;
+    const bucketGroup = bucketedSamples.get(bucket);
+    if (bucketGroup) bucketGroup.push(sample);
+    else bucketedSamples.set(bucket, [sample]);
+  }
+
+  return Array.from(bucketedSamples.values()).map((bucketGroup) => {
+    const representativeMagnitudePx =
+      bucketGroup.reduce((total, sample) => total + sample.deltaMagnitudePx, 0) / bucketGroup.length;
+    return {
+      representativeMagnitudePx,
+      sampleCount: bucketGroup.length,
+      inToleranceFraction: fractionMatching(
+        samples,
+        (sample) => Math.abs(sample.deltaMagnitudePx - representativeMagnitudePx) <= CLUSTER_TOLERANCE_PX,
+      ),
+    };
+  });
+}
+
+// Picking "the" modal bucket needs a tie-break: two or more bucket labels
+// can land on the same sample count (a coin-flip in real streams once a
+// window has a few dozen samples). Iterating a Map and keeping the first
+// bucket to reach the max count makes the result depend on sample arrival
+// order — the same multiset in a different event order could pick a
+// different bucket and flip the classification. Instead, rank by sample
+// count, then by in-tolerance fraction (which cluster best explains the
+// window), then by the larger representative magnitude — every dimension is
+// a plain number comparison, so the ranking (and therefore the result) is
+// the same regardless of which order the buckets are visited in.
+function selectDominantCluster(clusters: MagnitudeCluster[]): MagnitudeCluster | undefined {
+  return clusters.reduce<MagnitudeCluster | undefined>((best, candidate) => {
+    if (!best) return candidate;
+    if (candidate.sampleCount !== best.sampleCount) {
+      return candidate.sampleCount > best.sampleCount ? candidate : best;
+    }
+    if (candidate.inToleranceFraction !== best.inToleranceFraction) {
+      return candidate.inToleranceFraction > best.inToleranceFraction ? candidate : best;
+    }
+    return candidate.representativeMagnitudePx > best.representativeMagnitudePx ? candidate : best;
+  }, undefined);
+}
 
 function hasDominantMagnitudeCluster(samples: WheelObservation[]): boolean {
   if (samples.length === 0) return false;
-  const bucketCounts = new Map<number, number>();
-  for (const sample of samples) {
-    const bucket = Math.round(sample.deltaMagnitudePx / CLUSTER_BUCKET_PX) * CLUSTER_BUCKET_PX;
-    bucketCounts.set(bucket, (bucketCounts.get(bucket) ?? 0) + 1);
-  }
-  let modalBucket = 0;
-  let modalCount = -1;
-  for (const [bucket, count] of bucketCounts) {
-    if (count > modalCount) {
-      modalBucket = bucket;
-      modalCount = count;
-    }
-  }
-  if (modalBucket < CLUSTER_MIN_MODAL_MAGNITUDE_PX) return false;
-
-  const clusterFraction = fractionMatching(
-    samples,
-    (sample) => Math.abs(sample.deltaMagnitudePx - modalBucket) <= CLUSTER_TOLERANCE_PX,
-  );
-  return clusterFraction >= CLUSTER_DOMINANT_FRACTION;
+  const dominantCluster = selectDominantCluster(buildMagnitudeClusters(samples));
+  if (!dominantCluster) return false;
+  if (dominantCluster.representativeMagnitudePx < CLUSTER_MIN_MODAL_MAGNITUDE_PX) return false;
+  return dominantCluster.inToleranceFraction >= CLUSTER_DOMINANT_FRACTION;
 }
 
 const LINE_MODE_DOMINANT_FRACTION = 0.5;
@@ -130,9 +207,13 @@ const TRACKPAD_MAX_MEDIAN_GAP_MS = 20;
 const TRACKPAD_SMALL_MAGNITUDE_PX = 30;
 const TRACKPAD_SMALL_DOMINANT_FRACTION = 0.6;
 // 16.7ms = 60Hz frame cadence, the fastest gap real browsers deliver wheel
-// events at; raised from 16 so a genuine 60Hz spin isn't excluded by
-// rounding. Still excludes 25ms+ cadences (trackpad flicks read faster than
-// this; discrete wheels read much slower — see DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS).
+// events at. Raised from 16 because 16.7ms genuinely exceeds the old
+// ceiling — not a rounding artifact; a real 60Hz spin is measurably slower
+// than the old 16ms limit. This ceiling no longer does the work of
+// excluding trackpads by itself (a fast two-finger drag can be just as
+// rapid) — see hasTightMagnitudeDispersion below for what actually tells
+// them apart. Discrete wheels still read much slower — see
+// DISCRETE_WHEEL_MIN_MEDIAN_GAP_MS.
 const FREE_SPIN_MAX_MEDIAN_GAP_MS = 18;
 const FREE_SPIN_MIN_MAGNITUDE_PX = 60;
 const FREE_SPIN_LARGE_DOMINANT_FRACTION = 0.7;
@@ -188,6 +269,7 @@ export function classifyWheelDevice(sampleWindow: WheelSampleWindow): TabWheelDe
     && largeMagnitudeFraction >= FREE_SPIN_LARGE_DOMINANT_FRACTION
     && pixelModeSamples.length >= FREE_SPIN_MIN_SAMPLE_COUNT
     && hasSustainedMagnitudeTrend(pixelModeSamples)
+    && hasTightMagnitudeDispersion(pixelModeSamples)
   ) {
     return "freeSpinWheel";
   }

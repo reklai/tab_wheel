@@ -98,6 +98,44 @@ test("linux chrome 53px clicky-wheel deltas classify as a discrete wheel", async
   assert.equal(classifyWheelDevice(sampleWindow), "discreteWheel");
 });
 
+// IMPORTANT regression: no detented wheel on any supported platform emits
+// under ~30px per notch (Linux 53px, Windows 100px, hi-res Windows 120px);
+// a tight 16-30px cluster is a slow trackpad drag, not a wheel notch. The
+// old 16px floor let this read as discreteWheel.
+test("slow trackpad drag deltas do not classify as a discrete wheel", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 50, 0, [22, 20, 24, 22, 26, 20, 22, 24, 21, 23, 25, 22]),
+  );
+
+  assert.notEqual(classifyWheelDevice(sampleWindow), "discreteWheel");
+});
+
+// IMPORTANT regression: the same multiset of magnitudes, delivered in a
+// different arrival order, must classify identically. The old modal
+// tie-break kept whichever equally-sized bucket the Map visited first
+// (insertion order = arrival order), so this exact pair flipped between
+// "discreteWheel" and "unknown" depending only on event order.
+test("modal-bucket tie-break is deterministic regardless of sample arrival order", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const arrivalOrderA = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 60, 0, [46, 25, 12, 50, 31, 14, 18, 14, 46, 19]),
+  );
+  const arrivalOrderB = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 60, 0, [19, 50, 46, 14, 18, 14, 31, 46, 12, 25]),
+  );
+
+  assert.equal(classifyWheelDevice(arrivalOrderA), classifyWheelDevice(arrivalOrderB));
+});
+
 // macOS Chrome accelerates per-notch magnitude with scroll speed, so deltas
 // never cluster the way a detented wheel's do. Falling through to
 // "unknown" (rather than a wrong guess) is the correct, accepted outcome —
@@ -187,9 +225,89 @@ test("jittery real-hardware free-spin stream still classifies as a free-spin whe
   assert.equal(classifyWheelDevice(sampleWindow), "freeSpinWheel");
 });
 
+// FREE_SPIN_MIN_SAMPLE_COUNT boundary: an otherwise-valid jittery spin with
+// only 11 pixel-mode samples is one short of the "genuine spin floods
+// events" floor and must not free-spin; the same stream with a 12th sample
+// appended must.
+test("a jittery spin one sample short of the minimum window is not a free-spin wheel", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 16.7, 0, [70, 66, 73, 68, 71, 65, 72, 67, 74, 69, 70]),
+  );
+
+  assert.equal(sampleWindow.samples.length, 11);
+  assert.equal(classifyWheelDevice(sampleWindow), "unknown");
+});
+
+test("the same jittery spin at exactly the minimum window is a free-spin wheel", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 16.7, 0, [70, 66, 73, 68, 71, 65, 72, 67, 74, 69, 70, 66]),
+  );
+
+  assert.equal(sampleWindow.samples.length, 12);
+  assert.equal(classifyWheelDevice(sampleWindow), "freeSpinWheel");
+});
+
+// The modal-magnitude floor is the only guard keeping tight trackpad jitter
+// (a gentle, still-moving drag with no momentum decay yet) from reading as
+// a detented wheel; without it, a small tightly-clustered magnitude would
+// satisfy the cluster-fraction test just as well as a real notch does.
+test("gentle small-magnitude trackpad jitter never classifies as a discrete wheel", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 16.7, 0, [5, 6, 4, 7, 5, 6, 8, 5, 4, 6, 7, 5]),
+  );
+
+  assert.notEqual(classifyWheelDevice(sampleWindow), "discreteWheel");
+});
+
 // A 30ms gap is slower than any real free-spin cadence (60Hz frame cadence
 // tops out at 16.67ms) even though the magnitudes are large and steady;
 // the gap ceiling alone should keep this out of freeSpinWheel.
+// CRITICAL regression: a fast two-finger trackpad drag / flick plateau can
+// hold large magnitudes for a full window without decaying (no momentum
+// tail yet), which satisfies every pre-dispersion-gate free-spin conjunct
+// (gap, large-magnitude fraction, sustained trend, sample count) and was
+// misclassified as freeSpinWheel — telling a trackpad user "Free-spin wheel
+// — Fast" during calibration. A held wheel notch repeats a near-identical
+// per-event magnitude; a hand-driven trackpad plateau is measurably noisier
+// even without decaying. These two streams are expected to FAIL against the
+// pre-dispersion-gate predicate (captured as TDD RED before the gate was
+// added).
+test("fast trackpad drag plateau (12 samples) is not classified as a free-spin wheel", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 8, 0, [62, 78, 85, 90, 74, 88, 80, 92, 70, 86, 84, 76]),
+  );
+
+  assert.notEqual(classifyWheelDevice(sampleWindow), "freeSpinWheel");
+});
+
+test("windows precision-touchpad drag plateau (16 samples) is not classified as a free-spin wheel", async () => {
+  const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
+
+  const sampleWindow = fillWindow(
+    addWheelSample,
+    createWheelSampleWindow(),
+    buildSeries(0, 16.7, 0, [72, 95, 68, 104, 80, 88, 76, 110, 66, 92, 84, 78, 100, 70, 90, 82]),
+  );
+
+  assert.notEqual(classifyWheelDevice(sampleWindow), "freeSpinWheel");
+});
+
 test("steady slow large pixel-mode deltas are not classified as a free-spin wheel", async () => {
   const { createWheelSampleWindow, addWheelSample, classifyWheelDevice } = await loadCore();
 
