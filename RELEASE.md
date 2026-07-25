@@ -35,3 +35,26 @@ Focused product release:
 ## Earlier releases
 
 The 1.x and 2.x releases established modifier-wheel cycling, left-to-right and MRU order, scroll restoration, protected-page handling, and cross-browser packaging. Version 3.0 removes the adjacent experiments added during that period and makes the original wheel-switching workflow the complete product.
+
+## Zero-reload verification
+
+TabWheel injects into already-open tabs on install and update so the gesture
+works immediately, without the user reloading anything. `test/zero-reload.test.mjs`
+locks the wiring behind this promise with automated regex assertions, but the
+end-to-end behavior still needs a manual pass before each release, on both
+target browsers:
+
+1. Open at least 5 tabs before installing: a normal https page, chrome://settings
+   (Firefox: about:config), a PDF, a discarded/sleeping tab, and an iframe-heavy
+   page.
+2. Install the unpacked/temporary extension. Without reloading anything: the
+   gesture works immediately on the active tab, and switching to a background
+   tab and gesturing there works too.
+3. Bump the version and reload the extension (the update path), then repeat
+   the same checks.
+4. Repeat steps 1-3 on both Chrome (unpacked, MV3) and Firefox (temporary
+   add-on, MV2).
+5. Use the popup's "Refresh extension" control and confirm it reports the
+   injected tab counts.
+6. Check the toolbar badge: a restricted tab shows "!", a normal tab shows no
+   badge, and toggling "Badge on blocked pages" off clears it.
