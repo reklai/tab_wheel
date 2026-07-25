@@ -19,7 +19,11 @@ npm run release:package
 
 Feel and reliability release:
 
-- Added auto-tune for your device (`deviceAwareTuning`, default On): recognizes a trackpad from natural scrolling and tightens the effective trigger distance, cooldown, and momentum-guard strictness to match, without rewriting stored settings or presets. Free-spin and clicky wheels keep the base feel and stay at full speed through the momentum guard in practice; the new calibration step below can still suggest a matching preset for them.
+- Added auto-tune for your device (`deviceAwareTuning`, default On): recognizes a trackpad from natural scrolling and tightens the effective trigger distance, cooldown, and momentum-guard strictness to match, without rewriting stored settings or presets. Free-spin wheels keep the base feel and stay at full speed through the momentum guard in practice; the new calibration step below can still suggest a matching preset for them.
+- Added a notch-adaptive trigger for clicky (detented) wheels: when auto-tune is on and sensitivity is 1.0 or above, the effective trigger distance adapts to the wheel's own notch size so one notch reliably switches one tab, instead of the two notches a detented wheel previously needed against the balanced 80px default. Sensitivity below 1.0 (for example the Precise preset) is left untouched, since auto-tune never narrows a trigger the user explicitly widened.
+- Shortened the effective switch cooldown for clicky wheels by 60ms (clamped to the existing 60ms floor) whenever auto-tune is on, independent of sensitivity, so fast notching stops silently losing switches to the cooldown.
+- Pre-warmed the background service worker on the first gesture wheel event of a burst (rate-limited to once per 15 seconds) so the first switch after the browser has been idle doesn't pay Manifest V3's cold-start delay.
+- Added neighbor pre-probing: after each switch, TabWheel quietly prepares the two nearest tabs in each cycle direction (skipping sleeping/discarded tabs) so cycling on to them lands faster. This speculative warm-up can only make a future switch quicker — it never changes which tabs a cycle can reach.
 - Added a momentum guard: an always-on internal reliability rule (no setting) that stops trackpad momentum-tail scrolling from firing extra unintended tab switches after a switch, including in the newly focused tab (the arrival guard). Clicky/detented wheels and free-spin traversal keep full speed in practice, with one narrow, bounded exception: a wheel notch landing inside the 32ms post-switch arrival window can cost that one notch, the same tradeoff a trackpad accepts on every switch.
 - Added a toolbar badge for blocked pages (`showRestrictedBadge`, default On): a tab-scoped "!" badge on browser-restricted pages such as `chrome://`, `about:`, and extension stores.
 - Expanded onboarding to four steps: live gesture demo, calibrate your scrolling (device detection with a suggested wheel-feel preset), gesture choices, and ready.
@@ -69,3 +73,8 @@ target browsers:
    injected tab counts.
 6. Check the toolbar badge: a restricted tab shows "!", a normal tab shows no
    badge, and toggling "Badge on blocked pages" off clears it.
+7. On Linux Chrome with a clicky (detented) mouse wheel and auto-tune on,
+   scroll naturally for about 10 notches first so the device classifier has
+   enough samples, then notch steadily at a moderate pace across at least 5
+   tabs. Confirm every notch switches exactly one tab — this exercises the
+   arrival-guard tax and the notch-adaptive trigger together.

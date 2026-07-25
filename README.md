@@ -10,7 +10,7 @@ It keeps the gesture fast and predictable while preserving the page position you
 - Cycles in visible left-to-right order or most-recently-used order.
 - Restores the root page position when you return to a tab and URL.
 - Offers Precise, Balanced, Fast, and Custom wheel feel.
-- On a trackpad, tightens wheel feel and momentum protection to match, without rewriting your stored settings; free-spin and clicky wheels are recognized during setup calibration to suggest a matching preset instead, and stay at full speed through the momentum guard in practice.
+- On a trackpad, tightens wheel feel and momentum protection to match, without rewriting your stored settings. On a clicky (detented) wheel, shortens the switch cooldown, and — at sensitivity 1.0 or above — matches one notch to one switch; free-spin wheels are recognized only during setup calibration to suggest a matching preset. Clicky and free-spin wheels both stay at full speed through the momentum guard in practice.
 - Guards against extra tab switches from trackpad momentum, including right after you land on the newly focused tab.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
