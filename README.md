@@ -40,13 +40,15 @@ The popup keeps a small first-use hint visible until the first successful real g
 | Wheel direction | Wheel down moves to the next tab |
 | Skip hidden/collapsed tabs | On |
 | Skip pinned tabs | Off |
+| Wrap around at the ends | On |
+| Cycle within current tab group | Off |
 | Badge on blocked pages | On |
 | Wheel feel | Balanced |
 | Acceleration | Off |
 | Sensitivity | 1.0× |
 | Cooldown | 160ms |
 
-Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, wraparound, and overshoot protection are always enabled automatically.
+Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, and overshoot protection are always enabled automatically.
 
 ## Browser support
 

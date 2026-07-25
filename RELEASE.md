@@ -26,6 +26,7 @@ Feel and reliability release:
 - Made the zero-reload guarantee test-enforced: `test/zero-reload.test.mjs` locks the install/update reinjection wiring behind automated assertions, in addition to the manual checklist below.
 - Streamlined onboarding to three steps: live gesture demo, gesture choices, and ready.
 - Preserved existing wheel preferences and scroll positions through the v16 storage migration, leaving every other setting untouched for upgrading users.
+- Exposed wrap-around (`wrapAround`, default On) as a regular setting instead of an internal reliability rule, and added cycling within the active tab's group (`cycleWithinTabGroup`, default Off), backfilled for upgrading users through the v17 storage migration.
 
 ## 3.0.0
 

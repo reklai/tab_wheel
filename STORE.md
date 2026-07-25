@@ -39,13 +39,15 @@ CURRENT DEFAULTS
 - Wheel direction: wheel down moves to the next tab.
 - Skip hidden or collapsed tabs: on.
 - Skip pinned tabs: off.
+- Wrap around at the ends: on.
+- Cycle within current tab group: off.
 - Badge on blocked pages: on.
 - Wheel feel: Balanced.
 - Sensitivity: 1.0×.
 - Cooldown: 160ms.
 - Acceleration: off.
 
-Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, wraparound, and overshoot protection are always enabled automatically.
+Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, and overshoot protection are always enabled automatically.
 
 EASY FIRST RUN
 
