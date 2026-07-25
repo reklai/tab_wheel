@@ -34,7 +34,6 @@ import {
   createWheelSampleWindow,
   resolveDeviceTuningAdjustment,
   resolveEffectiveDeviceProfile,
-  resolveLocalDeviceProfile,
   shouldPersistDeviceProfile,
   TabWheelDeviceTuningAdjustment,
 } from "../core/tabWheel/deviceProfileCore";
@@ -441,10 +440,11 @@ export function initApp(): void {
   }
 
   // Classification is deliberately lazy: unmodified scrolling only feeds the
-  // sample window, and the heuristics run once per gesture wheel event. With
-  // device-aware tuning off we hold the neutral "unknown" posture, which is an
-  // exact identity for trigger distance and cooldown while still handing the
-  // momentum guard its lenient universal tuning.
+  // sample window, and the heuristics run on gesture wheel events only — twice
+  // per event when tuning is on (once here, once inside
+  // resolveDetentedNotchMagnitudePx's own classify guard), and not at all when
+  // it is off, because this returns before touching the window.
+  //
   // The effective profile behind every device-aware decision below: this
   // document's own reading when it has one, otherwise whatever another tab
   // already learned. Null is the neutral posture (tuning off, or nobody has
@@ -466,11 +466,24 @@ export function initApp(): void {
   // confident reading that actually disagrees with the shared one writes at
   // all (see shouldPersistDeviceProfile). The in-memory copy is updated first
   // so a burst of notches cannot queue a second write behind the round trip.
-  function persistDeviceProfileIfChanged(nowMs: number): void {
-    const localProfile = resolveLocalDeviceProfile(wheelSampleWindow, nowMs);
-    if (!localProfile || !shouldPersistDeviceProfile(localProfile, storedDeviceProfile)) return;
-    storedDeviceProfile = localProfile;
-    void saveTabWheelDeviceProfile(localProfile).catch(() => {});
+  //
+  // The tuning gate is the documented opt-out, not an optimization: PRIVACY.md
+  // promises these measurements drive device detection only while "Auto-tune
+  // for your device" is on, and writing the profile with it off would reverse
+  // that silently. It is stated here rather than left to depend on the caller
+  // happening to pass null.
+  //
+  // Takes the profile the handler already resolved instead of classifying
+  // again — that used to double the heuristic runs per event for a write that
+  // almost never happens. Passing the *effective* profile is safe precisely
+  // because one that came from storage is by construction equal to what is
+  // stored, so it can never satisfy shouldPersistDeviceProfile: only a local
+  // reading can disagree, and only a local reading can write.
+  function persistDeviceProfileIfChanged(deviceProfile: TabWheelDeviceProfile | null): void {
+    if (!settings.deviceAwareTuning) return;
+    if (!deviceProfile || !shouldPersistDeviceProfile(deviceProfile, storedDeviceProfile)) return;
+    storedDeviceProfile = deviceProfile;
+    void saveTabWheelDeviceProfile(deviceProfile).catch(() => {});
   }
 
   function runWheelCycle(
@@ -553,7 +566,7 @@ export function initApp(): void {
     }
     const deviceProfile = resolveActiveDeviceProfile(now);
     const deviceAdjustment = resolveActiveDeviceAdjustment(deviceProfile);
-    persistDeviceProfileIfChanged(now);
+    persistDeviceProfileIfChanged(deviceProfile);
     // Cross-tab handoff: the gesture that switched tabs committed in the
     // previous document, whose guard session died with its visibility. The
     // rest of that tail is delivered here, to a tab with no session and no
@@ -561,11 +574,23 @@ export function initApp(): void {
     // session from the first delta to arrive so the tail is judged in the tab
     // it landed in. The seeding delta is evidence, not input: it is dropped.
     //
-    // A fresh tab has an empty sample window, so classification is "unknown"
-    // and there is no cadence history: deltaMode and arrival timing are the
-    // only device evidence the first event carries. Only pixel mode seeds:
-    // line mode is detented by definition, and page mode is a synthetic
-    // multi-line jump — neither can be a momentum tail.
+    // A fresh tab has an empty sample window, so it has no cadence history of
+    // its own. It may well have a shared device profile — but this branch
+    // deliberately does not consult it. The arrival guard is the last defense
+    // against a handed-off tail switching again in the tab it lands in, and
+    // being wrong in that direction costs an unintended switch, while being
+    // conservative costs at most the single notch that lands inside a 32ms
+    // window. So it judges on deltaMode and arrival timing only. Pixel mode is
+    // the only mode that seeds: line mode is detented by definition, and page
+    // mode is a synthetic multi-line jump — neither can be a momentum tail.
+    //
+    // Future option, deliberately not taken here: a shared discreteWheel
+    // profile is real evidence that this stream cannot be a momentum tail, so
+    // it could skip the seed entirely on Chrome — which reports clicky wheels
+    // in pixel mode, and so cannot be excluded by deltaMode the way Firefox's
+    // line mode already excludes them. That would remove the one-notch arrival
+    // tax those users pay per switch. It needs its own evidence and its own
+    // tests; it is not part of this change.
     if (
       !momentumGuardSession
       && event.deltaMode === 0

@@ -264,13 +264,39 @@ test("the device profile is shared across tabs so a traversal's later tabs are n
   assert.match(app, /void loadTabWheelGestureState\(\)/);
   assert.match(app, /storedDeviceProfile = loadedState\.deviceProfile;/);
 
-  // WRITE: fire-and-forget, gated on a confident local reading that actually
-  // disagrees with what is already shared, with the in-memory copy updated
-  // first so a burst cannot queue a second write behind the round trip.
+  // WRITE, first gate: the documented opt-out. PRIVACY.md promises these
+  // measurements drive device detection only while "Auto-tune for your device"
+  // is on, so writing the profile with it off would silently reverse a
+  // published promise. Stated inside the function rather than left to depend
+  // on the caller happening to pass null.
   assert.match(
     app,
-    /const localProfile = resolveLocalDeviceProfile\(wheelSampleWindow, nowMs\);\s*\n\s*if \(!localProfile \|\| !shouldPersistDeviceProfile\(localProfile, storedDeviceProfile\)\) return;\s*\n\s*storedDeviceProfile = localProfile;\s*\n\s*void saveTabWheelDeviceProfile\(localProfile\)\.catch\(\(\) => \{\}\);/,
+    /function persistDeviceProfileIfChanged\(deviceProfile: TabWheelDeviceProfile \| null\): void \{\s*\n\s*if \(!settings\.deviceAwareTuning\) return;/,
   );
+
+  // WRITE, second gate: fire-and-forget, gated on a reading that actually
+  // disagrees with what is already shared, with the in-memory copy updated
+  // first so a burst cannot queue a second write behind the round trip. It
+  // reuses the profile the handler already resolved instead of re-classifying
+  // the whole sample window a second time in the same event.
+  assert.match(app, /persistDeviceProfileIfChanged\(deviceProfile\);/);
+  assert.doesNotMatch(app, /persistDeviceProfileIfChanged\(now\)/);
+  assert.match(
+    app,
+    /if \(!deviceProfile \|\| !shouldPersistDeviceProfile\(deviceProfile, storedDeviceProfile\)\) return;\s*\n\s*storedDeviceProfile = deviceProfile;\s*\n\s*void saveTabWheelDeviceProfile\(deviceProfile\)\.catch\(\(\) => \{\}\);/,
+  );
+
+  // Publicly promised in PRIVACY.md and RELEASE.md: "Reset to defaults" clears
+  // preferences and leaves the profile, because it is measured evidence about
+  // the user's hardware rather than something they chose.
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+  const resetSource = domain.slice(
+    domain.indexOf("async function resetState("),
+    domain.indexOf("async function activateExistingContentScripts("),
+  );
+  assert.ok(resetSource.length > 0, "resetState should be found in source");
+  assert.match(resetSource, /TABWHEEL_STORAGE_KEYS\.settings/);
+  assert.doesNotMatch(resetSource, /deviceProfile/);
 
   // CRITICAL: profile writes land mid-gesture, so the storage listener must
   // filter by key. A profile-only change adopts the value and returns before
