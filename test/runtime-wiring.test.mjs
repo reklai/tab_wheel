@@ -281,8 +281,89 @@ test("a completed cycle pre-probes its neighbors off the hot path without waking
 
   // Sequential by construction: a cold window must not turn one switch into
   // four simultaneous script injections.
-  assert.match(warmSource, /await ensurePageGestureAvailable\(neighborTab\);/);
   assert.doesNotMatch(warmSource, /Promise\.all/);
+
+  // Both suppression sets are load-bearing and trivially deletable by
+  // accident: one stops two live chains probing the same tab, the other stops
+  // a failed speculative probe being retried immediately by the next chain.
+  assert.match(domain, /const neighborWarmupTabIds = new Set<number>\(\);/);
+  assert.match(domain, /const neighborPreprobedUntilByTabId = new Map<number, number>\(\);/);
+  assert.match(warmSource, /if \(neighborWarmupTabIds\.has\(tab\.id\)\) return false;/);
+  assert.match(warmSource, /neighborWarmupTabIds\.add\(neighborTabId\);/);
+  assert.match(warmSource, /neighborWarmupTabIds\.delete\(neighborTabId\);/);
+});
+
+test("a speculative probe can never change what the next cycle is allowed to reach", () => {
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+  const warmSource = domain.slice(
+    domain.indexOf("function collectNeighborCandidateTabs("),
+    domain.indexOf("async function activateTab("),
+  );
+  assert.ok(warmSource.length > 0, "the neighbor pre-probe helpers should be found in source");
+
+  // The invariant: pre-probing may only ever make the next cycle faster, never
+  // narrower. markContentScriptUnavailable feeds getGestureEligibleTabs, so
+  // writing it from a speculative probe would let a probe *remove* a tab from
+  // the user's cycle. That is unsound here in a way it is not on the hot path:
+  // probing injects, injection is itself what wakes a frozen or throttled tab,
+  // and so a 320ms timeout on a speculative probe is not evidence the tab is
+  // unusable — it is frequently a tab the probe just made usable. Only the hot
+  // path, which is resolving a switch the user actually asked for, may record.
+  assert.match(
+    domain,
+    /async function ensurePageGestureAvailable\(\s*\n\s*tab: Tabs\.Tab,\s*\n\s*\{ recordFailure = true \}: EnsurePageGestureProbeOptions = \{\},\s*\n\s*\): Promise<boolean> \{/,
+  );
+  // Every negative-cache write inside the probe must sit behind the flag.
+  // Counting rather than matching one occurrence is deliberate: the probe has
+  // two failure exits (restricted URL, and the 320ms timeout), and gating only
+  // one of them re-arms the bug for speculative callers while still matching
+  // any single-site assertion.
+  const probeSource = domain.slice(
+    domain.indexOf("async function ensurePageGestureAvailable("),
+    domain.indexOf("async function restoreScroll("),
+  );
+  assert.ok(probeSource.length > 0, "ensurePageGestureAvailable should be found in source");
+  const negativeCacheWrites = probeSource.match(/markContentScriptUnavailable/g) ?? [];
+  const gatedNegativeCacheWrites = probeSource
+    .match(/if \(recordFailure\) markContentScriptUnavailable\(tab\);/g) ?? [];
+  assert.ok(negativeCacheWrites.length > 0, "the probe should still record failures for the hot path");
+  assert.equal(
+    gatedNegativeCacheWrites.length,
+    negativeCacheWrites.length,
+    "every negative-cache write in ensurePageGestureAvailable must be gated on recordFailure",
+  );
+  assert.match(
+    warmSource,
+    /await ensurePageGestureAvailable\(neighborTab, \{ recordFailure: false \}\)/,
+  );
+  assert.doesNotMatch(warmSource, /markContentScriptUnavailable/);
+  // The hot path keeps recording: that cache is exactly what lets the next
+  // gesture skip a genuinely dead tab cheaply instead of re-paying 320ms.
+  assert.match(
+    domain,
+    /if \(!settings\.skipRestrictedPages \|\| await ensurePageGestureAvailable\(targetTab\)\) return targetTab;/,
+  );
+
+  // Dropping the negative marking must not buy the invariant with a re-probe
+  // storm, so a failed speculative probe is remembered locally for the same
+  // window the negative cache used to cover — without touching eligibility.
+  assert.match(
+    domain,
+    /const NEIGHBOR_PREPROBE_RETRY_COOLDOWN_MS = CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS;/,
+  );
+  assert.match(warmSource, /if \(isNeighborRecentlyPreprobed\(tab\.id\)\) return false;/);
+  assert.match(
+    warmSource,
+    /neighborPreprobedUntilByTabId\.set\(\s*\n\s*neighborTabId,\s*\n\s*Date\.now\(\) \+ NEIGHBOR_PREPROBE_RETRY_COOLDOWN_MS,\s*\n\s*\);/,
+  );
+
+  // Fan-out guard: per-chain sequentiality is not enough. At the detented
+  // 100ms cooldown a burst can leave ~10 chains alive on a cold window, which
+  // collectively is the injection stampede sequential probing exists to
+  // prevent. The newest neighborhood is the most predictive, so a newer chain
+  // supersedes the older ones rather than being dropped in favor of them.
+  assert.match(warmSource, /const generation = beginNeighborWarmupGeneration\(windowId\);/);
+  assert.match(warmSource, /if \(!isNeighborWarmupCurrent\(windowId, generation\)\) return;/);
 });
 
 test("defaults support a predictable first run", () => {

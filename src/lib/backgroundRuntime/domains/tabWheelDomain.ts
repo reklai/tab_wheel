@@ -74,6 +74,12 @@ interface ActivateTabOptions {
   restoreScrollAsync?: boolean;
 }
 
+interface EnsurePageGestureProbeOptions {
+  // Speculative callers pass false (see warmNeighborReadiness). A failed probe
+  // then costs nothing but time, instead of narrowing the user's next cycle.
+  recordFailure?: boolean;
+}
+
 interface ContentScriptUnavailableEntry {
   url: string;
   expiresAt: number;
@@ -109,6 +115,11 @@ const MAX_GESTURE_PROBE_ATTEMPTS = 4;
 // keeping the speculative work per switch bounded at four tabs.
 const NEIGHBOR_PREPROBE_DEPTH = 2;
 const CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS = 2500;
+// A speculative probe deliberately does not write the negative cache, so it
+// needs its own way to not retry a tab that just failed. Mirrors the negative
+// cache's window so the retry cadence is unchanged; the difference is only
+// that this one is invisible to cycle eligibility.
+const NEIGHBOR_PREPROBE_RETRY_COOLDOWN_MS = CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS;
 const GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS = [0, 80, 180] as const;
 const SCROLL_RESTORE_RETRY_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600] as const;
 const DISCARDED_SCROLL_RESTORE_RETRY_DELAYS_MS = [...SCROLL_RESTORE_RETRY_DELAYS_MS, 4000] as const;
@@ -317,6 +328,8 @@ export function createTabWheelDomain(): TabWheelDomain {
   const scrollRestoreTokensByTabId = new Map<number, number>();
   const contentScriptUnavailableUrlsByTabId = new Map<number, ContentScriptUnavailableEntry>();
   const neighborWarmupTabIds = new Set<number>();
+  const neighborPreprobedUntilByTabId = new Map<number, number>();
+  const neighborWarmupGenerationByWindowId = new Map<number, number>();
   const discardedWakeHoldByWindowId = new Map<number, DiscardedTabWakeHold>();
   let scrollRestoreSerial = 0;
   let scrollMemorySaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -862,6 +875,10 @@ export function createTabWheelDomain(): TabWheelDomain {
     return await pingContentScript(tab) ? "ready" : "unavailable";
   }
 
+  // Also the MV3 worker pre-warm target (see appInit's wheelHandler), which is
+  // why it is chosen: keep this handler synchronous and free of side effects
+  // beyond seeding the readiness caches, or every gesture chord starts paying
+  // for whatever gets added here.
   function markContentScriptReady(tab?: Tabs.Tab): TabWheelActionResult {
     if (!tab?.id) return { ok: false, reason: "No sender tab" };
     if (isPageGestureRestrictedUrl(tab.url)) return { ok: false, reason: "Unsupported page" };
@@ -875,11 +892,21 @@ export function createTabWheelDomain(): TabWheelDomain {
     return { ok: true };
   }
 
-  async function ensurePageGestureAvailable(tab: Tabs.Tab): Promise<boolean> {
+  // recordFailure writes the negative cache, and that cache feeds
+  // getGestureEligibleTabs — so it does not merely remember a slow tab, it
+  // removes the tab from what the next cycle can reach. Only a caller
+  // resolving a switch the user actually asked for has earned that: probing
+  // *injects*, injection is itself what wakes a frozen or throttled tab, and
+  // so a 320ms timeout is frequently a tab the probe just made usable rather
+  // than evidence of one that is broken.
+  async function ensurePageGestureAvailable(
+    tab: Tabs.Tab,
+    { recordFailure = true }: EnsurePageGestureProbeOptions = {},
+  ): Promise<boolean> {
     if (tab.id == null) return false;
     const tabId = tab.id;
     if (isPageGestureRestrictedUrl(tab.url)) {
-      markContentScriptUnavailable(tab);
+      if (recordFailure) markContentScriptUnavailable(tab);
       return false;
     }
     const url = normalizePageUrl(tab.url);
@@ -901,7 +928,7 @@ export function createTabWheelDomain(): TabWheelDomain {
     );
     if (didBecomeReady) return true;
 
-    markContentScriptUnavailable(tab);
+    if (recordFailure) markContentScriptUnavailable(tab);
     return false;
   }
 
@@ -1086,6 +1113,31 @@ export function createTabWheelDomain(): TabWheelDomain {
     return neighborTabs;
   }
 
+  // Supersede, don't drop: per-chain sequentiality alone does not bound
+  // fan-out, because one chain is spawned per switch. At the detented 100ms
+  // cooldown a burst can leave ~10 chains alive on a cold window, which
+  // collectively is the injection stampede sequential probing exists to
+  // prevent. The newest neighborhood is the most predictive of where the user
+  // is heading, so a newer chain retires the older ones instead of being
+  // dropped in favor of them. Same token shape as beginScrollRestore above.
+  function beginNeighborWarmupGeneration(windowId: number): number {
+    const generation = (neighborWarmupGenerationByWindowId.get(windowId) ?? 0) + 1;
+    neighborWarmupGenerationByWindowId.set(windowId, generation);
+    return generation;
+  }
+
+  function isNeighborWarmupCurrent(windowId: number, generation: number): boolean {
+    return neighborWarmupGenerationByWindowId.get(windowId) === generation;
+  }
+
+  function isNeighborRecentlyPreprobed(tabId: number): boolean {
+    const expiresAt = neighborPreprobedUntilByTabId.get(tabId);
+    if (expiresAt == null) return false;
+    if (expiresAt > Date.now()) return true;
+    neighborPreprobedUntilByTabId.delete(tabId);
+    return false;
+  }
+
   // Probing injects a content script, so a discarded tab is never a candidate:
   // the browser unloaded it to reclaim memory, and speculative work has no
   // right to spend the user's memory waking a tab they may never switch to.
@@ -1095,6 +1147,7 @@ export function createTabWheelDomain(): TabWheelDomain {
   function shouldWarmNeighborTab(tab: Tabs.Tab): boolean {
     if (tab.id == null || tab.discarded === true) return false;
     if (neighborWarmupTabIds.has(tab.id)) return false;
+    if (isNeighborRecentlyPreprobed(tab.id)) return false;
     if (isContentScriptKnownUnavailable(tab)) return false;
     const url = normalizePageUrl(tab.url);
     if (!url) return false;
@@ -1106,11 +1159,19 @@ export function createTabWheelDomain(): TabWheelDomain {
   // It is never awaited by the cycle that spawns it (see cycleUnlocked), so
   // neither the cycle's response nor the serialized window queue waits on it.
   //
-  // Probes run one at a time rather than in parallel so a cold window cannot
-  // turn a single switch into four simultaneous script injections, and
-  // neighborWarmupTabIds stops two overlapping chains — fast notching spawns
-  // one chain per switch, and consecutive switches share most of their
-  // neighborhood — from probing the same tab twice.
+  // The invariant that makes speculating here safe: this function may only
+  // ever make the next cycle faster, never narrower. It can add readiness
+  // (warming a tab the user has not reached yet) but it can never take a tab
+  // away, which is why the probe runs with recordFailure: false — see
+  // ensurePageGestureAvailable for why a speculative timeout is not evidence
+  // of an unusable tab. Nothing in this path may write the negative cache.
+  //
+  // Suppression is layered so that invariant costs nothing: probes run one at
+  // a time so a cold window cannot become four simultaneous injections,
+  // neighborWarmupTabIds stops two live chains probing the same tab,
+  // neighborPreprobedUntilByTabId replaces the negative cache's job of not
+  // retrying a failure immediately, and the generation check retires this
+  // chain as soon as a newer switch has a better idea of where the user is.
   async function warmNeighborReadiness(
     originTab: Tabs.Tab,
     candidateTabs: Tabs.Tab[],
@@ -1119,15 +1180,25 @@ export function createTabWheelDomain(): TabWheelDomain {
     // Probing during a cycle only happens on the restricted-page skip path, so
     // with that off these injections would buy the next gesture nothing.
     if (!settings.skipRestrictedPages) return;
+    const windowId = originTab.windowId;
+    if (windowId == null) return;
+    const generation = beginNeighborWarmupGeneration(windowId);
     for (const neighborTab of collectNeighborCandidateTabs(originTab, candidateTabs, settings)) {
+      if (!isNeighborWarmupCurrent(windowId, generation)) return;
       const neighborTabId = neighborTab.id;
       if (neighborTabId == null || !shouldWarmNeighborTab(neighborTab)) continue;
       neighborWarmupTabIds.add(neighborTabId);
+      let didBecomeReady = false;
       try {
-        await ensurePageGestureAvailable(neighborTab);
+        didBecomeReady = await ensurePageGestureAvailable(neighborTab, { recordFailure: false });
       } finally {
         neighborWarmupTabIds.delete(neighborTabId);
       }
+      if (didBecomeReady) continue;
+      neighborPreprobedUntilByTabId.set(
+        neighborTabId,
+        Date.now() + NEIGHBOR_PREPROBE_RETRY_COOLDOWN_MS,
+      );
     }
   }
 
@@ -1405,6 +1476,7 @@ export function createTabWheelDomain(): TabWheelDomain {
       delete scrollMemoryByTabId[tabKey(tabId)];
       contentScriptReadyUrlsByTabId.delete(tabId);
       contentScriptUnavailableUrlsByTabId.delete(tabId);
+      neighborPreprobedUntilByTabId.delete(tabId);
       scrollRestoreTokensByTabId.delete(tabId);
       clearDiscardedWakeHoldForTab(tabId);
       forgetToolbarBadgeTab(tabId);
@@ -1466,6 +1538,7 @@ export function createTabWheelDomain(): TabWheelDomain {
         mruCycleSessionsByWindowId.delete(windowId);
         activeTabIdsByWindowId.delete(windowId);
         discardedWakeHoldByWindowId.delete(windowId);
+        neighborWarmupGenerationByWindowId.delete(windowId);
         for (const [key, entry] of Object.entries(scrollMemoryByTabId)) {
           if (entry.windowId === windowId) {
             delete scrollMemoryByTabId[key];
@@ -1486,6 +1559,8 @@ export function createTabWheelDomain(): TabWheelDomain {
       mruCycleSessionsByWindowId.clear();
       contentScriptReadyUrlsByTabId.clear();
       contentScriptUnavailableUrlsByTabId.clear();
+      neighborPreprobedUntilByTabId.clear();
+      neighborWarmupGenerationByWindowId.clear();
       scrollRestoreTokensByTabId.clear();
       activeTabIdsByWindowId.clear();
       discardedWakeHoldByWindowId.clear();
