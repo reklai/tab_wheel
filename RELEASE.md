@@ -19,7 +19,7 @@ npm run release:package
 
 Feel and reliability release:
 
-- Added auto-tune for your device (`deviceAwareTuning`, default On): recognizes trackpads, free-spin wheels, and clicky wheels from natural scrolling and adjusts the effective trigger distance and cooldown to match. Stored settings and presets are never rewritten.
+- Added auto-tune for your device (`deviceAwareTuning`, default On): recognizes a trackpad from natural scrolling and tightens the effective trigger distance, cooldown, and momentum-guard strictness to match, without rewriting stored settings or presets. Free-spin and clicky wheels keep the base feel and are never slowed by the momentum guard; the new calibration step below can still suggest a matching preset for them.
 - Added a momentum guard: an always-on internal reliability rule (no setting) that stops trackpad momentum-tail scrolling from firing extra unintended tab switches after a switch, including in the newly focused tab (the arrival guard). Clicky/detented wheels and free-spin traversal are unaffected.
 - Added a toolbar badge for blocked pages (`showRestrictedBadge`, default On): a tab-scoped "!" badge on browser-restricted pages such as `chrome://`, `about:`, and extension stores.
 - Expanded onboarding to four steps: live gesture demo, calibrate your scrolling (device detection with a suggested wheel-feel preset), gesture choices, and ready.

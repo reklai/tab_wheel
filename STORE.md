@@ -25,7 +25,7 @@ BUILT FOR THIS ONE WORKFLOW
 - Recently used mode follows your browsing flow.
 - Page-position restore takes you back to where you stopped reading.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
-- Auto-tunes wheel feel to trackpads, free-spin wheels, and clicky mouse wheels, without changing your saved settings.
+- On a trackpad, tightens wheel feel and momentum protection to match, without changing your saved settings; free-spin and clicky mouse wheels are recognized during setup calibration to suggest a matching preset instead, and are never slowed by the momentum guard.
 - Works immediately after install or update, even on tabs you already had open — no reload needed.
 - Optional filters can skip pinned or hidden/collapsed tabs.
 - Ctrl / Control and Meta / Command are available as alternative modifiers.
@@ -62,7 +62,7 @@ No data leaves your browser for telemetry, tracking, analytics, or developer-own
 
 WHAT'S NEW IN 3.1.0
 
-TabWheel now recognizes the device driving your wheel gesture — trackpad, free-spin wheel, or clicky wheel — from ordinary scrolling and quietly matches the trigger distance and cooldown to it, without changing your saved settings or presets. A momentum guard keeps trackpad inertia from firing extra tab switches after a switch, including right after you land on the newly focused tab. A toolbar badge marks pages the browser blocks extensions from. The welcome page adds a calibration step that samples your scrolling and suggests a wheel-feel preset. TabWheel now also works immediately after install or update on tabs you already had open, with no reload required.
+TabWheel now recognizes the device driving your wheel gesture from ordinary scrolling. On a trackpad, it quietly tightens trigger distance, cooldown, and momentum protection to match, without changing your saved settings or presets. Free-spin and clicky wheels are recognized too — the welcome page's new calibration step suggests a matching feel preset for any of the three, and the momentum guard never slows a free-spin or clicky wheel down. A toolbar badge marks pages the browser blocks extensions from. TabWheel now also works immediately after install or update on tabs you already had open, with no reload required.
 
 ## Privacy
 

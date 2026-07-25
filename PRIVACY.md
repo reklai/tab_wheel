@@ -10,7 +10,7 @@ TabWheel does not collect, transmit, or share user data with developer-owned ser
 - **Scroll memory** (`tabWheelScrollMemory`): tab and window IDs, the page URL used only to verify that restore targets the same page, root X/Y position, normalized position, page/viewport dimensions, and update time. It is bounded to 300 entries.
 - **Schema version** (`storageSchemaVersion`): a number used to migrate local settings safely.
 
-When auto-tune for your device is on (and during the welcome page's calibration step), TabWheel samples ordinary wheel-event timing, magnitude, and mode to recognize a trackpad, free-spin wheel, or clicky wheel and adjust wheel feel accordingly. These gesture-feel measurements are processed entirely in memory and are never stored, transmitted, or shared.
+TabWheel measures wheel timing, magnitude, and scroll mode in memory as you scroll. These measurements are used for device detection only when "Auto-tune for your device" is on (and during the welcome page's calibration step); they are never stored, transmitted, or shared, and are discarded when the page unloads.
 
 TabWheel does not read page text, form values, browsing history, or bookmarks. It does not store mouse clicks or normal page scrolling.
 
