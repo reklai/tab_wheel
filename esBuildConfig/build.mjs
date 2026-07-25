@@ -34,6 +34,7 @@ const entryPoints = [
   { in: resolve(root, "src/entryPoints/contentScript/contentScript.ts"), out: "contentScript" },
   { in: resolve(root, "src/entryPoints/toolbarPopup/toolbarPopup.ts"), out: "toolbarPopup/toolbarPopup" },
   { in: resolve(root, "src/entryPoints/optionsPage/optionsPage.ts"), out: "optionsPage/optionsPage" },
+  { in: resolve(root, "src/entryPoints/onboarding/onboarding.ts"), out: "onboarding/onboarding" },
 ];
 
 // Manifests are target-specific, but HTML/CSS templates are shared and get the
@@ -44,6 +45,8 @@ const staticFiles = [
   { from: resolve(root, "src/entryPoints/toolbarPopup/toolbarPopup.css"), to: "toolbarPopup/toolbarPopup.css", branded: true },
   { from: resolve(root, "src/entryPoints/optionsPage/optionsPage.html"), to: "optionsPage/optionsPage.html", branded: true },
   { from: resolve(root, "src/entryPoints/optionsPage/optionsPage.css"), to: "optionsPage/optionsPage.css", branded: true },
+  { from: resolve(root, "src/entryPoints/onboarding/onboarding.html"), to: "onboarding/onboarding.html", branded: true },
+  { from: resolve(root, "src/entryPoints/onboarding/onboarding.css"), to: "onboarding/onboarding.css", branded: true },
   { from: resolve(root, "src/icons/icon-16.png"), to: "icons/icon-16.png" },
   { from: resolve(root, "src/icons/icon-32.png"), to: "icons/icon-32.png" },
   { from: resolve(root, "src/icons/icon-48.png"), to: "icons/icon-48.png" },

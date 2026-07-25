@@ -23,7 +23,7 @@ export function createTabWheelMessageHandler(
         return domain.markContentScriptReady(sender.tab);
 
       case "TABWHEEL_CYCLE":
-        return await domain.cycle(message.direction, sender.tab);
+        return await domain.cycle(message.direction, message.source, sender.tab);
 
       case "TABWHEEL_REFRESH_CURRENT_TAB":
         return await domain.refreshCurrentTab(sender.tab, message.windowId ?? sender.tab?.windowId);
@@ -31,37 +31,10 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_GET_OVERVIEW":
         return await domain.getOverview(sender.tab, message.windowId ?? sender.tab?.windowId);
 
-      case "TABWHEEL_TOGGLE_CYCLE_SCOPE":
-        return await domain.toggleCycleScope(sender.tab, message.windowId);
-
       case "TABWHEEL_SET_CYCLE_SCOPE":
         return await domain.setCycleScope(message.cycleScope, sender.tab, message.windowId, {
           suppressPageStatus: message.suppressPageStatus,
         });
-
-      case "TABWHEEL_OPEN_SEARCH_TAB":
-        return await domain.openSearchTab(message.query, sender.tab, message.windowId);
-
-      case "TABWHEEL_GET_SEARCH_SUGGESTIONS":
-        return await domain.getSearchSuggestions(message.query, message.mode, sender.tab);
-
-      case "TABWHEEL_ACTIVATE_TAB":
-        return await domain.activateExistingTab(message.tabId);
-
-      case "TABWHEEL_OPEN_URL_TAB":
-        return await domain.openUrlTab(message.url, sender.tab, message.windowId);
-
-      case "TABWHEEL_OPEN_NATIVE_NEW_TAB":
-        return await domain.openNativeNewTab(sender.tab, message.windowId);
-
-      case "TABWHEEL_ACTIVATE_MOST_RECENT_TAB":
-        return await domain.activateMostRecentTab(sender.tab, message.windowId);
-
-      case "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT":
-        return await domain.closeCurrentTabAndActivateRecent(sender.tab, message.windowId);
-
-      case "TABWHEEL_DUPLICATE_TAB":
-        return await domain.duplicateTab(sender.tab, message.windowId);
 
       case "TABWHEEL_SAVE_SCROLL_POSITION": {
         const tabId = sender.tab?.id;

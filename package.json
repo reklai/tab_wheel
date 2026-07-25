@@ -1,8 +1,8 @@
 {
   "name": "tabwheel",
-  "version": "2.1.1",
+  "version": "3.0.0",
   "private": true,
-  "description": "Alt + mouse wheel switches tabs. Tune tab switching and page-scroll wheel feel. Clicks open search, recent, and close.",
+  "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private, and configurable.",
   "license": "MIT",
   "scripts": {
     "build": "node esBuildConfig/build.mjs",

@@ -1,154 +1,112 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="toolbarPopup.css" />
 </head>
 <body>
-  <div class="tabwheel-popup">
-    <div class="titlebar">
-      <div class="traffic-lights">
-        <button class="dot dot-close" id="closePopupBtn" type="button" title="Close" aria-label="Close popup"></button>
-      </div>
-      <span class="titlebar-text" id="titlebarText">__EXTENSION_NAME__</span>
-      <button class="titlebar-button" id="settingsBtn" type="button" title="Settings" aria-label="Open settings">&#9881;</button>
-    </div>
+  <main class="popup-shell">
+    <header class="popup-header">
+      <div class="brand-mark" aria-hidden="true">↕</div>
+      <div><strong>TabWheel</strong><span>Scroll Wheel Tab Switcher</span></div>
+      <button id="settingsBtn" class="icon-button" type="button" aria-label="Open settings">⚙</button>
+    </header>
 
-    <div class="shortcut-panel">
-      <strong id="shortcutLabel">Hold Alt / Option and Use Mouse Wheel or Clicks</strong>
-      <span id="shortcutStatus">Wheel switches tab. Left-click opens new tab. Middle-click opens most recent tab. Right-click closes current tab.</span>
-    </div>
-
-    <section class="fallback-panel" id="fallbackPanel" aria-live="polite" hidden>
-      <strong>Browser-Restricted Page</strong>
-      <span>The browser does not allow extension scripts on restricted pages. TabWheel cannot listen for modifier + wheel or modifier + mouse-click shortcuts. Use the popup buttons below instead: Search, Previous/Next, Recent tab, and Close Tab.</span>
-    </section>
-
-    <main class="popup-scroll">
-      <section class="cycle-mode-panel" aria-label="Cycle mode">
-        <div class="mode-heading">
-          <span>Mouse Scroll Wheel Cycle Mode</span>
+    <div class="popup-scroll">
+      <section class="gesture-card">
+        <div class="status-line">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusLabel">Checking this page…</span>
         </div>
-        <div class="mode-pill" role="group" aria-label="Change cycle mode">
-          <button id="generalModeBtn" data-cycle-scope="general" type="button">Left-To-Right</button>
-          <button id="mruModeBtn" data-cycle-scope="mru" type="button">Most Recently Used</button>
+        <h1 id="gestureLabel">Alt / Option + wheel down moves through your next tabs.</h1>
+        <p class="first-use-note" id="firstUseNote" hidden>Try it once on this page to finish setup.</p>
+      </section>
+
+      <section class="fallback-card" id="fallbackCard" hidden>
+        <strong>Page gesture unavailable here</strong>
+        <p>Browser-protected pages can block the gesture. These buttons still work.</p>
+        <div class="fallback-actions">
+          <button id="prevTabBtn" type="button">← Previous</button>
+          <button id="nextTabBtn" type="button">Next →</button>
         </div>
       </section>
 
-      <div class="cycle-row" aria-label="Tab cycle fallback controls">
-        <button id="prevTabBtn" type="button">Previous tab</button>
-        <button id="nextTabBtn" type="button">Next tab</button>
-      </div>
-
-      <section class="control-grid" aria-label="Gesture keys">
-        <label class="control-row" title="Base key for cycling and gestures.">
-          <span><strong>Modifier</strong><small>Hold this key while scrolling or clicking</small></span>
-          <select id="gestureModifier"></select>
-        </label>
-        <label class="control-row" title="Add Shift to the selected modifier before gestures are active.">
-          <span><strong>Require Shift</strong><small>Add a second key for safer gestures</small></span>
-          <input id="gestureWithShift" type="checkbox" />
-        </label>
-        <label class="control-row" title="Apply a preset for tab switching and page scrolling wheel behavior.">
-          <span><strong>Preset</strong><small>Choose deliberate, balanced, or fast wheel behavior</small></span>
-          <select id="wheelPreset"></select>
-        </label>
-      </section>
-
-      <section class="cycle-mode-panel" aria-label="Click actions">
-        <div class="mode-heading">
-          <span>Click Actions</span>
-          <strong id="leftClickActionLabel">Off (native click)</strong>
-        </div>
-        <div class="click-action-grid" role="group" aria-label="Change click actions">
-          <label class="control-row" title="Choose what modifier + left click does, including Tabwheel search or the Browser Default new tab page.">
-            <span><strong>Left click</strong></span>
-            <select id="leftClickAction"></select>
+      <section class="settings-group">
+        <h2>Gesture</h2>
+        <div class="settings-card">
+          <label class="setting-row" for="gestureModifier">
+            <span><strong>Modifier</strong><small>Hold this key while scrolling or middle-clicking.</small></span>
+            <select id="gestureModifier"></select>
           </label>
-          <label class="control-row" title="Choose what modifier + middle click does.">
-            <span><strong>Middle click</strong></span>
+          <label class="setting-row" for="gestureWithShift">
+            <span><strong>Require Shift</strong><small>Add a second key to avoid conflicts.</small></span>
+            <input id="gestureWithShift" type="checkbox" />
+          </label>
+          <label class="setting-row" for="middleClickAction">
+            <span><strong>Modifier + middle click</strong><small>Open settings or keep middle click native.</small></span>
             <select id="middleClickAction"></select>
           </label>
-          <label class="control-row" title="Choose what modifier + right click does.">
-            <span><strong>Right click</strong></span>
-            <select id="rightClickAction"></select>
+        </div>
+      </section>
+
+      <section class="settings-group">
+        <h2>Tab Cycling</h2>
+        <div class="settings-card">
+          <label class="setting-row" for="cycleScope">
+            <span><strong>Cycle order</strong><small>Tab strip or recently used tabs.</small></span>
+            <select id="cycleScope"></select>
+          </label>
+          <label class="setting-row" for="wheelDirection">
+            <span><strong>Wheel direction</strong><small>Choose what scrolling down does.</small></span>
+            <select id="wheelDirection">
+              <option value="next">Wheel down → Next tab</option>
+              <option value="previous">Wheel down → Previous tab</option>
+            </select>
+          </label>
+          <label class="setting-row" for="wheelPreset">
+            <span><strong>Preset</strong><small>Precise, balanced, or fast.</small></span>
+            <select id="wheelPreset"></select>
+          </label>
+          <label class="setting-row range-row" for="wheelSensitivity">
+            <span><strong>Sensitivity</strong><small>Wheel distance: <span id="wheelSensitivityValue">1.0×</span></small></span>
+            <input id="wheelSensitivity" type="range" step="0.1" />
+          </label>
+          <label class="setting-row range-row" for="wheelCooldownMs">
+            <span><strong>Cooldown</strong><small>Switch delay: <span id="wheelCooldownValue">160ms</span></small></span>
+            <input id="wheelCooldownMs" type="range" step="10" />
+          </label>
+          <label class="setting-row" for="wheelAcceleration">
+            <span><strong>Acceleration</strong><small>Scan faster during repeated bursts.</small></span>
+            <input id="wheelAcceleration" type="checkbox" />
+          </label>
+          <label class="setting-row" for="skipPinnedTabs">
+            <span><strong>Skip pinned tabs</strong><small>Leave pinned utility tabs out.</small></span>
+            <input id="skipPinnedTabs" type="checkbox" />
+          </label>
+          <label class="setting-row" for="skipHiddenTabs">
+            <span><strong>Skip hidden tabs</strong><small>Skip collapsed groups and hidden panes.</small></span>
+            <input id="skipHiddenTabs" type="checkbox" />
           </label>
         </div>
       </section>
 
-      <form class="search-row" id="searchForm" aria-label="TabWheel Search">
-        <input id="searchQueryInput" type="search" autocomplete="off" spellcheck="false" placeholder="Search" />
-        <button id="searchSubmitBtn" type="submit">Search</button>
-      </form>
-
-      <div class="gesture-row" aria-label="Click gesture fallback controls">
-        <button id="recentTabBtn" type="button">Most Recent Tab</button>
-        <button id="closeRecentBtn" type="button">Close Tab</button>
-      </div>
-
-      <section class="control-grid" aria-label="TabWheel controls">
-        <label class="control-row range-row" title="Higher values need less wheel movement before switching tabs.">
-          <span><strong>Sensitivity</strong><small id="wheelSensitivityValue">Wheel distance: 1.0x</small></span>
-          <input id="wheelSensitivity" type="range" step="0.1" />
-        </label>
-        <label class="control-row range-row" title="Minimum time between tab switches; lower feels faster but can overshoot.">
-          <span><strong>Cooldown</strong><small id="wheelCooldownValue">Switch delay: 160ms</small></span>
-          <input id="wheelCooldownMs" type="range" step="10" />
-        </label>
-        <label class="control-row" title="Shortens the cooldown during repeated wheel bursts.">
-          <span><strong>Acceleration</strong><small>Speed up intentional wheel bursts</small></span>
-          <input id="wheelAcceleration" type="checkbox" />
-        </label>
-        <label class="control-row" title="Allow horizontal wheel or trackpad motion to switch tabs.">
-          <span><strong>Horizontal wheel</strong><small>Use sideways wheel or trackpad motion</small></span>
-          <input id="horizontalWheel" type="checkbox" />
-        </label>
-        <label class="control-row" title="Prevent extra tab jumps from trackpad or wheel momentum.">
-          <span><strong>Safe overshoot guard</strong><small>Prevent extra tab jumps from trackpad or wheel momentum</small></span>
-          <input id="overshootGuard" type="checkbox" />
-        </label>
-        <label class="control-row" title="Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs">
-          <span><strong>Editable fields</strong><small>Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs</small></span>
-          <input id="allowGesturesInEditableFields" type="checkbox" />
-        </label>
-        <label class="control-row range-row" title="Normal page scroll speed when page scroll filtering is active.">
-          <span><strong>Page Scroll Speed</strong><small id="pageScrollSpeedValue">Page speed: 1.0x</small></span>
-          <input id="pageScrollSpeedMultiplier" type="range" step="0.1" />
-        </label>
-        <label class="control-row range-row" title="Maximum normal page scroll step as a percentage of the active viewport.">
-          <span><strong>Viewport Step Cap</strong><small id="pageScrollViewportCapValue">Max step: 100%</small></span>
-          <input id="pageScrollViewportCapRatio" type="range" step="0.05" />
-        </label>
-        <label class="control-row" title="Swap wheel down/right and up/left.">
-          <span><strong>Invert wheel</strong><small>Swap next and previous direction</small></span>
-          <input id="invertScroll" type="checkbox" />
-        </label>
-        <label class="control-row" title="Keep pinned utility tabs out of the cycling path.">
-          <span><strong>Skip pinned</strong><small>Leave pinned tabs out of cycling</small></span>
-          <input id="skipPinnedTabs" type="checkbox" />
-        </label>
-        <label class="control-row" title="Skip browser UI, extension pages, stores, PDF viewers, and other unsupported pages when cycling.">
-          <span><strong>Skip restricted</strong><small>Leave unsupported pages out of wheel cycling</small></span>
-          <input id="skipRestrictedPages" type="checkbox" />
-        </label>
-        <label class="control-row" title="Skip tabs in collapsed tab groups or hidden panes when cycling.">
-          <span><strong>Skip hidden</strong><small>Leave collapsed-group and hidden-pane tabs out of cycling</small></span>
-          <input id="skipHiddenTabs" type="checkbox" />
-        </label>
-        <label class="control-row" title="At the first or last tab, continue from the opposite edge.">
-          <span><strong>Wrap around</strong><small>Continue from last to first tab</small></span>
-          <input id="wrapAround" type="checkbox" />
-        </label>
-      </section>
-    </main>
-
-    <div class="action-row">
-      <button id="refreshTabWheelBtn" type="button" title="Refresh TabWheel on this tab">Refresh extension</button>
-      <button id="resetBtn" type="button" title="Restore factory defaults and clear saved tab order, scroll memory, and recent searches">Reset to defaults</button>
+      <aside class="where-note">
+        <strong>Where it works</strong>
+        <ul>
+          <li>Normal web pages, including text fields and editors.</li>
+          <li>Browser settings, stores, PDF viewers, devtools, and internal pages may block it.</li>
+          <li>On a blocked page, use Previous or Next above.</li>
+        </ul>
+      </aside>
     </div>
 
-    <div class="popup-toast" id="popupToast" role="status" aria-live="polite" aria-atomic="true"></div>
-  </div>
+    <footer class="popup-actions" aria-label="Extension actions">
+      <button id="refreshTabWheelBtn" type="button">Refresh extension</button>
+      <button id="resetDefaults" class="danger-button" type="button">Reset to defaults</button>
+    </footer>
+    <div class="toast" id="popupToast" role="status" aria-live="polite"></div>
+  </main>
   <script src="toolbarPopup.js"></script>
 </body>
 </html>

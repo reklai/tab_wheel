@@ -1,8 +1,4 @@
-// Sending runtime messages directly from UI code makes contract drift hard to
-// spot. Keep message construction behind these wrappers.
-
 import { sendRuntimeMessage, sendRuntimeMessageWithRetry, RuntimeRetryPolicy } from "./runtimeClient";
-import { normalizeSearchQuery } from "../../common/contracts/tabWheel";
 
 export function getTabWheelOverview(windowId?: number): Promise<TabWheelOverview> {
   return sendRuntimeMessage<TabWheelOverview>({ type: "TABWHEEL_GET_OVERVIEW", windowId });
@@ -20,23 +16,18 @@ export function getTabWheelOverviewWithRetry(
 
 export function cycleTabWheel(
   direction: "prev" | "next",
+  source: TabWheelCycleSource = "gesture",
 ): Promise<TabWheelActionResult> {
   return sendRuntimeMessage<TabWheelActionResult>({
     type: "TABWHEEL_CYCLE",
     direction,
+    source,
   });
 }
 
 export function refreshCurrentTabWheel(windowId?: number): Promise<TabWheelRefreshResult> {
   return sendRuntimeMessage<TabWheelRefreshResult>({
     type: "TABWHEEL_REFRESH_CURRENT_TAB",
-    windowId,
-  });
-}
-
-export function toggleTabWheelCycleScope(windowId?: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_TOGGLE_CYCLE_SCOPE",
     windowId,
   });
 }
@@ -54,76 +45,13 @@ export function setTabWheelCycleScope(
   });
 }
 
-export function openTabWheelSearchTab(query: string, windowId?: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_OPEN_SEARCH_TAB",
-    query: normalizeSearchQuery(query),
-    windowId,
-  });
-}
-
-export function getTabWheelSearchSuggestions(
-  query: string,
-  mode: TabWheelSearchMode,
-): Promise<TabWheelSuggestionsResult> {
-  return sendRuntimeMessage<TabWheelSuggestionsResult>({
-    type: "TABWHEEL_GET_SEARCH_SUGGESTIONS",
-    query: normalizeSearchQuery(query),
-    mode,
-  });
-}
-
-export function activateTabWheelTab(tabId: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_ACTIVATE_TAB",
-    tabId,
-  });
-}
-
-export function openTabWheelUrlTab(url: string): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_OPEN_URL_TAB",
-    url,
-  });
-}
-
 export function resetTabWheelState(): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_RESET_STATE",
-  });
+  return sendRuntimeMessage<TabWheelActionResult>({ type: "TABWHEEL_RESET_STATE" });
 }
 
 export function activateTabWheelContentScripts(): Promise<TabWheelContentScriptActivationResult> {
   return sendRuntimeMessage<TabWheelContentScriptActivationResult>({
     type: "TABWHEEL_ACTIVATE_CONTENT_SCRIPTS",
-  });
-}
-
-export function openNativeNewTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_OPEN_NATIVE_NEW_TAB",
-    windowId,
-  });
-}
-
-export function activateMostRecentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_ACTIVATE_MOST_RECENT_TAB",
-    windowId,
-  });
-}
-
-export function closeCurrentTabWheelTabAndActivateRecent(windowId?: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT",
-    windowId,
-  });
-}
-
-export function duplicateCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
-  return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_DUPLICATE_TAB",
-    windowId,
   });
 }
 

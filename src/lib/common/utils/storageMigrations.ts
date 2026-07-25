@@ -2,9 +2,10 @@ export const STORAGE_SCHEMA_VERSION_KEY = "storageSchemaVersion";
 const TABWHEEL_SETTINGS_KEY = "tabWheelSettings";
 const TABWHEEL_SCROLL_MEMORY_KEY = "tabWheelScrollMemory";
 const TABWHEEL_MRU_STATE_KEY = "tabWheelMruState";
+const TABWHEEL_SEARCH_HISTORY_KEY = "tabWheelSearchHistory";
 const TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs";
 const TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList";
-export const STORAGE_SCHEMA_VERSION = 13;
+export const STORAGE_SCHEMA_VERSION = 14;
 
 type StorageSnapshot = Record<string, unknown>;
 
@@ -169,6 +170,67 @@ function migrateClickActionSettings(storage: StorageSnapshot): boolean {
   return changed;
 }
 
+function focusTabWheelSettings(storage: StorageSnapshot): boolean {
+  const settings = storage[TABWHEEL_SETTINGS_KEY];
+  if (typeof settings !== "object" || settings === null || Array.isArray(settings)) return false;
+  const nextSettings = { ...(settings as Record<string, unknown>) };
+  let changed = false;
+
+  for (const key of [
+    "leftClickAction",
+    "rightClickAction",
+    "openNativeNewTabOnLeftClick",
+    "pageScrollSpeedMultiplier",
+    "pageScrollViewportCapRatio",
+  ]) {
+    changed = deleteKey(nextSettings, key) || changed;
+  }
+
+  if (nextSettings.middleClickAction !== "openSettings" && nextSettings.middleClickAction !== "none") {
+    nextSettings.middleClickAction = "openSettings";
+    changed = true;
+  }
+
+  for (const key of [
+    "allowGesturesInEditableFields",
+    "restorePagePosition",
+    "skipRestrictedPages",
+    "wrapAround",
+    "horizontalWheel",
+    "overshootGuard",
+  ]) {
+    if (nextSettings[key] === true) continue;
+    nextSettings[key] = true;
+    changed = true;
+  }
+  if (typeof nextSettings.skipHiddenTabs !== "boolean") {
+    nextSettings.skipHiddenTabs = true;
+    changed = true;
+  }
+
+  // An old Custom preset may have differed only through the retired page-scroll
+  // controls. Re-label it when the remaining wheel values match a focused preset.
+  if (nextSettings.wheelPreset === "custom") {
+    const presets = [
+      ["precise", 0.8, 220, false, true],
+      ["balanced", 1, 160, false, true],
+      ["fast", 1.35, 90, true, true],
+    ] as const;
+    const match = presets.find(([, sensitivity, cooldown, acceleration, guard]) =>
+      nextSettings.wheelSensitivity === sensitivity
+      && nextSettings.wheelCooldownMs === cooldown
+      && nextSettings.wheelAcceleration === acceleration
+      && nextSettings.overshootGuard === guard);
+    if (match) {
+      nextSettings.wheelPreset = match[0];
+      changed = true;
+    }
+  }
+
+  if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
+  return changed;
+}
+
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== "string") return false;
   try {
@@ -293,6 +355,10 @@ export function migrateStorageSnapshot(input: StorageSnapshot): StorageMigration
   }
   if (fromVersion < 13) {
     changed = migrateClickActionSettings(migratedStorage) || changed;
+  }
+  if (fromVersion < 14) {
+    changed = focusTabWheelSettings(migratedStorage) || changed;
+    changed = deleteKey(migratedStorage, TABWHEEL_SEARCH_HISTORY_KEY) || changed;
   }
 
   if (migratedStorage[STORAGE_SCHEMA_VERSION_KEY] !== STORAGE_SCHEMA_VERSION) {

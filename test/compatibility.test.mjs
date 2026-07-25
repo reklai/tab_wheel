@@ -2,102 +2,65 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
+const ROOT = process.cwd();
+const readJson = (path) => JSON.parse(readFileSync(resolve(ROOT, path), "utf8"));
 
-function readJson(pathFromRoot) {
-  return JSON.parse(readFileSync(resolve(root, pathFromRoot), "utf8"));
-}
-
-test("verifyCompat script succeeds", () => {
-  const result = spawnSync(process.execPath, [resolve(root, "esBuildConfig/verifyCompat.mjs")], {
+test("compatibility verifier succeeds", () => {
+  const result = spawnSync(process.execPath, [resolve(ROOT, "esBuildConfig/verifyCompat.mjs")], {
     encoding: "utf8",
   });
-  assert.equal(
-    result.status,
-    0,
-    `verifyCompat failed:\nstdout:\n${result.stdout || "(empty)"}\nstderr:\n${result.stderr || "(empty)"}`,
-  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
-test("manifests no longer declare legacy keyboard commands", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-  assert.equal(v2.commands, undefined);
-  assert.equal(v3.commands, undefined);
+test("manifests ship the same focused 3.0 product", () => {
+  const firefox = readJson("esBuildConfig/manifest_v2.json");
+  const chrome = readJson("esBuildConfig/manifest_v3.json");
+  const pkg = readJson("package.json");
+
+  assert.equal(pkg.version, "3.0.0");
+  assert.equal(firefox.version, pkg.version);
+  assert.equal(chrome.version, pkg.version);
+  assert.equal(firefox.name, "Scroll Wheel Tab Switcher");
+  assert.equal(chrome.name, firefox.name);
+  assert.equal(chrome.description, firefox.description);
+  assert.equal(chrome.action.default_title, firefox.browser_action.default_title);
 });
 
-test("manifests use shared store names and titles", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-  assert.equal(v2.name, "Scroll Wheel Tab Switcher");
-  assert.equal(v2.browser_action.default_title, "Scroll Wheel Tab Switcher");
-  assert.equal(v3.name, "Scroll Wheel Tab Switcher");
-  assert.equal(v3.action.default_title, "Scroll Wheel Tab Switcher");
+test("manifests contain only permissions needed by tab cycling and restore", () => {
+  const firefox = readJson("esBuildConfig/manifest_v2.json");
+  const chrome = readJson("esBuildConfig/manifest_v3.json");
+  const retired = ["search", "history", "bookmarks", "contextMenus"];
+
+  assert.deepEqual(firefox.permissions.sort(), ["<all_urls>", "storage", "tabs"].sort());
+  assert.deepEqual(chrome.permissions.sort(), ["scripting", "storage", "tabGroups", "tabs"].sort());
+  assert.deepEqual(chrome.host_permissions, ["<all_urls>"]);
+  for (const permission of retired) {
+    assert.equal(firefox.permissions.includes(permission), false);
+    assert.equal(chrome.permissions.includes(permission), false);
+  }
 });
 
-test("manifests are versioned for the 2.1.1 store listing release", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-  const packageJson = readJson("package.json");
-
-  assert.equal(packageJson.version, "2.1.1");
-  assert.equal(v2.version, packageJson.version);
-  assert.equal(v3.version, packageJson.version);
+test("content scripts claim exact modifier-wheel gestures from document start", () => {
+  for (const path of ["esBuildConfig/manifest_v2.json", "esBuildConfig/manifest_v3.json"]) {
+    const script = readJson(path).content_scripts[0];
+    assert.equal(script.run_at, "document_start");
+    assert.equal(script.all_frames, true);
+    assert.equal(script.match_about_blank, true);
+  }
 });
 
-test("manifests do not expose native side panel/sidebar surfaces", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
+test("Firefox keeps AMO no-data metadata and Chrome keeps activation support", () => {
+  const firefox = readJson("esBuildConfig/manifest_v2.json");
+  const chrome = readJson("esBuildConfig/manifest_v3.json");
 
-  assert.equal(v2.sidebar_action, undefined);
-  assert.equal(v3.side_panel, undefined);
-  assert.equal(v3.permissions.includes("sidePanel"), false);
-});
-
-test("content scripts run early enough to claim modifier-wheel events", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-
-  assert.equal(v2.content_scripts[0].run_at, "document_start");
-  assert.equal(v3.content_scripts[0].run_at, "document_start");
-  assert.equal(v2.content_scripts[0].all_frames, true);
-  assert.equal(v3.content_scripts[0].all_frames, true);
-  assert.equal(v2.content_scripts[0].match_about_blank, true);
-  assert.equal(v3.content_scripts[0].match_about_blank, true);
-});
-
-test("chrome manifest can activate existing normal web tabs after install", () => {
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-
-  assert.ok(v3.permissions.includes("scripting"));
-  assert.ok(v3.host_permissions.includes("<all_urls>"));
-});
-
-test("chrome manifest can inspect collapsed tab groups for hidden-tab skipping", () => {
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-
-  assert.ok(v3.permissions.includes("tabGroups"));
-});
-
-test("manifests can use the browser default search provider", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const v3 = readJson("esBuildConfig/manifest_v3.json");
-
-  assert.ok(v2.permissions.includes("search"));
-  assert.ok(v3.permissions.includes("search"));
-});
-
-test("firefox manifest contains AMO gecko metadata", () => {
-  const v2 = readJson("esBuildConfig/manifest_v2.json");
-  const gecko = v2.browser_specific_settings?.gecko;
-  assert.equal(typeof gecko?.id, "string");
-  assert.ok(gecko.id.length > 0);
-
-  const required = gecko?.data_collection_permissions?.required;
-  assert.ok(Array.isArray(required), "Expected gecko.data_collection_permissions.required to be an array.");
-  assert.ok(required.includes("none"), 'Expected gecko.data_collection_permissions.required to include "none".');
+  assert.ok(firefox.browser_specific_settings.gecko.id);
+  assert.ok(firefox.browser_specific_settings.gecko.data_collection_permissions.required.includes("none"));
+  assert.ok(chrome.permissions.includes("scripting"));
+  assert.ok(chrome.permissions.includes("tabGroups"));
+  assert.equal(firefox.commands, undefined);
+  assert.equal(chrome.commands, undefined);
+  assert.equal(firefox.sidebar_action, undefined);
+  assert.equal(chrome.side_panel, undefined);
 });

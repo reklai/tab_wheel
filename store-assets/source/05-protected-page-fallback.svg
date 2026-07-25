@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#342617"/><stop offset=".5" stop-color="#0b1017"/><stop offset="1" stop-color="#17243b"/></linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4d8deb"/><stop offset="1" stop-color="#806ee8"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="26" stdDeviation="38" flood-opacity=".46"/></filter>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <g font-family="Inter,Segoe UI,sans-serif">
+    <text x="80" y="220" fill="#f0b866" font-size="14" font-weight="800" letter-spacing="2">PROTECTED PAGE? KEEP MOVING.</text>
+    <text x="80" y="286" fill="#f5f7fb" font-size="54" font-weight="760">Reliable fallback</text>
+    <text x="80" y="344" fill="#f5f7fb" font-size="54" font-weight="760">controls.</text>
+    <text x="80" y="398" fill="#9aa6b6" font-size="20">Browser settings and extension stores can block</text>
+    <text x="80" y="430" fill="#9aa6b6" font-size="20">page gestures. Previous and Next still work here.</text>
+
+    <g transform="translate(780 55) scale(1.16)" filter="url(#shadow)">
+      <rect width="380" height="594" rx="20" fill="#0f141c" stroke="#fff" stroke-opacity=".11"/>
+      <line y1="61" x2="380" y2="61" stroke="#fff" stroke-opacity=".09"/>
+      <rect x="16" y="14" width="32" height="32" rx="10" fill="url(#mark)"/><text x="32" y="37" text-anchor="middle" fill="#fff" font-size="18" font-weight="800">↕</text>
+      <text x="58" y="29" fill="#f5f7fb" font-size="13" font-weight="750">TabWheel</text><text x="58" y="43" fill="#9aa6b6" font-size="9">Scroll Wheel Tab Switcher</text>
+      <rect x="332" y="14" width="32" height="32" rx="9" fill="#fff" fill-opacity=".04" stroke="#fff" stroke-opacity=".09"/><text x="348" y="36" fill="#9aa6b6" text-anchor="middle">⚙</text>
+
+      <rect x="14" y="75" width="352" height="128" rx="16" fill="#171e29" stroke="#75aaff" stroke-opacity=".2"/>
+      <circle cx="34" cy="99" r="4" fill="#f0b866"/><text x="46" y="103" fill="#9aa6b6" font-size="10">Browser-restricted or unavailable</text>
+      <text x="32" y="139" fill="#f5f7fb" font-size="17" font-weight="760">Alt / Option + wheel down</text>
+      <text x="32" y="163" fill="#f5f7fb" font-size="17" font-weight="760">moves through your next tabs.</text>
+
+      <rect x="14" y="217" width="352" height="128" rx="13" fill="#f0b866" fill-opacity=".07" stroke="#f0b866" stroke-opacity=".25"/>
+      <text x="28" y="244" fill="#f5f7fb" font-size="11" font-weight="750">Page gesture unavailable here</text>
+      <text x="28" y="264" fill="#9aa6b6" font-size="9">Browser-protected pages can block the gesture.</text>
+      <text x="28" y="279" fill="#9aa6b6" font-size="9">These buttons still work.</text>
+      <rect x="28" y="294" width="152" height="35" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="104" y="316" text-anchor="middle" fill="#f5f7fb" font-size="10" font-weight="700">← Previous</text>
+      <rect x="196" y="294" width="156" height="35" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="274" y="316" text-anchor="middle" fill="#f5f7fb" font-size="10" font-weight="700">Next →</text>
+
+      <text x="16" y="373" fill="#9aa6b6" font-size="9" font-weight="800" letter-spacing="1">GESTURE</text>
+      <rect x="14" y="383" width="352" height="141" rx="13" fill="#171e29" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="414" fill="#f5f7fb" font-size="11" font-weight="700">Modifier</text>
+      <rect x="236" y="396" width="116" height="34" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="248" y="418" fill="#f5f7fb" font-size="9">Alt / Option ▾</text>
+      <line x1="14" y1="439" x2="366" y2="439" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="467" fill="#f5f7fb" font-size="11" font-weight="700">Require Shift</text>
+      <rect x="314" y="454" width="38" height="20" rx="10" fill="#273140"/><circle cx="325" cy="464" r="8" fill="#dce4ef"/>
+      <line x1="14" y1="485" x2="366" y2="485" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="513" fill="#f5f7fb" font-size="11" font-weight="700">Modifier + middle click</text>
+      <rect x="236" y="495" width="116" height="25" rx="8" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="248" y="513" fill="#f5f7fb" font-size="9">Open settings ▾</text>
+
+      <rect y="539" width="380" height="55" fill="#0f141c" stroke="#fff" stroke-opacity=".09"/>
+      <rect x="14" y="550" width="171" height="33" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="99" y="571" text-anchor="middle" fill="#f5f7fb" font-size="9">Refresh extension</text>
+      <rect x="195" y="550" width="171" height="33" rx="9" fill="#ff6666" fill-opacity=".08" stroke="#ff6666" stroke-opacity=".24"/><text x="280" y="571" text-anchor="middle" fill="#f5f7fb" font-size="9">Reset to defaults</text>
+    </g>
+  </g>
+</svg>

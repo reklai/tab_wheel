@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#112e35"/><stop offset=".5" stop-color="#0c1017"/><stop offset="1" stop-color="#19213a"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="24" stdDeviation="34" flood-opacity=".35"/></filter>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <g font-family="Inter,Segoe UI,sans-serif">
+    <text x="76" y="202" fill="#73d6a0" font-size="14" font-weight="800" letter-spacing="2">YOUR GESTURE. YOUR FLOW.</text>
+    <text x="76" y="269" fill="#f4f7fb" font-size="54" font-weight="760">Tune your gesture.</text>
+    <text x="76" y="327" fill="#f4f7fb" font-size="54" font-weight="760">Shape tab cycling.</text>
+    <text x="76" y="380" fill="#98a4b5" font-size="20">The same focused choices appear in settings</text>
+    <text x="76" y="412" fill="#98a4b5" font-size="20">and in the toolbar popup.</text>
+
+    <g transform="translate(598 55)" filter="url(#shadow)">
+      <rect width="625" height="690" rx="22" fill="#0c1017" stroke="#fff" stroke-opacity=".1"/>
+      <text x="30" y="55" fill="#f4f7fb" font-size="24" font-weight="760">Alt / Option + wheel down moves through</text>
+      <text x="30" y="84" fill="#f4f7fb" font-size="24" font-weight="760">your next tabs.</text>
+      <rect x="30" y="105" width="145" height="35" rx="9" fill="#1a2230" stroke="#fff" stroke-opacity=".09"/><text x="102" y="127" text-anchor="middle" fill="#f4f7fb" font-size="9">Refresh extension</text>
+      <rect x="184" y="105" width="145" height="35" rx="9" fill="#ff6666" fill-opacity=".08" stroke="#ff6666" stroke-opacity=".24"/><text x="256" y="127" text-anchor="middle" fill="#f4f7fb" font-size="9">Reset to defaults</text>
+
+      <rect x="28" y="158" width="569" height="203" rx="18" fill="#141a24" stroke="#fff" stroke-opacity=".09"/>
+      <circle cx="56" cy="190" r="16" fill="#71a7ff" fill-opacity=".12" stroke="#71a7ff" stroke-opacity=".3"/><text x="56" y="194" fill="#71a7ff" text-anchor="middle" font-size="9" font-weight="800">01</text>
+      <text x="82" y="187" fill="#f4f7fb" font-size="15" font-weight="750">Gesture</text><text x="82" y="204" fill="#98a4b5" font-size="9">Choose the keys and middle-click behavior.</text>
+      <line x1="28" y1="220" x2="597" y2="220" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="248" fill="#f4f7fb" font-size="11" font-weight="750">Modifier</text>
+      <rect x="446" y="230" width="125" height="33" rx="9" fill="#1a2230" stroke="#fff" stroke-opacity=".09"/><text x="458" y="251" fill="#f4f7fb" font-size="9">Alt / Option ▾</text>
+      <line x1="28" y1="272" x2="597" y2="272" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="301" fill="#f4f7fb" font-size="11" font-weight="750">Require Shift</text>
+      <rect x="527" y="286" width="44" height="24" rx="12" fill="#273140"/><circle cx="539" cy="298" r="9" fill="#dce4ef"/>
+      <line x1="28" y1="323" x2="597" y2="323" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="347" fill="#f4f7fb" font-size="11" font-weight="750">Modifier + middle click</text>
+      <rect x="433" y="329" width="138" height="28" rx="8" fill="#1a2230" stroke="#fff" stroke-opacity=".09"/><text x="445" y="348" fill="#f4f7fb" font-size="9">Open settings ▾</text>
+
+      <rect x="28" y="378" width="569" height="268" rx="18" fill="#141a24" stroke="#fff" stroke-opacity=".09"/>
+      <circle cx="56" cy="410" r="16" fill="#71a7ff" fill-opacity=".12" stroke="#71a7ff" stroke-opacity=".3"/><text x="56" y="414" fill="#71a7ff" text-anchor="middle" font-size="9" font-weight="800">02</text>
+      <text x="82" y="407" fill="#f4f7fb" font-size="15" font-weight="750">Tab Cycling</text><text x="82" y="424" fill="#98a4b5" font-size="9">Choose the route, wheel feel, and participating tabs.</text>
+      <line x1="28" y1="440" x2="597" y2="440" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="469" fill="#f4f7fb" font-size="11" font-weight="750">Cycle order</text>
+      <rect x="433" y="450" width="138" height="34" rx="9" fill="#1a2230" stroke="#fff" stroke-opacity=".09"/><text x="445" y="472" fill="#f4f7fb" font-size="9">Left-To-Right ▾</text>
+      <line x1="28" y1="493" x2="597" y2="493" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="522" fill="#f4f7fb" font-size="11" font-weight="750">Wheel direction</text>
+      <rect x="421" y="503" width="150" height="34" rx="9" fill="#1a2230" stroke="#fff" stroke-opacity=".09"/><text x="433" y="525" fill="#f4f7fb" font-size="9">Down → Next tab ▾</text>
+      <line x1="28" y1="546" x2="597" y2="546" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="575" fill="#f4f7fb" font-size="11" font-weight="750">Preset</text>
+      <rect x="446" y="556" width="125" height="34" rx="9" fill="#1a2230" stroke="#fff" stroke-opacity=".09"/><text x="458" y="578" fill="#f4f7fb" font-size="9">Balanced ▾</text>
+      <line x1="28" y1="600" x2="597" y2="600" stroke="#fff" stroke-opacity=".09"/>
+      <text x="48" y="629" fill="#f4f7fb" font-size="11" font-weight="750">Sensitivity</text><text x="48" y="642" fill="#98a4b5" font-size="8">Wheel distance: 1.0×</text>
+      <line x1="441" y1="628" x2="571" y2="628" stroke="#344156" stroke-width="4" stroke-linecap="round"/><line x1="441" y1="628" x2="505" y2="628" stroke="#71a7ff" stroke-width="4" stroke-linecap="round"/><circle cx="505" cy="628" r="7" fill="#71a7ff"/>
+    </g>
+  </g>
+</svg>

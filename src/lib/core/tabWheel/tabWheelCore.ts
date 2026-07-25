@@ -1,11 +1,35 @@
-// Keep wheel math browser-free so gesture behavior can be tested without a
-// WebExtension runtime.
+// Keep wheel math browser-free so gesture behavior can be tested and reused by
+// both normal pages and the first-run gesture demo.
+
+export interface TabWheelModifierState {
+  altKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+}
+
+export function isTabWheelModifier(
+  event: TabWheelModifierState,
+  modifier: TabWheelModifierKey,
+  withShift: boolean,
+): boolean {
+  const expected = {
+    altKey: modifier === "alt",
+    ctrlKey: modifier === "ctrl",
+    metaKey: modifier === "meta",
+    shiftKey: withShift,
+  };
+  return event.altKey === expected.altKey
+    && event.ctrlKey === expected.ctrlKey
+    && event.metaKey === expected.metaKey
+    && event.shiftKey === expected.shiftKey;
+}
 
 export function resolveWheelDirection(
-  wheelDeltaY: number,
+  wheelDelta: number,
   invertScroll: boolean,
 ): "prev" | "next" {
-  const normalDirection = wheelDeltaY > 0 ? "next" : "prev";
+  const normalDirection = wheelDelta > 0 ? "next" : "prev";
   if (!invertScroll) return normalDirection;
   return normalDirection === "next" ? "prev" : "next";
 }
@@ -17,7 +41,6 @@ export function resolveCycleTargetIndex(
   wrapAround: boolean,
 ): number {
   const candidates = tabIndices.slice().sort((left, right) => left - right);
-
   if (candidates.length === 0) return -1;
   if (candidates.length === 1) return candidates[0];
 
@@ -33,25 +56,17 @@ export function resolveCycleTargetIndex(
   return wrapAround ? candidates[candidates.length - 1] : currentTabIndex;
 }
 
-export function normalizeWheelDeltaY(event: Pick<WheelEvent, "deltaMode" | "deltaY">, pageHeight: number): number {
-  if (event.deltaMode === 1) return event.deltaY * 16;
-  if (event.deltaMode === 2) return event.deltaY * pageHeight;
-  return event.deltaY;
-}
-
 export function normalizeWheelDelta(
   event: Pick<WheelEvent, "deltaMode" | "deltaX" | "deltaY">,
   pageHeight: number,
   pageWidth: number,
   horizontalWheel: boolean,
 ): number {
-  const normalizedY = normalizeWheelDeltaY(event, pageHeight);
+  const modeMultiplierY = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? pageHeight : 1;
+  const normalizedY = event.deltaY * modeMultiplierY;
   if (!horizontalWheel) return normalizedY;
-  const normalizedX = event.deltaMode === 1
-    ? event.deltaX * 16
-    : event.deltaMode === 2
-      ? event.deltaX * pageWidth
-      : event.deltaX;
+  const modeMultiplierX = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? pageWidth : 1;
+  const normalizedX = event.deltaX * modeMultiplierX;
   return Math.abs(normalizedX) > Math.abs(normalizedY) ? normalizedX : normalizedY;
 }
 
@@ -74,27 +89,8 @@ export function resolveAcceleratedWheelTriggerDistance(
 ): number {
   if (!isAccelerationEnabled) return triggerDistancePx;
   const cappedBurstCount = Math.max(0, Math.min(MAX_BURST_COUNT, burstCount));
-  const burstReduction = cappedBurstCount * BURST_REDUCTION_PX_PER_BURST;
-  return Math.max(MIN_ACCELERATED_TRIGGER_DISTANCE_PX, triggerDistancePx - burstReduction);
-}
-
-export function shouldUseNativePageScroll(
-  speedMultiplier: number,
-  viewportCapRatio: number,
-): boolean {
-  return Math.abs(speedMultiplier - 1) < 0.001 && Math.abs(viewportCapRatio - 1) < 0.001;
-}
-
-export function scalePageScrollDelta(
-  wheelDelta: number,
-  speedMultiplier: number,
-  viewportSize: number,
-  viewportCapRatio: number,
-): number {
-  const multiplier = Number.isFinite(speedMultiplier) ? Math.max(0, speedMultiplier) : 1;
-  const capRatio = Number.isFinite(viewportCapRatio) ? Math.max(0, viewportCapRatio) : 1;
-  const scaledDelta = wheelDelta * multiplier;
-  const maxStep = Math.max(1, viewportSize) * capRatio;
-  if (maxStep <= 0) return 0;
-  return Math.sign(scaledDelta) * Math.min(Math.abs(scaledDelta), maxStep);
+  return Math.max(
+    MIN_ACCELERATED_TRIGGER_DISTANCE_PX,
+    triggerDistancePx - cappedBurstCount * BURST_REDUCTION_PX_PER_BURST,
+  );
 }

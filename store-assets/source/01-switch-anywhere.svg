@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#14243d"/><stop offset=".52" stop-color="#0b1017"/><stop offset="1" stop-color="#111827"/></linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4d8deb"/><stop offset="1" stop-color="#806ee8"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="26" stdDeviation="34" flood-opacity=".34"/></filter>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <circle cx="1140" cy="90" r="280" fill="#4d8deb" opacity=".08"/>
+  <g font-family="Inter,Segoe UI,sans-serif">
+    <rect x="90" y="66" width="34" height="34" rx="11" fill="url(#mark)"/>
+    <text x="107" y="89" fill="#fff" text-anchor="middle" font-size="19" font-weight="800">↕</text>
+    <text x="136" y="88" fill="#98a5b6" font-size="13" font-weight="700">SCROLL WHEEL TAB SWITCHER</text>
+    <text x="90" y="172" fill="#76aaff" font-size="13" font-weight="800" letter-spacing="2">STEP 1 OF 3</text>
+    <text x="90" y="235" fill="#f6f8fb" font-size="49" font-weight="760">Switch tabs without</text>
+    <text x="90" y="290" fill="#f6f8fb" font-size="49" font-weight="760">chasing the tab bar.</text>
+    <text x="90" y="335" fill="#98a5b6" font-size="20">Hold Alt / Option and scroll inside the test area.</text>
+    <g filter="url(#shadow)">
+      <rect x="90" y="382" width="1100" height="322" rx="20" fill="#0d131c" stroke="#76aaff" stroke-opacity=".3"/>
+      <rect x="90" y="382" width="1100" height="59" rx="20" fill="#101721"/>
+      <path d="M90 421v20h1100v-20" fill="#101721"/>
+      <g font-size="13">
+        <rect x="105" y="394" width="252" height="47" rx="9" fill="#1b2532"/><text x="126" y="423" fill="#f6f8fb">Inbox</text>
+        <text x="393" y="423" fill="#748194">Research</text><text x="653" y="423" fill="#748194">Docs</text><text x="913" y="423" fill="#748194">Music</text>
+      </g>
+      <line x1="90" y1="441" x2="1190" y2="441" stroke="#fff" stroke-opacity=".09"/>
+      <rect x="608" y="489" width="54" height="82" rx="27" fill="none" stroke="#d9e2ee" stroke-width="3"/>
+      <rect x="633" y="502" width="5" height="19" rx="3" fill="#76aaff"/>
+      <text x="635" y="611" fill="#f6f8fb" text-anchor="middle" font-size="19" font-weight="700">Hold Alt / Option + scroll</text>
+      <text x="635" y="642" fill="#98a5b6" text-anchor="middle" font-size="14">Try the exact gesture before you start browsing.</text>
+    </g>
+    <text x="90" y="756" fill="#98a5b6" font-size="15">One gesture. No tab-bar hovering. No extra browser toolkit.</text>
+  </g>
+</svg>

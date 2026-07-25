@@ -1,178 +1,118 @@
 # Scroll Wheel Tab Switcher
 
-TabWheel is a browser extension for switching tabs with the mouse scroll wheel. By default, hold `Alt` and scroll on a normal web page to move to the next or previous tab.
+TabWheel is a browser extension built to do one job well: switch browser tabs with `Alt / Option + mouse wheel` anywhere on a normal web page.
 
-It is built for a small, reliable workflow:
+It keeps the gesture fast and predictable while preserving the page position you left behind. There is no search launcher, general click remapping, page-scroll modification, telemetry, or remote service.
 
-- `Alt + Wheel`: switch tabs.
-- `Alt + Middle Click`: open the settings page by default.
-- `Alt + Left Click` and `Alt + Right Click`: native clicks by default; remap either to TabWheel Search, Browser Default new tab, recent tab, close, duplicate, or settings.
-- Toolbar popup: change mode, tune wheel behavior, and use fallback controls.
+## What it does
 
-## Features
+- Switches tabs with `Alt / Option + wheel` by default.
+- Cycles in visible left-to-right order or most-recently-used order.
+- Restores the root page position when you return to a tab and URL.
+- Offers Precise, Balanced, Fast, and Custom wheel feel.
+- Can skip collapsed/hidden tabs or pinned tabs.
+- Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
+- Opens settings with the configured modifier + middle click by default; this shortcut can be turned Off to keep middle click native.
+- Provides popup Previous/Next buttons when a protected browser page blocks content scripts.
+- Stores settings, onboarding state, MRU order, and scroll positions locally.
 
-- Mouse wheel tab switching with configurable modifier: `Alt / Option`, `Ctrl / Control`, or `Meta / Command`.
-- In-page search launcher with live local suggestions blended from recent searches, open tabs, browser history, and bookmarks (`/tab`, `/hist`, `/book` narrow to one source); web searches use the browser's default search provider first, with a fixed Google fallback if the browser search API is unavailable.
-- Remappable left, middle, and right click actions: TabWheel Search, Browser Default new tab, Most Recent Tab, Close Tab, Duplicate Tab, Open Settings, or native click pass-through.
-- Optional `Shift` requirement to reduce accidental activation.
-- General mode for normal tab-order cycling.
-- MRU mode for most-recently-used cycling.
-- Precise, Balanced, Fast, and Custom wheel presets.
-- Four wheel sliders for tab sensitivity, tab cooldown, page-scroll speed, and viewport step cap, plus acceleration, horizontal wheel, wrap-around, pinned-tab, hidden-tab, restricted-page skip, and overshoot guard settings.
-- Normal page scrolling stays browser-native at 1.0x speed and 100% viewport cap; non-default page-scroll values filter normal vertical wheel scrolling on supported pages.
-- Scroll memory for restoring recent root scroll position and normalized page position when returning to the same URL.
-- Editable-field setting for wheel-cycling inside text boxes, search fields, and editors/docs.
-- Popup Refresh action that reconnects TabWheel on the current page without reloading it.
-- Reliability guards for mouse gestures: middle-click recent-tab switching runs on the completed click, search panels close when leaving the tab, and close-to-recent does not close the current tab unless a recent-tab target is available.
+Normal scrolling and left/right clicks remain browser-native. Middle click is also native when its two-option shortcut is Off.
 
-## Engineering Promise
+## First run
 
-TabWheel's fast, feature-rich, and browser-native promise is reliability first: hot-path gestures do little work, default page scrolling stays native, and non-default page-scroll tuning filters only supported vertical wheel events without turning the page into a custom application shell. Scroll restore waits for layout stability, validates page geometry, and cancels on real browser lifecycle events such as fullscreen changes, tab visibility changes, and page unload.
+The three-step welcome page lets a new user:
 
-## Browser Support
+1. Practice the real modifier-wheel gesture in a safe demo.
+2. Choose a modifier, optional Shift requirement, and middle-click behavior.
+3. Review page-position restore, privacy, and protected-page limitations.
+
+The popup keeps a small first-use hint visible until the first successful real gesture. This state is local and is not analytics.
+
+## Defaults
+
+| Setting | Default |
+| --- | --- |
+| Gesture | `Alt / Option + wheel` |
+| Modifier + middle click | Open settings |
+| Order | Left-to-right |
+| Wheel direction | Wheel down moves to the next tab |
+| Skip hidden/collapsed tabs | On |
+| Skip pinned tabs | Off |
+| Wheel feel | Balanced |
+| Acceleration | Off |
+| Sensitivity | 1.0× |
+| Cooldown | 160ms |
+
+Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, wraparound, and overshoot protection are always enabled automatically.
+
+## Browser support
 
 - Chrome and Chromium-based browsers use the Manifest V3 build.
 - Firefox and Zen Browser use the Manifest V2 build.
 
-Browser UI pages, extension pages, browser stores such as Chrome Web Store and Mozilla Add-ons, devtools, PDF viewers, and some restricted pages may block content scripts. TabWheel skips those pages during wheel cycling by default. The popup fallback search field and tab buttons remain available where the toolbar popup can run.
+Browser settings, extension stores, PDF viewers, devtools, and other protected pages may block page gestures. TabWheel handles those pages automatically; the toolbar popup still offers Previous and Next buttons.
 
 ## Privacy
 
-TabWheel does not use telemetry, tracking, analytics, remote code, or developer-owned servers.
+TabWheel has no telemetry, tracking, analytics, remote code, or developer-owned server. See [PRIVACY.md](./PRIVACY.md) for the exact local data and permission model.
 
-The extension stores settings, MRU tab order, recent scroll positions, page geometry, and URL checks in browser-local storage. Submitted TabWheel Search queries go to the browser's default search provider, with the fixed Google fallback used only if the browser search API is unavailable.
-
-See [PRIVACY.md](./PRIVACY.md) for the full privacy policy.
-
-## Install For Development
-
-Install dependencies:
+## Development
 
 ```bash
 npm ci
+npm run ci
 ```
 
-Build once:
+Build individual targets:
 
 ```bash
 npm run build:chrome
 npm run build:firefox
 ```
 
-Watch during extension development:
+Load the generated build:
 
-```bash
-npm run watch:chrome
-npm run watch:firefox
-```
+- Chrome: open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist/chrome`.
+- Firefox: open `about:debugging`, choose **This Firefox**, then **Load Temporary Add-on**, and select the generated Firefox manifest.
 
-Load the generated `dist/` build in your browser:
-
-- Chrome: open `chrome://extensions`, enable Developer mode, choose `Load unpacked`, and select `dist/chrome`.
-- Firefox: open `about:debugging`, choose `This Firefox`, choose `Load Temporary Add-on`, and select the generated Firefox manifest or extension file.
-
-## Quality Gate
-
-Run the full local gate:
-
-```bash
-npm run ci
-```
-
-Individual checks:
-
-```bash
-npm run lint
-npm run test
-npm run typecheck
-npm run verify:compat
-npm run verify:upgrade
-npm run verify:store
-```
-
-## Release Artifacts
-
-Build Chrome, Firefox, and source packages into `release/`:
+Package a release:
 
 ```bash
 npm run release:package
 ```
 
-Generated output:
+This creates:
 
-- `release/tabwheel-chrome-v2.1.1.zip`
-- `release/tabwheel-firefox-v2.1.1.xpi`
-- `release/tabwheel-source-v2.1.1.zip`
+- `release/tabwheel-chrome-v3.0.0.zip`
+- `release/tabwheel-firefox-v3.0.0.xpi`
+- `release/tabwheel-source-v3.0.0.zip`
 
-## Project Structure
+## Project structure
 
 ```text
 src/
   entryPoints/
-    backgroundRuntime/
-      background.ts      # background bootstrap; creates the TabWheel domain and message router
-    contentScript/
-      contentScript.ts   # content script bootstrap; calls appInit
-    optionsPage/
-      optionsPage.html   # full settings page markup
-      optionsPage.css    # settings page styles
-      optionsPage.ts     # settings load/save and dynamic labels
-    toolbarPopup/
-      toolbarPopup.html  # browser action popup markup
-      toolbarPopup.css   # popup layout, responsive controls, and fallback actions
-      toolbarPopup.ts    # popup state, fallback actions, mode switching, refresh
+    backgroundRuntime/  background bootstrap
+    contentScript/      page-side bootstrap
+    onboarding/         install and focused-update experience
+    optionsPage/        complete settings
+    toolbarPopup/       mirrored settings, status, and fallback controls
   lib/
-    appInit/
-      appInit.ts         # page-side listeners, search/click gestures, and scroll memory
-    adapters/runtime/
-      runtimeClient.ts   # typed runtime messaging helpers and retry behavior
-      tabWheelApi.ts     # content/popup API wrappers around runtime messages
-    backgroundRuntime/
-      domains/
-        tabWheelDomain.ts        # tab cycling, MRU state, scroll memory, refresh/injection logic
-      handlers/
-        runtimeRouter.ts         # shared runtime message routing
-        tabWheelMessageHandler.ts # TabWheel message handler
-    common/
-      contracts/
-        runtimeMessages.ts # background/content/popup message shapes
-        tabWheel.ts        # settings, defaults, presets, storage keys, normalization
-      utils/
-        helpers.ts                  # shared UI/data helpers
-        panelHost.ts                # shared Shadow DOM overlay host and tokens
-        storageMigrations.ts        # pure storage migration logic
-        storageMigrationsRuntime.ts # browser storage migration runner
-    core/
-      tabWheel/
-        tabWheelCore.ts    # pure wheel delta normalization and tab target math
-    ui/
-      panels/
-        searchLauncher/
-          searchLauncher.ts  # in-page search launcher
-          searchLauncher.css # search launcher styles
-  icons/                   # extension icons and image assets
-  types.d.ts               # shared global TypeScript declarations
-esBuildConfig/
-  build.mjs                # Chrome/Firefox bundle builder
-  manifest_v2.json         # Firefox/Zen manifest
-  manifest_v3.json         # Chrome manifest
-  packageRelease.mjs       # release zip/xpi/source packager
-  verifyCompat.mjs         # manifest compatibility checks
-  verifyStore.mjs          # store/privacy documentation checks
-  verifyUpgrade.mjs        # storage migration fixture checks
-  lint.mjs                 # repository-specific architecture checks
-test/
-  *.test.mjs               # Node test suite
-  fixtures/upgrade/        # storage upgrade fixtures
-dist/                      # generated browser builds; not source
-release/                   # generated release artifacts; not source
+    adapters/runtime/   typed extension-message clients
+    appInit/            modifier-wheel and scroll-restore listeners
+    backgroundRuntime/  tab cycling, MRU, restore, and lifecycle logic
+    common/             contracts, settings, and storage migrations
+    core/tabWheel/      browser-free gesture math
+  icons/
+esBuildConfig/          builds, packaging, and verification
+test/                   Node tests and migration fixtures
 ```
 
 ## Documentation
 
-- [STORE.md](./STORE.md): store listing reference.
+- [STORE.md](./STORE.md): store listing copy, defaults, permissions, and asset checklist.
 - [PRIVACY.md](./PRIVACY.md): privacy policy.
-- [RELEASE.md](./RELEASE.md): release notes and packaging notes.
+- [RELEASE.md](./RELEASE.md): release notes and package names.
 - [CONTRIBUTING.md](./CONTRIBUTING.md): contributor workflow.
 
 ## License

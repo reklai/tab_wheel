@@ -1,0 +1,36 @@
+{
+  "input": {
+    "storageSchemaVersion": 13,
+    "tabWheelSettings": {
+      "leftClickAction": "search",
+      "middleClickAction": "none",
+      "rightClickAction": "closeToRecent",
+      "gestureModifier": "meta",
+      "cycleScope": "general",
+      "allowGesturesInEditableFields": false,
+      "restorePagePosition": false,
+      "skipRestrictedPages": false,
+      "wrapAround": false,
+      "horizontalWheel": false,
+      "overshootGuard": false,
+      "invertScroll": true
+    }
+  },
+  "expected": {
+    "storageSchemaVersion": 14,
+    "tabWheelSettings": {
+      "middleClickAction": "none",
+      "gestureModifier": "meta",
+      "cycleScope": "general",
+      "allowGesturesInEditableFields": true,
+      "restorePagePosition": true,
+      "skipRestrictedPages": true,
+      "wrapAround": true,
+      "horizontalWheel": true,
+      "overshootGuard": true,
+      "invertScroll": true,
+      "skipHiddenTabs": true
+    }
+  },
+  "expectedChanged": true
+}

@@ -1,4 +1,4 @@
-# Store Reference - TabWheel
+# Store Reference — TabWheel
 
 ## Listing Title
 
@@ -11,77 +11,80 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Hold Alt and scroll your mouse wheel anywhere on the page to switch tabs. No tab bar hovering needed.
+Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private, and configurable.
 
 ## Description
 
-WHAT'S NEW IN 2.1.1:
-- Updated the short store summary to emphasize mouse-first tab switching from anywhere on the page.
-- Kept package/browser manifests aligned at 2.1.1.
+SWITCH TABS WITHOUT CHASING THE TAB BAR
 
-CURRENT FEATURE HIGHLIGHTS:
-- TabWheel Search now suggests local matches from recent searches, open tabs, browser history, and bookmarks as you type.
-- Type /tab, /hist, or /book to filter suggestions to open tabs, history, or bookmarks.
-- Fuzzy highlighting and keyboard navigation make the search launcher faster to use from the page.
-- History and bookmark selections switch to an already-open matching tab when possible instead of creating duplicates.
-- Private-window search submissions are not saved as recent searches.
-- Popup and options controls were streamlined with a settings gear, clearer descriptions, matching Refresh / Reset buttons, and consistent settings sync.
-- Reset to defaults now clears local TabWheel settings and state so the current defaults take effect cleanly.
+Hold Alt / Option and scroll the mouse wheel anywhere on a normal web page. Wheel down moves to the next tab and wheel up moves to the previous tab. Your hand stays on the mouse and your focus stays on the page.
 
-CURRENT DEFAULTS:
-- Hold Alt and scroll the mouse wheel to switch tabs.
-- Left-To-Right mode is the default cycle mode; Most Recently Used mode is also available.
-- Alt + Middle Click opens Settings by default.
-- Alt + Left Click and Alt + Right Click keep their native browser/page behavior until you remap them.
-- Left, middle, and right click can each be remapped to TabWheel Search, Browser Default new tab, Most Recent Tab, Close Tab, Duplicate Tab, Open Settings, or native click pass-through.
-- Restricted pages are skipped by default. Pinned-tab and hidden-tab skipping are available options.
-- Normal page scrolling stays browser-native at 1.0x speed and a 100% viewport step cap until you change page-scroll tuning.
+BUILT FOR THIS ONE WORKFLOW
 
-Scroll Wheel Tab Switcher lets you switch browser tabs with your mouse wheel. Hold Alt and scroll on a normal web page to move to the next or previous tab, making tab switching a fast hand-on-mouse gesture instead of clicking through the tab bar or reaching for keyboard shortcuts. By default, Alt + Middle Click opens the Settings page, while Alt + Left Click and Alt + Right Click keep their native click behavior until you remap them. Left, middle, and right click actions can each be remapped to TabWheel Search, Browser Default new tab, Most Recent Tab, Close Tab, Duplicate Tab, Open Settings, or native click pass-through. Mouse wheel cycling can use Left-To-Right mode or Most Recently Used mode. These behaviors are configurable from the extension popup toolbar and options page.
+- Left-to-right mode follows the visible tab strip.
+- Recently used mode follows your browsing flow.
+- Page-position restore takes you back to where you stopped reading.
+- Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
+- Optional filters can skip pinned or hidden/collapsed tabs.
+- Ctrl / Control and Meta / Command are available as alternative modifiers.
+- The same modifier + middle click opens settings by default, or can be turned Off for native middle-click behavior.
 
-ACCESS EXTENSION POPUP TOOLBAR:
-1. Look at the top-right of Chrome, next to the address bar.
-2. Click the puzzle-piece icon for Extensions.
-3. Find Scroll Wheel Tab Switcher.
-4. Click the extension icon to open the popup toolbar.
-5. Optional: click the pin icon next to Scroll Wheel Tab Switcher so it always appears beside the address bar.
+CURRENT DEFAULTS
 
-FUNCTIONALITY:
-Use Alt + Wheel to switch tabs based on the selected cycle mode. Left-To-Right mode cycles eligible tabs in visible tab-strip order. Most Recently Used mode cycles tabs based on recent use. Use Alt + Middle Click to open Settings by default; Alt + Left Click and Alt + Right Click stay native until remapped to actions like TabWheel Search, Most Recent Tab, or Close Tab. When closing with a recent-tab target available, it is activated before closing so the return target is deterministic.
+- Gesture: Alt / Option + wheel.
+- Modifier + middle click: Open settings.
+- Order: Left-to-right.
+- Wheel direction: wheel down moves to the next tab.
+- Skip hidden or collapsed tabs: on.
+- Skip pinned tabs: off.
+- Wheel feel: Balanced.
+- Sensitivity: 1.0×.
+- Cooldown: 160ms.
+- Acceleration: off.
 
-CLICK ACTIONS:
-TabWheel Search opens the in-page search launcher. As you type, it suggests matches from your recent searches, open tabs, browser history, and bookmarks, all matched locally on your device with fuzzy highlighting and keyboard navigation; type /tab, /hist, or /book to narrow to one source. Press Enter to run a web search, jump to the selected open tab, or open the selected history or bookmark page, switching to an already-open tab instead of duplicating it. Search uses the browser's default search provider first, with a fixed Google fallback if the browser search API is unavailable. Browser Default opens the browser's normal new tab page. Left, middle, and right click can each be remapped to Search, Browser Default, Most Recent Tab, Close Tab, Duplicate Tab, Open Settings, or native click pass-through.
+Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, wraparound, and overshoot protection are always enabled automatically.
 
-CUSTOMIZATION:
-Customize the modifier key, optional Shift requirement, click action remapping, wheel direction, tab-switch sensitivity, tab-switch cooldown, normal page-scroll speed, viewport step cap, acceleration, horizontal wheel support, pinned-tab handling, hidden-tab skipping, restricted-page skipping, wrap-around behavior, editable-field behavior, and safe overshoot guard for trackpads or free-spinning wheels. Page scrolling stays browser-native at 1.0x speed and 100% viewport cap; non-default page-scroll values filter normal vertical wheel scrolling on supported pages.
+EASY FIRST RUN
 
-PRIVACY MODEL:
-Scroll Wheel Tab Switcher does not use telemetry, tracking, analytics, remote code, or developer-owned servers. Extension settings, most-recently-used tab order, recent search queries, recent scroll positions, page geometry, and scroll-restore URL checks are stored locally in browser storage. Search launcher suggestions from recent searches, open tabs, browser history, and bookmarks are matched locally and are never transmitted. Submitted TabWheel Search queries go to the browser's current default search provider, with Google fallback only if the browser search API is unavailable.
+A three-step welcome page lets you practice the exact gesture, choose your modifier, optional Shift requirement, and middle-click behavior, and understand page-position restore. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
 
-CONSTRAINTS / LIMITATIONS:
-Page gestures work on normal web pages. Browser UI pages, extension pages, browser stores such as Chrome Web Store and Mozilla Add-ons, devtools, PDF viewers, and some restricted pages may block content scripts. Some modifier + click combinations may also be reserved by websites, the browser, or the operating system. When that happens, use the popup toolbar or choose a different modifier / Shift setting.
+PROTECTED PAGES
 
-EXTENSION POPUP TOOLBAR:
-The popup toolbar provides reliable controls when page shortcuts are blocked. It includes Mouse Scroll Wheel Cycle Mode, Click Actions, Previous / Next buttons, TabWheel Search, Most Recent Tab, Close Tab, Reset, Settings, Refresh Scroll Wheel Tab Switcher, and four wheel tuning controls for tab sensitivity, tab cooldown, page-scroll speed, and viewport step cap.
+Browser settings, extension stores, PDF viewers, devtools, and some internal pages do not allow extension content scripts. TabWheel handles these restrictions automatically. Open the toolbar popup to use Previous and Next fallback buttons there.
 
-SCROLL MEMORY:
-Scroll Wheel Tab Switcher can remember recent scroll positions and restore them when cycling back to the same URL. Scroll restore uses URL checks, layout checks, and stale-restore cancellation to avoid restoring the wrong page position.
+PRIVATE BY DESIGN
+
+No data leaves your browser for telemetry, tracking, analytics, or developer-owned services. TabWheel has no remote code and no account. Settings, onboarding progress, most-recently-used tab order, and recent page positions are stored locally.
+
+WHAT CHANGED IN 3.0.0
+
+TabWheel now owns the scroll-wheel tab-switching niche instead of bundling adjacent browser tools. Search, left/right-click remapping, alternate middle-click actions, and normal page-scroll tuning were removed. The focused modifier + middle-click settings shortcut remains and can be turned Off. Existing core wheel preferences and saved page positions are preserved during upgrade. The extension requests fewer permissions.
 
 ## Privacy
 
-No data leaves your browser for telemetry, tracking, analytics, or developer-owned services. TabWheel stores settings, MRU tab order, recent scroll positions, page geometry, and URL checks for scroll restore through browser storage. Submitted TabWheel Search queries go to the browser's current default search provider, with the Google fallback used only if the browser search API is unavailable.
+No data leaves your browser. TabWheel stores only the local state needed for settings, onboarding, tab order, and page-position restore. See `PRIVACY.md` for details.
 
 ## Permissions
 
-- `tabs`: Read, activate, create, and close tabs for cycling and click actions.
-- `storage`: Store settings, MRU tab order, recent searches, scroll positions, page geometry, and schema version locally.
-- `search`: Run searches with the browser's current default search provider, with Google fallback if the browser search API is unavailable.
-- `history`: Match browser history against search launcher queries locally on your device; nothing is transmitted.
-- `bookmarks`: Match bookmarks against search launcher queries locally on your device; nothing is transmitted.
-- `scripting` (Chrome): Activate the content script on already-open normal web tabs after install or update.
-- `tabGroups` (Chrome): Detect collapsed tab groups so hidden-tab skipping can leave their tabs out of cycling.
-- `<all_urls>`: Run the content script on pages so modifier-wheel cycling, page-scroll wheel tuning, and scroll memory can work.
+- `tabs`: Read and activate tabs for left-to-right or recently used cycling.
+- `storage`: Store settings, onboarding progress, MRU order, page positions, and the migration version locally.
+- `scripting` (Chrome): Reconnect the content script to already-open normal web tabs after install, update, or manual refresh.
+- `tabGroups` (Chrome): Detect collapsed groups so hidden-tab skipping can exclude their tabs.
+- `<all_urls>`: Run the modifier-wheel listener and page-position capture/restore on supported web pages.
+
+TabWheel does not request `search`, `history`, or `bookmarks` permissions.
 
 ## Browser Support
 
 Works on Firefox, Chrome, and Zen Browser.
+
+## Store Assets
+
+Prepare these from the production Chrome build at 100% browser zoom:
+
+1. 1280 × 800 — onboarding gesture demo, caption: “Switch tabs without chasing the tab bar.”
+2. 1280 × 800 — successful gesture and active demo tab, caption: “One natural gesture.”
+3. 1280 × 800 — complete popup ready state, caption: “Every control, right from the toolbar.”
+4. 1280 × 800 — focused settings, caption: “Tune your gesture and tab cycling.”
+5. 1280 × 800 — protected-page popup fallback, caption: “Reliable fallback controls.”
+6. 440 × 280 — promo tile using the extension icon, “Alt + Wheel,” and “Switch tabs anywhere.”

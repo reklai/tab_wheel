@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Welcome to __EXTENSION_NAME__</title>
+  <link rel="stylesheet" href="onboarding.css" />
+</head>
+<body>
+  <main class="onboarding-shell">
+    <header class="brand-header">
+      <div class="brand-mark" aria-hidden="true">↕</div>
+      <span>Scroll Wheel Tab Switcher</span>
+    </header>
+
+    <section id="installFlow" class="flow-card">
+      <div class="progress" aria-label="Setup progress">
+        <span class="active" data-progress="1"></span>
+        <span data-progress="2"></span>
+        <span data-progress="3"></span>
+      </div>
+
+      <section class="step-panel" data-step="1">
+        <p class="eyebrow">Step 1 of 3</p>
+        <h1>Switch tabs without chasing the tab bar.</h1>
+        <p class="lead">Hold <strong id="demoCombo">Alt / Option</strong> and scroll inside the test area.</p>
+
+        <div class="gesture-demo" id="gestureDemo" tabindex="0" role="application" aria-label="Try the TabWheel gesture here">
+          <div class="demo-tabs" aria-hidden="true">
+            <span class="demo-tab active">Inbox</span>
+            <span class="demo-tab">Research</span>
+            <span class="demo-tab">Docs</span>
+            <span class="demo-tab">Music</span>
+          </div>
+          <div class="demo-stage">
+            <div class="mouse-visual"><span></span></div>
+            <strong id="demoPrompt">Hold Alt / Option + scroll</strong>
+            <small id="demoStatus">Click here first if the page is not focused.</small>
+          </div>
+        </div>
+
+        <div class="step-actions">
+          <button class="text-button" id="skipDemoBtn" type="button">Skip for now</button>
+          <button class="primary-button" id="continueDemoBtn" type="button" disabled>Continue</button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="2" hidden>
+        <p class="eyebrow">Step 2 of 3</p>
+        <h1>Make the gesture yours.</h1>
+        <p class="lead">Choose the gesture that fits your setup. Everything else already has safe defaults.</p>
+
+        <div class="choice-list">
+          <label for="gestureModifier">
+            <span><strong>Modifier</strong><small>Hold this while scrolling or middle-clicking.</small></span>
+            <select id="gestureModifier"></select>
+          </label>
+          <label for="gestureWithShift">
+            <span><strong>Require Shift</strong><small>Add a second key to avoid conflicts.</small></span>
+            <input id="gestureWithShift" type="checkbox" />
+          </label>
+          <label for="middleClickAction">
+            <span><strong>Modifier + middle click</strong><small>Open settings, or leave middle click completely native.</small></span>
+            <select id="middleClickAction"></select>
+          </label>
+        </div>
+
+        <div class="step-actions">
+          <button class="text-button" data-back="1" type="button">Back</button>
+          <button class="primary-button" id="saveChoicesBtn" type="button">Save and continue</button>
+        </div>
+      </section>
+
+      <section class="step-panel" data-step="3" hidden>
+        <p class="eyebrow">Step 3 of 3</p>
+        <h1>You’re ready to roll.</h1>
+        <p class="lead">Use <strong id="readyCombo">Alt / Option + wheel</strong> on any normal web page.</p>
+
+        <div class="ready-grid">
+          <div><span>↔</span><strong>Predictable order</strong><small>Follows your visible tab strip by default.</small></div>
+          <div><span>⌖</span><strong>Keeps your place</strong><small>Restores the page position you left.</small></div>
+          <div><span>◇</span><strong>Private by design</strong><small>Settings and positions stay in your browser.</small></div>
+        </div>
+        <p class="constraint">Browser settings, extension stores, PDF viewers, and other protected pages can block page gestures. The toolbar popup provides fallback buttons there.</p>
+
+        <div class="step-actions">
+          <button class="text-button" id="openSettingsBtn" type="button">Review settings</button>
+          <button class="primary-button" id="finishBtn" type="button">Start browsing</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="updateFlow" class="flow-card update-card" hidden>
+      <p class="eyebrow">TabWheel 3.0</p>
+      <h1>Focused on the gesture you installed it for.</h1>
+      <p class="lead">TabWheel is now purpose-built for fast, reliable scroll-wheel tab switching.</p>
+      <div class="update-columns">
+        <div>
+          <strong>Still here</strong>
+          <ul>
+            <li>Alt / Option + wheel tab switching</li>
+            <li>Left-to-right and recently used modes</li>
+            <li>Wheel feel and filtering preferences</li>
+            <li>Reliable page-position restoration</li>
+            <li>Modifier + middle click opens settings</li>
+          </ul>
+        </div>
+        <div>
+          <strong>Removed</strong>
+          <ul>
+            <li>Search and search-history access</li>
+            <li>Left/right-click remapping and alternate click actions</li>
+            <li>Normal page-scroll modification</li>
+          </ul>
+        </div>
+      </div>
+      <p class="constraint">Your core wheel preferences and saved page positions were preserved. The extension now requests fewer permissions.</p>
+      <div class="step-actions">
+        <button class="text-button" id="updateSettingsBtn" type="button">Review settings</button>
+        <button class="primary-button" id="dismissUpdateBtn" type="button">Got it</button>
+      </div>
+    </section>
+  </main>
+  <script src="onboarding.js"></script>
+</body>
+</html>

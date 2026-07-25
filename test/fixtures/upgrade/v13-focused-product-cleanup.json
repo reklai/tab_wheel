@@ -1,0 +1,50 @@
+{
+  "input": {
+    "storageSchemaVersion": 13,
+    "tabWheelSearchHistory": ["old search"],
+    "tabWheelMruState": {
+      "1": [9, 8]
+    },
+    "tabWheelSettings": {
+      "gestureModifier": "ctrl",
+      "gestureWithShift": true,
+      "leftClickAction": "search",
+      "middleClickAction": "openSettings",
+      "rightClickAction": "none",
+      "cycleScope": "mru",
+      "wheelPreset": "custom",
+      "wheelSensitivity": 1,
+      "wheelCooldownMs": 160,
+      "pageScrollSpeedMultiplier": 1.4,
+      "pageScrollViewportCapRatio": 0.5,
+      "wheelAcceleration": false,
+      "horizontalWheel": true,
+      "overshootGuard": true,
+      "skipHiddenTabs": false
+    }
+  },
+  "expected": {
+    "storageSchemaVersion": 14,
+    "tabWheelMruState": {
+      "1": [9, 8]
+    },
+    "tabWheelSettings": {
+      "gestureModifier": "ctrl",
+      "gestureWithShift": true,
+      "middleClickAction": "openSettings",
+      "cycleScope": "mru",
+      "wheelPreset": "balanced",
+      "wheelSensitivity": 1,
+      "wheelCooldownMs": 160,
+      "wheelAcceleration": false,
+      "horizontalWheel": true,
+      "overshootGuard": true,
+      "skipHiddenTabs": false,
+      "restorePagePosition": true,
+      "allowGesturesInEditableFields": true,
+      "skipRestrictedPages": true,
+      "wrapAround": true
+    }
+  },
+  "expectedChanged": true
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#172f55"/><stop offset=".56" stop-color="#0b1017"/><stop offset="1" stop-color="#25204b"/></linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4d8deb"/><stop offset="1" stop-color="#806ee8"/></linearGradient>
+  </defs>
+  <rect width="440" height="280" rx="0" fill="url(#bg)"/>
+  <circle cx="402" cy="34" r="112" fill="#75aaff" opacity=".09"/>
+  <g font-family="Inter,Segoe UI,sans-serif">
+    <rect x="34" y="32" width="42" height="42" rx="13" fill="url(#mark)"/><text x="55" y="60" fill="#fff" text-anchor="middle" font-size="23" font-weight="800">↕</text>
+    <text x="88" y="50" fill="#f5f7fb" font-size="15" font-weight="800">TabWheel</text><text x="88" y="66" fill="#9aa6b6" font-size="9">SCROLL WHEEL TAB SWITCHER</text>
+    <text x="34" y="129" fill="#75aaff" font-size="14" font-weight="800" letter-spacing="1.5">ALT + WHEEL</text>
+    <text x="34" y="172" fill="#f5f7fb" font-size="36" font-weight="780">Switch tabs</text>
+    <text x="34" y="212" fill="#f5f7fb" font-size="36" font-weight="780">anywhere.</text>
+    <text x="34" y="248" fill="#9aa6b6" font-size="12">Fast. Focused. Private.</text>
+    <rect x="338" y="126" width="48" height="76" rx="24" fill="none" stroke="#d9e2ee" stroke-width="3"/>
+    <rect x="360" y="139" width="5" height="18" rx="3" fill="#75aaff"/>
+    <path d="M362 172v34m0 0l-9-10m9 10l9-10" stroke="#75aaff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

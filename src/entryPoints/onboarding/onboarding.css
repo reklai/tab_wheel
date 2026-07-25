@@ -1,0 +1,98 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1017;
+  --surface: #141b26;
+  --surface-2: #1b2532;
+  --line: rgba(255, 255, 255, 0.09);
+  --text: #f6f8fb;
+  --muted: #98a5b6;
+  --accent: #76aaff;
+  --good: #68d69c;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(67, 115, 199, 0.26), transparent 42rem),
+    var(--bg);
+  color: var(--text);
+  font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+button, select, input { font: inherit; }
+.onboarding-shell { width: min(820px, calc(100% - 32px)); margin: 0 auto; padding: 40px 0 64px; }
+.brand-header { display: flex; gap: 10px; align-items: center; margin-bottom: 26px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; background: linear-gradient(145deg, #4d8deb, #806ee8); color: white; font-size: 18px; }
+.flow-card { padding: clamp(24px, 6vw, 56px); border: 1px solid var(--line); border-radius: 24px; background: rgba(20, 27, 38, 0.96); box-shadow: 0 35px 100px rgba(0, 0, 0, 0.32); }
+.progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 36px; }
+.progress span { height: 3px; border-radius: 99px; background: rgba(255, 255, 255, 0.09); }
+.progress span.active { background: var(--accent); }
+.eyebrow { margin: 0 0 10px; color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+h1 { max-width: 680px; margin: 0 0 12px; font-size: clamp(32px, 6vw, 52px); line-height: 1.08; letter-spacing: -0.04em; }
+.lead { max-width: 650px; margin: 0 0 30px; color: var(--muted); font-size: 17px; }
+.gesture-demo { overflow: hidden; border: 1px solid rgba(118, 170, 255, 0.25); border-radius: 18px; background: #0d131c; outline: none; }
+.gesture-demo:focus-visible { box-shadow: 0 0 0 3px rgba(118, 170, 255, 0.3); }
+.demo-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 8px 8px 0; border-bottom: 1px solid var(--line); }
+.demo-tab { overflow: hidden; padding: 9px 10px; border-radius: 8px 8px 0 0; color: #748194; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; transition: 180ms ease; }
+.demo-tab.active { background: var(--surface-2); color: var(--text); }
+.demo-stage { display: grid; min-height: 210px; place-items: center; align-content: center; gap: 12px; background: radial-gradient(circle, rgba(118, 170, 255, 0.09), transparent 14rem); text-align: center; }
+.demo-stage strong { font-size: 16px; }
+.demo-stage small { color: var(--muted); }
+.mouse-visual { width: 42px; height: 64px; padding-top: 10px; border: 2px solid #d9e2ee; border-radius: 22px; }
+.mouse-visual span { display: block; width: 4px; height: 14px; margin: 0 auto; border-radius: 5px; background: var(--accent); animation: wheel 1.2s ease-in-out infinite; }
+@keyframes wheel { 0%, 100% { transform: translateY(0); opacity: .5; } 50% { transform: translateY(10px); opacity: 1; } }
+.gesture-demo.success { border-color: rgba(104, 214, 156, 0.5); }
+.gesture-demo.success .mouse-visual { border-color: var(--good); }
+.gesture-demo.success .mouse-visual span { background: var(--good); animation: none; }
+.choice-list { overflow: hidden; margin: 20px 0; border: 1px solid var(--line); border-radius: 16px; }
+.choice-list label { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 20px; border-top: 1px solid var(--line); }
+.choice-list label:first-child { border-top: 0; }
+.choice-list strong, .choice-list small { display: block; }
+.choice-list small { color: var(--muted); font-size: 12px; }
+select { min-width: 180px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--text); }
+input[type="checkbox"] {
+  appearance: none;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #273140;
+  cursor: pointer;
+}
+input[type="checkbox"]::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #dce4ef;
+  transition: transform 150ms ease;
+}
+input[type="checkbox"]:checked { background: #3c7bdc; }
+input[type="checkbox"]:checked::after { transform: translateX(20px); background: white; }
+.step-actions { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 30px; }
+.step-actions button { min-height: 44px; padding: 0 20px; border-radius: 11px; cursor: pointer; font-weight: 700; }
+.primary-button { border: 1px solid #79abfb; background: #5f94e8; color: #07111f; }
+.primary-button:disabled { cursor: not-allowed; filter: grayscale(.8); opacity: .45; }
+.text-button { border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.ready-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 26px 0; }
+.ready-grid div { padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
+.ready-grid span, .ready-grid strong, .ready-grid small { display: block; }
+.ready-grid span { margin-bottom: 20px; color: var(--accent); font-size: 24px; }
+.ready-grid small { margin-top: 5px; color: var(--muted); }
+.constraint { padding: 15px 18px; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: rgba(118, 170, 255, 0.08); color: var(--muted); font-size: 12px; }
+.update-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 28px 0; }
+.update-columns > div { padding: 22px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-2); }
+.update-columns ul { margin: 12px 0 0; padding-left: 20px; color: var(--muted); }
+.update-columns li + li { margin-top: 8px; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 680px) {
+  .onboarding-shell { width: min(100% - 20px, 820px); padding-top: 18px; }
+  .ready-grid, .update-columns { grid-template-columns: 1fr; }
+  .choice-list label { grid-template-columns: 1fr; }
+  select { width: 100%; }
+}

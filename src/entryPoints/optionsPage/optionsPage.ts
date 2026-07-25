@@ -2,16 +2,11 @@ import browser from "webextension-polyfill";
 import {
   applyTabWheelPreset,
   DEFAULT_TABWHEEL_SETTINGS,
-  describeTabWheelClickActionSentence,
   detectTabWheelPreset,
   formatTabWheelModifierCombo,
   loadTabWheelSettings,
-  MAX_PAGE_SCROLL_SPEED_MULTIPLIER,
-  MAX_PAGE_SCROLL_VIEWPORT_CAP_RATIO,
   MAX_WHEEL_COOLDOWN_MS,
   MAX_WHEEL_SENSITIVITY,
-  MIN_PAGE_SCROLL_SPEED_MULTIPLIER,
-  MIN_PAGE_SCROLL_VIEWPORT_CAP_RATIO,
   MIN_WHEEL_COOLDOWN_MS,
   MIN_WHEEL_SENSITIVITY,
   normalizeTabWheelSettings,
@@ -23,227 +18,143 @@ import {
   resetTabWheelState,
 } from "../../lib/adapters/runtime/tabWheelApi";
 import {
-  populateClickActionSelect,
   populateCycleScopeSelect,
+  populateMiddleClickActionSelect,
   populateModifierSelect,
   populatePresetSelect,
 } from "../../lib/ui/settings/settingsControls";
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const invertScrollInput = document.getElementById("invertScroll") as HTMLInputElement;
-  const allowGesturesInEditableFieldsInput = document.getElementById("allowGesturesInEditableFields") as HTMLInputElement;
-  const gestureModifierSelect = document.getElementById("gestureModifier") as HTMLSelectElement;
-  const gestureWithShiftInput = document.getElementById("gestureWithShift") as HTMLInputElement;
-  const leftClickActionSelect = document.getElementById("leftClickAction") as HTMLSelectElement;
-  const middleClickActionSelect = document.getElementById("middleClickAction") as HTMLSelectElement;
-  const rightClickActionSelect = document.getElementById("rightClickAction") as HTMLSelectElement;
-  const cycleScopeSelect = document.getElementById("cycleScope") as HTMLSelectElement;
-  const skipPinnedTabsInput = document.getElementById("skipPinnedTabs") as HTMLInputElement;
-  const skipRestrictedPagesInput = document.getElementById("skipRestrictedPages") as HTMLInputElement;
-  const skipHiddenTabsInput = document.getElementById("skipHiddenTabs") as HTMLInputElement;
-  const wrapAroundInput = document.getElementById("wrapAround") as HTMLInputElement;
-  const wheelPresetSelect = document.getElementById("wheelPreset") as HTMLSelectElement;
-  const wheelAccelerationInput = document.getElementById("wheelAcceleration") as HTMLInputElement;
-  const horizontalWheelInput = document.getElementById("horizontalWheel") as HTMLInputElement;
-  const overshootGuardInput = document.getElementById("overshootGuard") as HTMLInputElement;
-  const wheelSensitivityInput = document.getElementById("wheelSensitivity") as HTMLInputElement;
-  const wheelSensitivityValue = document.getElementById("wheelSensitivityValue")!;
-  const wheelCooldownInput = document.getElementById("wheelCooldownMs") as HTMLInputElement;
-  const wheelCooldownValue = document.getElementById("wheelCooldownValue")!;
-  const pageScrollSpeedInput = document.getElementById("pageScrollSpeedMultiplier") as HTMLInputElement;
-  const pageScrollSpeedValue = document.getElementById("pageScrollSpeedValue")!;
-  const pageScrollViewportCapInput = document.getElementById("pageScrollViewportCapRatio") as HTMLInputElement;
-  const pageScrollViewportCapValue = document.getElementById("pageScrollViewportCapValue")!;
-  const invertScrollHelp = document.getElementById("invertScrollHelp")!;
-  const wheelShortcut = document.getElementById("wheelShortcut")!;
-  const searchShortcut = document.getElementById("searchShortcut")!;
-  const leftClickShortcutDescription = document.getElementById("leftClickShortcutDescription")!;
-  const recentShortcut = document.getElementById("recentShortcut")!;
-  const middleClickShortcutDescription = document.getElementById("middleClickShortcutDescription")!;
-  const closeShortcut = document.getElementById("closeShortcut")!;
-  const rightClickShortcutDescription = document.getElementById("rightClickShortcutDescription")!;
-  const statusBar = document.getElementById("statusBar")!;
-  const resetDefaultsBtn = document.getElementById("resetDefaults") as HTMLButtonElement;
-  const refreshTabWheelBtn = document.getElementById("refreshTabWheelBtn") as HTMLButtonElement;
-  const closeOptionsBtn = document.getElementById("closeOptionsBtn") as HTMLButtonElement;
-
+  const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const settingsTitle = byId<HTMLElement>("settingsTitle");
+  const gestureModifier = byId<HTMLSelectElement>("gestureModifier");
+  const gestureWithShift = byId<HTMLInputElement>("gestureWithShift");
+  const middleClickAction = byId<HTMLSelectElement>("middleClickAction");
+  const cycleScope = byId<HTMLSelectElement>("cycleScope");
+  const wheelDirection = byId<HTMLSelectElement>("wheelDirection");
+  const wheelPreset = byId<HTMLSelectElement>("wheelPreset");
+  const wheelSensitivity = byId<HTMLInputElement>("wheelSensitivity");
+  const wheelCooldownMs = byId<HTMLInputElement>("wheelCooldownMs");
+  const wheelAcceleration = byId<HTMLInputElement>("wheelAcceleration");
+  const skipPinnedTabs = byId<HTMLInputElement>("skipPinnedTabs");
+  const skipHiddenTabs = byId<HTMLInputElement>("skipHiddenTabs");
+  const wheelSensitivityValue = byId<HTMLElement>("wheelSensitivityValue");
+  const wheelCooldownValue = byId<HTMLElement>("wheelCooldownValue");
+  const statusBar = byId<HTMLElement>("statusBar");
   let settings = await loadTabWheelSettings();
-  let statusTimeout: ReturnType<typeof setTimeout> | null = null;
+  let statusTimer = 0;
 
   function showStatus(message: string): void {
-    if (statusTimeout) clearTimeout(statusTimeout);
+    if (statusTimer) window.clearTimeout(statusTimer);
     statusBar.textContent = message;
-    statusBar.className = "status-bar visible";
-    statusTimeout = setTimeout(() => {
-      statusBar.classList.remove("visible");
-    }, 2500);
+    statusBar.classList.add("visible");
+    statusTimer = window.setTimeout(() => statusBar.classList.remove("visible"), 2200);
   }
 
   function readSettings(): TabWheelSettings {
-    const nextSettings: TabWheelSettings = {
+    const next: TabWheelSettings = {
       ...settings,
-      invertScroll: invertScrollInput.checked,
-      allowGesturesInEditableFields: allowGesturesInEditableFieldsInput.checked,
-      gestureModifier: gestureModifierSelect.value as TabWheelModifierKey,
-      gestureWithShift: gestureWithShiftInput.checked,
-      leftClickAction: leftClickActionSelect.value as TabWheelClickAction,
-      middleClickAction: middleClickActionSelect.value as TabWheelClickAction,
-      rightClickAction: rightClickActionSelect.value as TabWheelClickAction,
-      cycleScope: cycleScopeSelect.value as TabWheelCycleScope,
-      skipPinnedTabs: skipPinnedTabsInput.checked,
-      skipRestrictedPages: skipRestrictedPagesInput.checked,
-      skipHiddenTabs: skipHiddenTabsInput.checked,
-      wrapAround: wrapAroundInput.checked,
-      wheelPreset: wheelPresetSelect.value as TabWheelPreset,
-      wheelAcceleration: wheelAccelerationInput.checked,
-      horizontalWheel: horizontalWheelInput.checked,
-      overshootGuard: overshootGuardInput.checked,
-      wheelSensitivity: Number(wheelSensitivityInput.value),
-      wheelCooldownMs: Number(wheelCooldownInput.value),
-      pageScrollSpeedMultiplier: Number(pageScrollSpeedInput.value),
-      pageScrollViewportCapRatio: Number(pageScrollViewportCapInput.value),
+      gestureModifier: gestureModifier.value as TabWheelModifierKey,
+      gestureWithShift: gestureWithShift.checked,
+      middleClickAction: middleClickAction.value as TabWheelMiddleClickAction,
+      cycleScope: cycleScope.value as TabWheelCycleScope,
+      invertScroll: wheelDirection.value === "previous",
+      wheelPreset: wheelPreset.value as TabWheelPreset,
+      wheelSensitivity: Number(wheelSensitivity.value),
+      wheelCooldownMs: Number(wheelCooldownMs.value),
+      wheelAcceleration: wheelAcceleration.checked,
+      skipPinnedTabs: skipPinnedTabs.checked,
+      skipHiddenTabs: skipHiddenTabs.checked,
     };
-    return {
-      ...nextSettings,
-      wheelPreset: detectTabWheelPreset(nextSettings),
-    };
+    return { ...next, wheelPreset: detectTabWheelPreset(next) };
   }
 
-  function renderSettings(nextSettings: TabWheelSettings): void {
-    settings = nextSettings;
-    const gestureModifier = formatTabWheelModifierCombo(settings.gestureModifier, settings.gestureWithShift);
-    invertScrollInput.checked = settings.invertScroll;
-    allowGesturesInEditableFieldsInput.checked = settings.allowGesturesInEditableFields;
-    gestureModifierSelect.value = settings.gestureModifier;
-    gestureWithShiftInput.checked = settings.gestureWithShift;
-    leftClickActionSelect.value = settings.leftClickAction;
-    middleClickActionSelect.value = settings.middleClickAction;
-    rightClickActionSelect.value = settings.rightClickAction;
-    cycleScopeSelect.value = settings.cycleScope;
-    skipPinnedTabsInput.checked = settings.skipPinnedTabs;
-    skipRestrictedPagesInput.checked = settings.skipRestrictedPages;
-    skipHiddenTabsInput.checked = settings.skipHiddenTabs;
-    wrapAroundInput.checked = settings.wrapAround;
-    wheelPresetSelect.value = settings.wheelPreset;
-    wheelAccelerationInput.checked = settings.wheelAcceleration;
-    horizontalWheelInput.checked = settings.horizontalWheel;
-    overshootGuardInput.checked = settings.overshootGuard;
-    wheelSensitivityInput.min = String(MIN_WHEEL_SENSITIVITY);
-    wheelSensitivityInput.max = String(MAX_WHEEL_SENSITIVITY);
-    wheelSensitivityInput.value = String(settings.wheelSensitivity);
-    wheelSensitivityValue.textContent = `${settings.wheelSensitivity.toFixed(1)}x`;
-    wheelCooldownInput.min = String(MIN_WHEEL_COOLDOWN_MS);
-    wheelCooldownInput.max = String(MAX_WHEEL_COOLDOWN_MS);
-    wheelCooldownInput.value = String(settings.wheelCooldownMs);
-    wheelCooldownValue.textContent = `${Math.round(settings.wheelCooldownMs)}ms`;
-    pageScrollSpeedInput.min = String(MIN_PAGE_SCROLL_SPEED_MULTIPLIER);
-    pageScrollSpeedInput.max = String(MAX_PAGE_SCROLL_SPEED_MULTIPLIER);
-    pageScrollSpeedInput.value = String(settings.pageScrollSpeedMultiplier);
-    pageScrollSpeedValue.textContent = `${settings.pageScrollSpeedMultiplier.toFixed(1)}x`;
-    pageScrollViewportCapInput.min = String(MIN_PAGE_SCROLL_VIEWPORT_CAP_RATIO);
-    pageScrollViewportCapInput.max = String(MAX_PAGE_SCROLL_VIEWPORT_CAP_RATIO);
-    pageScrollViewportCapInput.value = String(settings.pageScrollViewportCapRatio);
-    pageScrollViewportCapValue.textContent = `${Math.round(settings.pageScrollViewportCapRatio * 100)}%`;
-    invertScrollHelp.textContent = `${gestureModifier} + wheel down/right becomes previous, and ${gestureModifier} + wheel up/left becomes next.`;
-    wheelShortcut.textContent = `${gestureModifier} + Wheel`;
-    searchShortcut.textContent = `${gestureModifier} + Left Click`;
-    leftClickShortcutDescription.textContent = describeTabWheelClickActionSentence(settings.leftClickAction);
-    recentShortcut.textContent = `${gestureModifier} + Middle Click`;
-    middleClickShortcutDescription.textContent = describeTabWheelClickActionSentence(settings.middleClickAction);
-    closeShortcut.textContent = `${gestureModifier} + Right Click`;
-    rightClickShortcutDescription.textContent = describeTabWheelClickActionSentence(settings.rightClickAction);
+  function render(next: TabWheelSettings): void {
+    settings = next;
+    gestureModifier.value = next.gestureModifier;
+    gestureWithShift.checked = next.gestureWithShift;
+    middleClickAction.value = next.middleClickAction;
+    cycleScope.value = next.cycleScope;
+    wheelDirection.value = next.invertScroll ? "previous" : "next";
+    wheelPreset.value = next.wheelPreset;
+    wheelSensitivity.value = String(next.wheelSensitivity);
+    wheelCooldownMs.value = String(next.wheelCooldownMs);
+    wheelAcceleration.checked = next.wheelAcceleration;
+    skipPinnedTabs.checked = next.skipPinnedTabs;
+    skipHiddenTabs.checked = next.skipHiddenTabs;
+    const combo = formatTabWheelModifierCombo(next.gestureModifier, next.gestureWithShift);
+    const direction = next.invertScroll ? "previous" : "next";
+    settingsTitle.textContent = `${combo} + wheel down moves through your ${direction} tabs.`;
+    wheelSensitivityValue.textContent = `${next.wheelSensitivity.toFixed(1)}×`;
+    wheelCooldownValue.textContent = `${Math.round(next.wheelCooldownMs)}ms`;
   }
 
-  async function persist(nextSettings: TabWheelSettings): Promise<void> {
-    settings = nextSettings;
-    await saveTabWheelSettings(settings);
-    renderSettings(settings);
-    showStatus("Saved");
+  async function persist(next: TabWheelSettings): Promise<void> {
+    settings = next;
+    await saveTabWheelSettings(next);
+    render(next);
+    showStatus("Settings saved");
   }
 
-  async function saveSettings(): Promise<void> {
+  async function saveCurrent(): Promise<void> {
     await persist(readSettings());
   }
 
-  populateModifierSelect(gestureModifierSelect, settings.gestureModifier);
-  populatePresetSelect(wheelPresetSelect, settings.wheelPreset);
-  populateCycleScopeSelect(cycleScopeSelect, settings.cycleScope);
-  populateClickActionSelect(leftClickActionSelect, settings.leftClickAction);
-  populateClickActionSelect(middleClickActionSelect, settings.middleClickAction);
-  populateClickActionSelect(rightClickActionSelect, settings.rightClickAction);
-  renderSettings(settings);
+  populateModifierSelect(gestureModifier, settings.gestureModifier);
+  populateMiddleClickActionSelect(middleClickAction, settings.middleClickAction);
+  populateCycleScopeSelect(cycleScope, settings.cycleScope);
+  populatePresetSelect(wheelPreset, settings.wheelPreset);
+  wheelSensitivity.min = String(MIN_WHEEL_SENSITIVITY);
+  wheelSensitivity.max = String(MAX_WHEEL_SENSITIVITY);
+  wheelCooldownMs.min = String(MIN_WHEEL_COOLDOWN_MS);
+  wheelCooldownMs.max = String(MAX_WHEEL_COOLDOWN_MS);
+  render(settings);
 
-  // Settings can change from the popup or another options tab while this page
-  // is open; always render the newest storage value before the next save.
-  browser.storage.onChanged.addListener((changes: Record<string, browser.Storage.StorageChange>, areaName: string) => {
+  browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
-    const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
-    if (!settingsChange) return;
-    renderSettings(normalizeTabWheelSettings(settingsChange.newValue));
+    const change = changes[TABWHEEL_STORAGE_KEYS.settings];
+    if (change) render(normalizeTabWheelSettings(change.newValue));
   });
 
-  wheelPresetSelect.addEventListener("change", () => {
-    void persist(applyTabWheelPreset(readSettings(), wheelPresetSelect.value as TabWheelPreset));
-  });
-  invertScrollInput.addEventListener("change", () => void saveSettings());
-  allowGesturesInEditableFieldsInput.addEventListener("change", () => void saveSettings());
-  gestureModifierSelect.addEventListener("change", () => void saveSettings());
-  gestureWithShiftInput.addEventListener("change", () => void saveSettings());
-  leftClickActionSelect.addEventListener("change", () => void saveSettings());
-  middleClickActionSelect.addEventListener("change", () => void saveSettings());
-  rightClickActionSelect.addEventListener("change", () => void saveSettings());
-  cycleScopeSelect.addEventListener("change", () => void saveSettings());
-  skipPinnedTabsInput.addEventListener("change", () => void saveSettings());
-  skipRestrictedPagesInput.addEventListener("change", () => void saveSettings());
-  skipHiddenTabsInput.addEventListener("change", () => void saveSettings());
-  wrapAroundInput.addEventListener("change", () => void saveSettings());
-  wheelAccelerationInput.addEventListener("change", () => void saveSettings());
-  horizontalWheelInput.addEventListener("change", () => void saveSettings());
-  overshootGuardInput.addEventListener("change", () => void saveSettings());
-  wheelSensitivityInput.addEventListener("change", () => void saveSettings());
-  wheelSensitivityInput.addEventListener("input", () => {
-    wheelSensitivityValue.textContent = `${Number(wheelSensitivityInput.value).toFixed(1)}x`;
-    wheelPresetSelect.value = "custom";
-  });
-  wheelCooldownInput.addEventListener("change", () => void saveSettings());
-  wheelCooldownInput.addEventListener("input", () => {
-    wheelCooldownValue.textContent = `${Math.round(Number(wheelCooldownInput.value))}ms`;
-    wheelPresetSelect.value = "custom";
-  });
-  pageScrollSpeedInput.addEventListener("change", () => void saveSettings());
-  pageScrollSpeedInput.addEventListener("input", () => {
-    pageScrollSpeedValue.textContent = `${Number(pageScrollSpeedInput.value).toFixed(1)}x`;
-    wheelPresetSelect.value = "custom";
-  });
-  pageScrollViewportCapInput.addEventListener("change", () => void saveSettings());
-  pageScrollViewportCapInput.addEventListener("input", () => {
-    pageScrollViewportCapValue.textContent = `${Math.round(Number(pageScrollViewportCapInput.value) * 100)}%`;
-    wheelPresetSelect.value = "custom";
-  });
+  for (const control of [
+    gestureModifier,
+    gestureWithShift,
+    middleClickAction,
+    cycleScope,
+    wheelDirection,
+    wheelAcceleration,
+    skipPinnedTabs,
+    skipHiddenTabs,
+  ]) {
+    control.addEventListener("change", () => void saveCurrent());
+  }
 
-  resetDefaultsBtn.addEventListener("click", async () => {
+  wheelPreset.addEventListener("change", () => {
+    void persist(applyTabWheelPreset(readSettings(), wheelPreset.value as TabWheelPreset));
+  });
+  wheelSensitivity.addEventListener("input", () => {
+    wheelSensitivityValue.textContent = `${Number(wheelSensitivity.value).toFixed(1)}×`;
+    wheelPreset.value = "custom";
+  });
+  wheelSensitivity.addEventListener("change", () => void saveCurrent());
+  wheelCooldownMs.addEventListener("input", () => {
+    wheelCooldownValue.textContent = `${Math.round(Number(wheelCooldownMs.value))}ms`;
+    wheelPreset.value = "custom";
+  });
+  wheelCooldownMs.addEventListener("change", () => void saveCurrent());
+
+  byId<HTMLButtonElement>("resetDefaults").addEventListener("click", async () => {
     await resetTabWheelState().catch(() => {});
-    renderSettings({ ...DEFAULT_TABWHEEL_SETTINGS });
+    render({ ...DEFAULT_TABWHEEL_SETTINGS });
     showStatus("Defaults restored");
   });
-
-  refreshTabWheelBtn.addEventListener("click", async () => {
+  byId<HTMLButtonElement>("refreshTabWheelBtn").addEventListener("click", async () => {
     const result = await activateTabWheelContentScripts().catch(() => null);
-    if (!result) {
-      showStatus("Refresh failed");
-      return;
-    }
-    showStatus(`Refreshed on ${result.injected} of ${result.attempted} tabs`);
+    showStatus(result ? `Refreshed ${result.injected} open tabs` : "Refresh failed");
   });
-
-  closeOptionsBtn.addEventListener("click", async () => {
-    try {
-      const tab = await browser.tabs.getCurrent();
-      if (tab?.id != null) {
-        await browser.tabs.remove(tab.id);
-        return;
-      }
-    } catch (_) {}
-    window.close();
+  byId<HTMLButtonElement>("closeOptionsBtn").addEventListener("click", async () => {
+    const tab = await browser.tabs.getCurrent().catch(() => null);
+    if (tab?.id != null) await browser.tabs.remove(tab.id).catch(() => {});
+    else window.close();
   });
 });

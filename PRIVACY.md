@@ -1,30 +1,29 @@
-# Privacy Policy - TabWheel
+# Privacy Policy — TabWheel
 
-TabWheel does not collect, transmit, or share user data with developer-owned services. Settings and extension state stay in your browser. Submitted TabWheel Search queries go to the browser's current default search provider, with the Google fallback used only if the browser search API is unavailable. The search launcher's as-you-type suggestions (your recent searches, open tabs, browser history, and bookmarks) are matched locally on your device and are never transmitted anywhere. Type `/tab`, `/hist`, or `/book` to narrow suggestions to one source.
+TabWheel does not collect, transmit, or share user data with developer-owned services. It has no telemetry, analytics, tracking, account, remote code, or developer-owned server. All extension state stays in the browser's local extension storage.
 
-## Data Stored Locally
+## Data stored locally
 
-- **Settings** (`tabWheelSettings`) - modifier, optional Shift requirement, direction, cycle scope, left/middle/right click action preferences, pinned-tab handling, hidden-tab handling, restricted-page skipping, wrap behavior, wheel preset, tab sensitivity, tab cooldown, page-scroll speed, viewport step cap, horizontal wheel support, overshoot guard, acceleration, and the editable-field preference: Allow wheel-cycling when cursor is inside text boxes, search fields, and editors/docs.
-- **MRU state** (`tabWheelMruState`) - recent tab IDs grouped by window so MRU cycling and recent-tab gestures can work locally. This is cleared on browser startup.
-- **Recent searches** (`tabWheelSearchHistory`) - your recent TabWheel Search queries, stored locally so the search launcher can autocomplete them. Deduplicated, most-recent-first, and bounded to 50 entries. These never leave your browser.
-- **Scroll memory** (`tabWheelScrollMemory`) - recent tab IDs, window IDs, page URLs used only to validate scroll restore, root scroll X/Y positions, normalized page position, page and viewport dimensions, and update timestamps, bounded to 300 entries.
-- **Schema version** (`storageSchemaVersion`) - local migration marker.
+- **Settings** (`tabWheelSettings`): modifier, optional Shift requirement, preserved wheel direction, the Open settings/Off middle-click preference, cycle order, tab filters, wheel feel, sensitivity, cooldown, and acceleration. Reliability rules for page-position restore, editable fields, horizontal input, protected pages, wraparound, and overshoot protection are stored as always enabled.
+- **Onboarding state** (`tabWheelOnboarding`): whether the local demo was completed, whether the first real wheel cycle succeeded, and whether the one-time focused-release notice was seen.
+- **MRU state** (`tabWheelMruState`): recent tab IDs grouped by window for recently used cycling. It is cleared on browser startup and bounded to 100 tabs per window.
+- **Scroll memory** (`tabWheelScrollMemory`): tab and window IDs, the page URL used only to verify that restore targets the same page, root X/Y position, normalized position, page/viewport dimensions, and update time. It is bounded to 300 entries.
+- **Schema version** (`storageSchemaVersion`): a number used to migrate local settings safely.
 
-Legacy storage keys from earlier builds may remain in a browser profile until migration runs, but the TabWheel runtime does not use them.
+TabWheel does not read page text, form values, browsing history, or bookmarks. It does not store mouse clicks or normal page scrolling.
 
 ## Permissions
 
 | Permission | Purpose |
 | --- | --- |
-| `tabs` | Read, activate, create, and close browser tabs for cycling and click actions |
-| `storage` | Save settings, MRU tab order, recent searches, scroll positions, page geometry, and schema version locally |
-| `search` | Run searches with the browser's current default search provider, with Google fallback if the browser search API is unavailable |
-| `history` | Match your browser history against search launcher queries, locally on your device; history is read on demand and never transmitted |
-| `bookmarks` | Match your bookmarks against search launcher queries, locally on your device; bookmarks are read on demand and never transmitted |
-| `scripting` | Chrome-only: activate or refresh the content script on normal web tabs after install, update, or popup Refresh |
-| `tabGroups` | Chrome-only: detect collapsed tab groups so hidden-tab skipping can leave their tabs out of cycling |
-| `<all_urls>` | Run the content script where supported so modifier-wheel cycling, page-scroll wheel tuning, and scroll memory work |
+| `tabs` | Read and activate browser tabs for left-to-right and recently used cycling |
+| `storage` | Save settings, onboarding state, MRU order, scroll positions, and schema version locally |
+| `scripting` | Chrome-only: activate or retry the content script on already-open supported tabs |
+| `tabGroups` | Chrome-only: detect collapsed groups when hidden-tab skipping is enabled |
+| `<all_urls>` | Run the configured modifier-wheel listener and page-position capture/restore on supported web pages |
 
-## Data Sharing
+TabWheel does not request `search`, `history`, or `bookmarks` permissions.
 
-None by developer-owned services. TabWheel does not sell, rent, or disclose your data. Submitted search queries are handled by your browser's search provider, or by the Google fallback if the browser search API is unavailable.
+## Data sharing and deletion
+
+There is no data sharing by TabWheel. Resetting the extension clears its settings, MRU order, and scroll memory. Removing the extension allows the browser to remove its local extension storage.

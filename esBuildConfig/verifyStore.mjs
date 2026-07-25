@@ -56,7 +56,7 @@ if (!summaryMatch) {
   }
 }
 
-const requiredPermissionDocs = ["tabs", "storage", "search", "scripting", "tabGroups", "history", "bookmarks", "<all_urls>"];
+const requiredPermissionDocs = ["tabs", "storage", "scripting", "tabGroups", "<all_urls>"];
 for (const permission of requiredPermissionDocs) {
   if (!store.includes(permission)) {
     errors.push(`STORE.md must document permission: ${permission}`);
@@ -74,6 +74,13 @@ if (!store.includes("Works on Firefox, Chrome, and Zen Browser")) {
 }
 if (!privacy.includes("does not collect, transmit, or share")) {
   errors.push("PRIVACY.md summary must explicitly state no data collection/transmission.");
+}
+const retiredPermissionStatement = "does not request `search`, `history`, or `bookmarks` permissions";
+if (!store.includes(retiredPermissionStatement)) {
+  errors.push("STORE.md must state that search/history/bookmarks permissions are not requested.");
+}
+if (!privacy.includes(retiredPermissionStatement)) {
+  errors.push("PRIVACY.md must state that search/history/bookmarks permissions are not requested.");
 }
 
 if (errors.length > 0) {

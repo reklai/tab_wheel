@@ -14,13 +14,8 @@ const BANNED_UI_PACKAGES = [
   "@angular/core",
 ];
 
-const OVERLAY_TS_FILES = [
-  "src/lib/ui/panels/searchLauncher/searchLauncher.ts",
-];
-
-const OVERLAY_CSS_FILES = [
-  "src/lib/ui/panels/searchLauncher/searchLauncher.css",
-];
+const OVERLAY_TS_FILES = [];
+const OVERLAY_CSS_FILES = [];
 
 const DISALLOWED_IDENTIFIER_PATTERNS = [
   {
@@ -211,19 +206,6 @@ function checkUiGlitchBaseline() {
     }
   }
 
-  const panelHost = readText("src/lib/common/utils/panelHost.ts");
-  if (!panelHost.includes("requestAnimationFrame")) {
-    errors.push("src/lib/common/utils/panelHost.ts must reclaim focus through requestAnimationFrame.");
-  }
-  if (!panelHost.includes("activePanelCleanup")) {
-    errors.push("src/lib/common/utils/panelHost.ts must keep single-panel cleanup state.");
-  }
-  if (!panelHost.includes("100dvh") || !panelHost.includes("100dvw")) {
-    errors.push("src/lib/common/utils/panelHost.ts must use dynamic viewport units (100dvw/100dvh).");
-  }
-  if (!panelHost.includes("--ht-color-bg") || !panelHost.includes("--ht-color-accent")) {
-    errors.push("src/lib/common/utils/panelHost.ts must define shared color tokens.");
-  }
 }
 
 function checkContributorDocs() {

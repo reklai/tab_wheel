@@ -25,23 +25,22 @@
     ]
   },
   "expected": {
-    "storageSchemaVersion": 13,
+    "storageSchemaVersion": 14,
     "tabWheelSettings": {
       "invertScroll": true,
       "allowGesturesInEditableFields": true,
+      "middleClickAction": "openSettings",
       "cycleScope": "general",
       "skipRestrictedPages": true,
-      "leftClickAction": "search",
-      "middleClickAction": "recentTab",
-      "rightClickAction": "closeToRecent",
       "wheelPreset": "balanced",
       "horizontalWheel": true,
       "overshootGuard": true,
       "wheelAcceleration": false,
       "wheelCooldownMs": 160,
       "wheelSensitivity": 1,
-      "pageScrollSpeedMultiplier": 1,
-      "pageScrollViewportCapRatio": 1
+      "restorePagePosition": true,
+      "skipHiddenTabs": true,
+      "wrapAround": true
     }
   },
   "expectedChanged": true

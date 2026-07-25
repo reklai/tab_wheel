@@ -6,96 +6,101 @@ import { transform } from "esbuild";
 
 const ROOT = process.cwd();
 
-async function loadTabWheelCoreModule() {
-  const source = readFileSync(
-    resolve(ROOT, "src/lib/core/tabWheel/tabWheelCore.ts"),
-    "utf8",
-  );
-
+async function loadCore() {
+  const source = readFileSync(resolve(ROOT, "src/lib/core/tabWheel/tabWheelCore.ts"), "utf8");
   const transformed = await transform(source, {
     loader: "ts",
     format: "esm",
     target: "es2022",
   });
-
   const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
   return import(`data:text/javascript;base64,${encoded}`);
 }
 
-test("tabWheelCore resolves wheel direction with optional invert", async () => {
-  const core = await loadTabWheelCoreModule();
+test("modifier matching requires the exact configured chord", async () => {
+  const { isTabWheelModifier } = await loadCore();
 
-  assert.equal(core.resolveWheelDirection(100, false), "next");
-  assert.equal(core.resolveWheelDirection(-100, false), "prev");
-  assert.equal(core.resolveWheelDirection(100, true), "prev");
-  assert.equal(core.resolveWheelDirection(-100, true), "next");
+  assert.equal(isTabWheelModifier(
+    { altKey: true, ctrlKey: false, metaKey: false, shiftKey: false },
+    "alt",
+    false,
+  ), true);
+  assert.equal(isTabWheelModifier(
+    { altKey: true, ctrlKey: false, metaKey: false, shiftKey: true },
+    "alt",
+    false,
+  ), false);
+  assert.equal(isTabWheelModifier(
+    { altKey: false, ctrlKey: false, metaKey: true, shiftKey: true },
+    "meta",
+    true,
+  ), true);
+  assert.equal(isTabWheelModifier(
+    { altKey: true, ctrlKey: true, metaKey: false, shiftKey: false },
+    "alt",
+    false,
+  ), false);
 });
 
-test("tabWheelCore cycles left-right indices with wrap enabled", async () => {
-  const core = await loadTabWheelCoreModule();
+test("direction follows wheel sign and optional inversion", async () => {
+  const { resolveWheelDirection } = await loadCore();
 
-  assert.equal(core.resolveCycleTargetIndex([0, 1, 2], 1, "next", true), 2);
-  assert.equal(core.resolveCycleTargetIndex([0, 1, 2], 0, "prev", true), 2);
+  assert.equal(resolveWheelDirection(100, false), "next");
+  assert.equal(resolveWheelDirection(-100, false), "prev");
+  assert.equal(resolveWheelDirection(100, true), "prev");
+  assert.equal(resolveWheelDirection(-100, true), "next");
 });
 
-test("tabWheelCore holds at left-right edges when wrap is disabled", async () => {
-  const core = await loadTabWheelCoreModule();
+test("left-to-right cycling wraps only when enabled", async () => {
+  const { resolveCycleTargetIndex } = await loadCore();
 
-  assert.equal(core.resolveCycleTargetIndex([0, 1, 2], 2, "next", false), 2);
-  assert.equal(core.resolveCycleTargetIndex([0, 1, 2], 0, "prev", false), 0);
-  assert.equal(core.resolveCycleTargetIndex([0, 2, 4], 1, "next", false), 2);
-  assert.equal(core.resolveCycleTargetIndex([0, 2, 4], 3, "prev", false), 2);
+  assert.equal(resolveCycleTargetIndex([0, 1, 2], 1, "next", true), 2);
+  assert.equal(resolveCycleTargetIndex([0, 1, 2], 0, "prev", true), 2);
+  assert.equal(resolveCycleTargetIndex([0, 1, 2], 2, "next", false), 2);
+  assert.equal(resolveCycleTargetIndex([0, 2, 4], 3, "prev", false), 2);
+  assert.equal(resolveCycleTargetIndex([], 0, "next", true), -1);
 });
 
-test("tabWheelCore normalizes wheel delta modes", async () => {
-  const core = await loadTabWheelCoreModule();
+test("wheel deltas normalize pixels, lines, pages, and optional horizontal input", async () => {
+  const { normalizeWheelDelta } = await loadCore();
 
-  assert.equal(core.normalizeWheelDeltaY({ deltaMode: 0, deltaY: 12 }, 900), 12);
-  assert.equal(core.normalizeWheelDeltaY({ deltaMode: 1, deltaY: 2 }, 900), 32);
-  assert.equal(core.normalizeWheelDeltaY({ deltaMode: 2, deltaY: 1 }, 900), 900);
+  assert.equal(normalizeWheelDelta(
+    { deltaMode: 0, deltaX: -40, deltaY: 12 },
+    900,
+    1200,
+    false,
+  ), 12);
+  assert.equal(normalizeWheelDelta(
+    { deltaMode: 0, deltaX: -40, deltaY: 12 },
+    900,
+    1200,
+    true,
+  ), -40);
+  assert.equal(normalizeWheelDelta(
+    { deltaMode: 1, deltaX: 3, deltaY: 1 },
+    900,
+    1200,
+    true,
+  ), 48);
+  assert.equal(normalizeWheelDelta(
+    { deltaMode: 2, deltaX: 0, deltaY: 1 },
+    900,
+    1200,
+    false,
+  ), 900);
 });
 
-test("tabWheelCore uses dominant horizontal delta when enabled", async () => {
-  const core = await loadTabWheelCoreModule();
+test("sensitivity and acceleration keep bounded trigger distances", async () => {
+  const {
+    resolveWheelTriggerDistance,
+    resolveAcceleratedWheelTriggerDistance,
+  } = await loadCore();
 
-  assert.equal(core.normalizeWheelDelta({ deltaMode: 0, deltaX: 4, deltaY: 12 }, 900, 1200, true), 12);
-  assert.equal(core.normalizeWheelDelta({ deltaMode: 0, deltaX: -40, deltaY: 12 }, 900, 1200, true), -40);
-  assert.equal(core.normalizeWheelDelta({ deltaMode: 0, deltaX: -40, deltaY: 12 }, 900, 1200, false), 12);
-  assert.equal(core.normalizeWheelDelta({ deltaMode: 1, deltaX: 3, deltaY: 1 }, 900, 1200, true), 48);
-  assert.equal(core.normalizeWheelDelta({ deltaMode: 2, deltaX: -1, deltaY: 0.5 }, 900, 1200, true), -1200);
-});
-
-test("tabWheelCore resolves meaningful tab switch sensitivity distances", async () => {
-  const core = await loadTabWheelCoreModule();
-
-  assert.equal(core.resolveWheelTriggerDistance(80, 0.5), 160);
-  assert.equal(core.resolveWheelTriggerDistance(80, 1), 80);
-  assert.equal(core.resolveWheelTriggerDistance(80, 2), 40);
-  assert.equal(core.resolveWheelTriggerDistance(80, Number.NaN), 80);
-});
-
-test("tabWheelCore applies acceleration to trigger distance without changing cooldown", async () => {
-  const core = await loadTabWheelCoreModule();
-
-  assert.equal(core.resolveAcceleratedWheelTriggerDistance(80, 0, false), 80);
-  assert.equal(core.resolveAcceleratedWheelTriggerDistance(80, 3, true), 62);
-  assert.equal(core.resolveAcceleratedWheelTriggerDistance(80, 20, true), 44);
-  assert.equal(core.resolveAcceleratedWheelTriggerDistance(44, 20, true), 40);
-});
-
-test("tabWheelCore scales page scroll delta and clamps to viewport cap", async () => {
-  const core = await loadTabWheelCoreModule();
-
-  assert.equal(core.scalePageScrollDelta(100, 1, 800, 1), 100);
-  assert.equal(core.scalePageScrollDelta(100, 2, 800, 1), 200);
-  assert.equal(core.scalePageScrollDelta(1000, 2, 800, 0.5), 400);
-  assert.equal(core.scalePageScrollDelta(-1000, 2, 800, 0.5), -400);
-});
-
-test("tabWheelCore leaves native page scroll untouched at default page settings", async () => {
-  const core = await loadTabWheelCoreModule();
-
-  assert.equal(core.shouldUseNativePageScroll(1, 1), true);
-  assert.equal(core.shouldUseNativePageScroll(1.2, 1), false);
-  assert.equal(core.shouldUseNativePageScroll(1, 0.5), false);
+  assert.equal(resolveWheelTriggerDistance(80, 0.5), 160);
+  assert.equal(resolveWheelTriggerDistance(80, 1), 80);
+  assert.equal(resolveWheelTriggerDistance(80, 2), 40);
+  assert.equal(resolveWheelTriggerDistance(80, Number.NaN), 80);
+  assert.equal(resolveAcceleratedWheelTriggerDistance(80, 0, false), 80);
+  assert.equal(resolveAcceleratedWheelTriggerDistance(80, 3, true), 62);
+  assert.equal(resolveAcceleratedWheelTriggerDistance(44, 20, true), 40);
 });

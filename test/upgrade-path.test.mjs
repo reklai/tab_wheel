@@ -1,48 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
+const ROOT = process.cwd();
+const readText = (path) => readFileSync(resolve(ROOT, path), "utf8");
 
-function readText(pathFromRoot) {
-  return readFileSync(resolve(root, pathFromRoot), "utf8");
-}
-
-test("TabWheel storage keys are stable and isolated from legacy storage", () => {
+test("focused v14 migration preserves core state and removes retired state", () => {
   const contract = readText("src/lib/common/contracts/tabWheel.ts");
-  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
   const migrations = readText("src/lib/common/utils/storageMigrations.ts");
 
+  assert.match(contract, /settings:\s*"tabWheelSettings"/);
   assert.match(contract, /scrollMemory:\s*"tabWheelScrollMemory"/);
   assert.match(contract, /mruState:\s*"tabWheelMruState"/);
-  assert.match(contract, /settings:\s*"tabWheelSettings"/);
-  assert.doesNotMatch(contract, /tabWheelSessions|MAX_TABWHEEL_SESSIONS/);
-  assert.match(domain, /TABWHEEL_STORAGE_KEYS\.scrollMemory/);
-  assert.match(domain, /TABWHEEL_STORAGE_KEYS\.mruState/);
-  assert.match(domain, /browser\.storage\.local\.set\(\{\s*\[TABWHEEL_STORAGE_KEYS\.scrollMemory\]/);
-  assert.match(domain, /browser\.storage\.local\.set\(\{\s*\[TABWHEEL_STORAGE_KEYS\.mruState\]/);
-  assert.match(migrations, /export const STORAGE_SCHEMA_VERSION = 13/);
-  assert.match(migrations, /deleteKey\(migratedStorage,\s*"frecencyData"\)/);
-  assert.match(migrations, /TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs"/);
-  assert.match(migrations, /TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList"/);
-  assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_LEGACY_TAGGED_TABS_KEY\)/);
-  assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_WHEEL_LIST_KEY\)/);
-  assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_MRU_STATE_KEY\)/);
-  assert.match(migrations, /deleteKey\(nextSettings,\s*"cycleOrder"\)/);
-  assert.match(migrations, /deleteKey\(nextSettings,\s*"searchUrlTemplate"\)/);
-  assert.match(migrations, /deleteSettingKey\(migratedStorage,\s*"searchUrlTemplate"\)/);
-  assert.match(migrations, /deleteSettingKey\(migratedStorage,\s*"showCycleToast"\)/);
-  assert.match(migrations, /removeScrollMemoryWithoutUrls\(migratedStorage\)/);
-  assert.match(migrations, /removeScrollMemoryZoom\(migratedStorage\)/);
-  assert.match(migrations, /openNativeNewTabOnLeftClick = false/);
-  assert.match(migrations, /migrateClickActionSettings\(migratedStorage\)/);
-  assert.match(migrations, /openNativeNewTabOnLeftClick === true[\s\S]*"nativeNewTab"/);
-  assert.match(migrations, /deleteKey\(nextSettings,\s*"openNativeNewTabOnLeftClick"\)/);
-  assert.match(migrations, /if \(fromVersion > STORAGE_SCHEMA_VERSION\)[\s\S]*return \{[\s\S]*fromVersion[\s\S]*toVersion:\s*fromVersion[\s\S]*changed:\s*false[\s\S]*migratedStorage/);
-  assert.match(migrations, /function isClickActionValue\(value: unknown\): boolean[\s\S]*TABWHEEL_CLICK_ACTION_VALUES\.includes\(value\)/);
-  assert.match(migrations, /if \(isClickActionValue\(nextSettings\[settingKey\]\)\) continue/);
-  assert.doesNotMatch(migrations, /tabManagerList|tabManagerSessions|anchorTagsByTabId|keybindings/);
+  assert.match(contract, /onboarding:\s*"tabWheelOnboarding"/);
+  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 14/);
+  assert.match(migrations, /focusTabWheelSettings\(migratedStorage\)/);
+  assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_SEARCH_HISTORY_KEY\)/);
+  assert.match(migrations, /"leftClickAction"/);
+  assert.match(migrations, /"pageScrollSpeedMultiplier"/);
+  assert.match(migrations, /nextSettings\.middleClickAction !== "openSettings"/);
+  assert.doesNotMatch(migrations, /\[\s*"leftClickAction",\s*"middleClickAction"/);
+  assert.match(migrations, /"restorePagePosition"/);
+  assert.match(migrations, /"wrapAround"/);
+  assert.match(migrations, /"horizontalWheel"/);
+  assert.match(migrations, /nextSettings\[key\] = true/);
+  assert.match(migrations, /nextSettings\.skipHiddenTabs = true/);
+});
+
+test("migration does not downgrade storage created by a future release", () => {
+  const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+  assert.match(
+    migrations,
+    /if \(fromVersion > STORAGE_SCHEMA_VERSION\)[\s\S]*toVersion:\s*fromVersion[\s\S]*changed:\s*false/,
+  );
 });

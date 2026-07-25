@@ -1,54 +1,36 @@
-// initApp can be injected more than once into the same frame after installs,
-// updates, or popup refreshes. It starts by running the previous cleanup hook so
-// wheel and mouse listeners do not stack.
+// initApp can be injected more than once after installs, updates, or popup
+// refreshes. Run the previous cleanup hook first so wheel listeners never stack.
 
 import browser from "webextension-polyfill";
 import {
   DEFAULT_TABWHEEL_SETTINGS,
   loadTabWheelSettings,
   normalizeTabWheelSettings,
-  TABWHEEL_MODIFIER_KEYS,
   TABWHEEL_STORAGE_KEYS,
 } from "../common/contracts/tabWheel";
 import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
 import { sleep } from "../common/utils/asyncFlow";
-import { dismissPanel } from "../common/utils/panelHost";
 import {
-  buildMouseGesturePolicies,
-  createMouseGestureSession as createCoreMouseGestureSession,
-  isMouseGestureEventForSession,
-  isMouseGestureSessionExpired,
-  isMouseGestureSessionStartEventType,
-  MOUSE_GESTURE_POLICIES,
-  resolveMouseGesturePolicy as resolveMouseGesturePolicyByButton,
-  shouldFinishMouseGestureSession as shouldFinishCoreMouseGestureSession,
-  shouldRunMouseGestureSession as shouldRunCoreMouseGestureSession,
-  shouldSuppressRedundantGestureStart,
-} from "../core/tabWheel/mouseGestureCore";
-import type {
-  TabWheelMouseGestureAction,
-  TabWheelMouseGesturePolicy,
-  TabWheelMouseGestureSession,
-} from "../core/tabWheel/mouseGestureCore";
-import {
+  isTabWheelModifier,
   normalizeWheelDelta,
-  normalizeWheelDeltaY,
   resolveAcceleratedWheelTriggerDistance,
   resolveWheelDirection,
   resolveWheelTriggerDistance,
-  scalePageScrollDelta,
-  shouldUseNativePageScroll,
 } from "../core/tabWheel/tabWheelCore";
 import {
-  activateMostRecentTabWheelTab,
-  closeCurrentTabWheelTabAndActivateRecent,
+  createMiddleClickSession,
+  isMiddleClickEvent,
+  isMiddleClickSessionExpired,
+  isMiddleClickSessionStartEvent,
+  shouldFinishMiddleClickSession,
+  shouldRunMiddleClickSession,
+  TabWheelMiddleClickSession,
+} from "../core/tabWheel/middleClickCore";
+import {
   cycleTabWheel,
-  duplicateCurrentTabWheelTab,
-  openNativeNewTabWheelTab,
   openTabWheelOptions,
   saveTabWheelScrollPosition,
 } from "../adapters/runtime/tabWheelApi";
-import { openTabWheelSearchLauncher } from "../ui/panels/searchLauncher/searchLauncher";
 
 declare global {
   interface Window {
@@ -68,44 +50,11 @@ const LAYOUT_STABILITY_REQUIRED_FRAMES = 3;
 const LAYOUT_DIMENSION_TOLERANCE_PX = 4;
 const LAYOUT_DIMENSION_MATCH_RATIO = 0.08;
 
-type TabWheelEventModifierKey = TabWheelModifierKey | "shift";
-type PageScrollTarget = { type: "window" } | { type: "element"; element: HTMLElement };
-
-const EVENT_MODIFIER_KEYS: readonly TabWheelEventModifierKey[] = ["alt", "ctrl", "shift", "meta"];
-
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  const editable = target.closest(
+  return target.closest(
     "input, textarea, select, [contenteditable=''], [contenteditable='true'], [role='textbox']",
-  );
-  return editable !== null;
-}
-
-function hasAnyWheelModifier(event: WheelEvent): boolean {
-  return event.altKey || event.ctrlKey || event.shiftKey || event.metaKey;
-}
-
-function isTabWheelModifier(
-  event: MouseEvent | WheelEvent | KeyboardEvent,
-  modifier: TabWheelModifierKey,
-  withShift: boolean,
-): boolean {
-  const modifierState: Record<TabWheelEventModifierKey, boolean> = {
-    alt: event.altKey,
-    ctrl: event.ctrlKey,
-    shift: event.shiftKey,
-    meta: event.metaKey,
-  };
-  if (!TABWHEEL_MODIFIER_KEYS.includes(modifier)) return false;
-  return EVENT_MODIFIER_KEYS.every((key) => {
-    if (key === modifier) return modifierState[key];
-    if (key === "shift") return modifierState.shift === withShift;
-    return !modifierState[key];
-  });
-}
-
-function clampScrollY(scrollY: number): number {
-  return Math.max(0, Math.min(scrollY, getMaxScrollY()));
+  ) !== null;
 }
 
 function getPageScrollWidth(): number {
@@ -146,96 +95,8 @@ function clampScrollX(scrollX: number): number {
   return Math.max(0, Math.min(scrollX, getMaxScrollX()));
 }
 
-const PAGE_SCROLL_FILTER_BLOCKED_SELECTOR = [
-  "input",
-  "textarea",
-  "select",
-  "[contenteditable='']",
-  "[contenteditable='true']",
-  "[role='textbox']",
-  "[role='slider']",
-  "[role='spinbutton']",
-  "[role='scrollbar']",
-  "[role='application']",
-  "iframe",
-  "embed",
-  "object",
-  "video",
-  "audio",
-  "canvas",
-  "[data-tabwheel-native-scroll='true']",
-  "[class*='mapbox' i]",
-  "[class*='leaflet' i]",
-  "[class*='monaco' i]",
-  "[class*='cm-editor' i]",
-].join(",");
-
-function isPageScrollFilterBlockedTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return target.closest(PAGE_SCROLL_FILTER_BLOCKED_SELECTOR) !== null;
-}
-
-function isScrollableOverflowY(value: string): boolean {
-  return value === "auto" || value === "scroll" || value === "overlay";
-}
-
-function getElementMaxScrollTop(element: HTMLElement): number {
-  return Math.max(0, element.scrollHeight - element.clientHeight);
-}
-
-function canScrollElementVertically(element: HTMLElement, direction: number): boolean {
-  if (direction === 0) return false;
-  if (element === document.documentElement || element === document.body) return false;
-  const maxScrollTop = getElementMaxScrollTop(element);
-  if (maxScrollTop <= 1) return false;
-  if (!isScrollableOverflowY(window.getComputedStyle(element).overflowY)) return false;
-  return direction > 0 ? element.scrollTop < maxScrollTop - 1 : element.scrollTop > 1;
-}
-
-function canScrollWindowVertically(direction: number): boolean {
-  if (direction === 0) return false;
-  const maxScrollY = getMaxScrollY();
-  if (maxScrollY <= 1) return false;
-  return direction > 0 ? window.scrollY < maxScrollY - 1 : window.scrollY > 1;
-}
-
-function getPageScrollPath(target: EventTarget | null, event: WheelEvent): HTMLElement[] {
-  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-  const elements = path.filter((item): item is HTMLElement => item instanceof HTMLElement);
-  if (elements.length > 0) return elements;
-  const fallbackElements: HTMLElement[] = [];
-  let current = target instanceof HTMLElement ? target : null;
-  while (current) {
-    fallbackElements.push(current);
-    current = current.parentElement;
-  }
-  return fallbackElements;
-}
-
-function resolvePageScrollTarget(event: WheelEvent, direction: number): PageScrollTarget | null {
-  for (const element of getPageScrollPath(event.target, event)) {
-    if (canScrollElementVertically(element, direction)) {
-      return { type: "element", element };
-    }
-  }
-  return canScrollWindowVertically(direction) ? { type: "window" } : null;
-}
-
-function getPageScrollTargetViewportHeight(target: PageScrollTarget): number {
-  return target.type === "window" ? window.innerHeight : target.element.clientHeight;
-}
-
-function scrollPageTarget(target: PageScrollTarget, deltaY: number): void {
-  if (target.type === "window") {
-    window.scrollTo({
-      left: window.scrollX,
-      top: clampScrollY(window.scrollY + deltaY),
-      behavior: "auto",
-    });
-    return;
-  }
-  const maxScrollTop = getElementMaxScrollTop(target.element);
-  target.element.scrollTop = Math.max(0, Math.min(maxScrollTop, target.element.scrollTop + deltaY));
+function clampScrollY(scrollY: number): number {
+  return Math.max(0, Math.min(scrollY, getMaxScrollY()));
 }
 
 function getRootScrollSnapshot(): ScrollData {
@@ -261,7 +122,8 @@ function getRootScrollSnapshot(): ScrollData {
 
 function hasSimilarDimension(current: number, stored: number): boolean {
   if (!Number.isFinite(stored) || stored <= 0) return false;
-  return Math.abs(current - stored) <= Math.max(LAYOUT_DIMENSION_TOLERANCE_PX, stored * LAYOUT_DIMENSION_MATCH_RATIO);
+  return Math.abs(current - stored)
+    <= Math.max(LAYOUT_DIMENSION_TOLERANCE_PX, stored * LAYOUT_DIMENSION_MATCH_RATIO);
 }
 
 function resolveRootScrollTarget(snapshot: ScrollData): { left: number; top: number } {
@@ -274,8 +136,12 @@ function resolveRootScrollTarget(snapshot: ScrollData): { left: number; top: num
     && hasSimilarDimension(current.viewportHeight, snapshot.viewportHeight);
   const maxScrollX = Math.max(0, current.scrollWidth - current.viewportWidth);
   const maxScrollY = Math.max(0, current.scrollHeight - current.viewportHeight);
-  const ratioX = Number.isFinite(snapshot.scrollRatioX) ? Math.max(0, Math.min(1, snapshot.scrollRatioX)) : 0;
-  const ratioY = Number.isFinite(snapshot.scrollRatioY) ? Math.max(0, Math.min(1, snapshot.scrollRatioY)) : 0;
+  const ratioX = Number.isFinite(snapshot.scrollRatioX)
+    ? Math.max(0, Math.min(1, snapshot.scrollRatioX))
+    : 0;
+  const ratioY = Number.isFinite(snapshot.scrollRatioY)
+    ? Math.max(0, Math.min(1, snapshot.scrollRatioY))
+    : 0;
   return {
     left: !hasStoredWidth || hasSimilarWidth ? clampScrollX(snapshot.scrollX) : Math.round(maxScrollX * ratioX),
     top: !hasStoredHeight || hasSimilarHeight ? clampScrollY(snapshot.scrollY) : Math.round(maxScrollY * ratioY),
@@ -315,10 +181,6 @@ function suppressPageEvent(event: Event): void {
   event.stopImmediatePropagation();
 }
 
-function isTabWheelPanelOpen(): boolean {
-  return document.getElementById("ht-panel-host") !== null;
-}
-
 function isTopFrame(): boolean {
   try {
     return window.top === window;
@@ -328,12 +190,11 @@ function isTopFrame(): boolean {
 }
 
 export function initApp(): void {
-  if (window.__tabWheelCleanup) {
-    window.__tabWheelCleanup();
-  }
+  window.__tabWheelCleanup?.();
 
   const isTopFrameContext = isTopFrame();
   let settings: TabWheelSettings = { ...DEFAULT_TABWHEEL_SETTINGS };
+  let areSettingsLoaded = false;
   let statusTimer = 0;
   let scrollSaveTimer = 0;
   let lastScrollSaveX = Number.NaN;
@@ -343,15 +204,11 @@ export function initApp(): void {
   let wheelAccumulator = 0;
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
-  let areSettingsLoaded = false;
-  let mouseGestureSession: TabWheelMouseGestureSession | null = null;
-  let mouseGesturePolicies: readonly TabWheelMouseGesturePolicy[] = MOUSE_GESTURE_POLICIES;
-  const gestureFiredButtons = new Set<number>();
+  let middleClickSession: TabWheelMiddleClickSession | null = null;
 
   void loadTabWheelSettings()
     .then((loadedSettings) => {
       settings = loadedSettings;
-      mouseGesturePolicies = buildMouseGesturePolicies(settings);
     })
     .finally(() => {
       areSettingsLoaded = true;
@@ -381,7 +238,7 @@ export function initApp(): void {
         "background:#1e1e1e",
         "color:#e0e0e0",
         "box-shadow:0 18px 54px rgba(0,0,0,0.44)",
-        "font:12px/1.35 'SF Mono','JetBrains Mono','Fira Code','Consolas',monospace",
+        "font:12px/1.35 system-ui,sans-serif",
         "pointer-events:none",
       ].join(";");
       document.documentElement.appendChild(status);
@@ -395,7 +252,7 @@ export function initApp(): void {
   }
 
   function sendScrollSnapshot(): void {
-    if (Date.now() < suppressScrollSaveUntil) return;
+    if (!settings.restorePagePosition || Date.now() < suppressScrollSaveUntil) return;
     const snapshot = getRootScrollSnapshot();
     if (snapshot.scrollX === lastScrollSaveX && snapshot.scrollY === lastScrollSaveY) return;
     lastScrollSaveX = snapshot.scrollX;
@@ -412,7 +269,7 @@ export function initApp(): void {
   }
 
   function scheduleScrollSnapshot(): void {
-    if (Date.now() < suppressScrollSaveUntil) return;
+    if (!settings.restorePagePosition || Date.now() < suppressScrollSaveUntil) return;
     if (scrollSaveTimer) window.clearTimeout(scrollSaveTimer);
     scrollSaveTimer = window.setTimeout(() => {
       scrollSaveTimer = 0;
@@ -430,27 +287,21 @@ export function initApp(): void {
       window.clearTimeout(scrollSaveTimer);
       scrollSaveTimer = 0;
     }
-
     const target = resolveRootScrollTarget(snapshot);
-    window.scrollTo({
-      left: target.left,
-      top: target.top,
-      behavior: "auto",
-    });
-
+    window.scrollTo({ left: target.left, top: target.top, behavior: "auto" });
     await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     return Math.abs(window.scrollX - target.left) <= 2 && Math.abs(window.scrollY - target.top) <= 2;
   }
 
   async function restoreWindowScroll(snapshot: ScrollData): Promise<void> {
+    if (!settings.restorePagePosition) return;
     const token = ++scrollRestoreToken;
-    const isCurrentRestore = () => token === scrollRestoreToken && document.visibilityState !== "hidden";
+    const isCurrentRestore = () => token === scrollRestoreToken
+      && document.visibilityState !== "hidden"
+      && settings.restorePagePosition;
     if (!isCurrentRestore()) return;
-
     await applyScrollRestoreAttempt(snapshot);
-    if (!isCurrentRestore()) return;
-    if (!await waitForLayoutStability(isCurrentRestore)) return;
-
+    if (!isCurrentRestore() || !await waitForLayoutStability(isCurrentRestore)) return;
     for (const delay of SCROLL_RESTORE_DELAYS_MS) {
       if (!isCurrentRestore()) return;
       if (delay > 0) await sleep(delay);
@@ -459,122 +310,63 @@ export function initApp(): void {
     }
   }
 
-  function isWheelGestureBlockedTarget(target: EventTarget | null): boolean {
-    return !settings.allowGesturesInEditableFields && isEditableTarget(target);
-  }
-
   function isKeyboardWheelEvent(event: WheelEvent): boolean {
     return areSettingsLoaded
       && event.isTrusted
       && isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)
-      && !isWheelGestureBlockedTarget(event.target);
+      && (settings.allowGesturesInEditableFields || !isEditableTarget(event.target));
   }
 
-  function resolveMouseGesturePolicyForEvent(event: MouseEvent): TabWheelMouseGesturePolicy | null {
-    if (!areSettingsLoaded) return null;
-    if (isTabWheelPanelOpen()) return null;
-    if (!event.isTrusted) return null;
-    if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return null;
-    if (isWheelGestureBlockedTarget(event.target)) return null;
-    return resolveMouseGesturePolicyByButton(event.button, mouseGesturePolicies);
+  function isEnabledMiddleClickEvent(event: MouseEvent): boolean {
+    return areSettingsLoaded
+      && settings.middleClickAction === "openSettings"
+      && event.isTrusted
+      && isMiddleClickEvent(event)
+      && isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)
+      && (settings.allowGesturesInEditableFields || !isEditableTarget(event.target));
   }
 
-  function resolvePanelSuppressedMouseGesturePolicy(event: MouseEvent): TabWheelMouseGesturePolicy | null {
-    if (event.type === "contextmenu") {
-      return mouseGesturePolicies.find((policy) => policy.runPhase === "contextmenu") || null;
-    }
-    return resolveMouseGesturePolicyByButton(event.button, mouseGesturePolicies);
+  function resetMiddleClickSession(): void {
+    middleClickSession = null;
   }
 
-  function shouldSuppressPanelMouseShortcut(event: MouseEvent): boolean {
-    if (!areSettingsLoaded) return false;
-    if (!isTabWheelPanelOpen()) return false;
-    if (!event.isTrusted) return false;
-    // The panel needs normal left-clicks for its own controls; only gesture
-    // buttons that could leak to the page are swallowed while the panel is open.
-    if (event.button === 0 && event.type !== "contextmenu") return false;
-    if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return false;
-    return resolvePanelSuppressedMouseGesturePolicy(event) !== null;
-  }
-
-  function isMouseGestureSessionStartEvent(event: MouseEvent): boolean {
-    return isMouseGestureSessionStartEventType(event.type);
-  }
-
-  function finishMouseGestureSession(): void {
-    mouseGestureSession = null;
-  }
-
-  function resetWheelGestureState(): void {
-    wheelAccumulator = 0;
-    lastWheelCycleAt = 0;
-    wheelBurstCount = 0;
-  }
-
-  function resetInputGestureState(): void {
-    resetWheelGestureState();
-    finishMouseGestureSession();
-    gestureFiredButtons.clear();
-  }
-
-  function getActiveMouseGestureSession(event: MouseEvent): TabWheelMouseGestureSession | null {
-    if (!mouseGestureSession) return null;
-    if (isMouseGestureSessionExpired(mouseGestureSession, Date.now())) {
-      finishMouseGestureSession();
+  function getActiveMiddleClickSession(event: MouseEvent): TabWheelMiddleClickSession | null {
+    if (!middleClickSession) return null;
+    if (isMiddleClickSessionExpired(middleClickSession, Date.now())) {
+      resetMiddleClickSession();
       return null;
     }
-    return isMouseGestureEventForSession(mouseGestureSession, event) ? mouseGestureSession : null;
+    return isMiddleClickEvent(event) ? middleClickSession : null;
   }
 
-  function runMouseGestureSession(session: TabWheelMouseGestureSession): void {
+  function openSettingsFromMiddleClick(session: TabWheelMiddleClickSession): void {
     if (session.hasRun) return;
     session.hasRun = true;
-    gestureFiredButtons.add(session.policy.button);
-    runMouseGestureAction(session.policy.action);
-  }
-
-  function runGestureActionWithStatus(
-    task: () => Promise<TabWheelActionResult>,
-    failureStatus: string,
-  ): void {
-    void task()
+    void openTabWheelOptions()
       .then((result) => {
-        if (!result.ok) showStatus(result.reason || failureStatus);
+        if (!result.ok) showStatus(result.reason || "Settings unavailable");
       })
-      .catch(() => showStatus(failureStatus));
+      .catch(() => showStatus("Settings unavailable"));
   }
 
-  function runMouseGestureAction(action: TabWheelMouseGestureAction): void {
-    switch (action) {
-      case "search":
-        void openTabWheelSearchLauncher().catch(() => showStatus("Search unavailable"));
-        return;
-      case "recentTab":
-        runGestureActionWithStatus(() => activateMostRecentTabWheelTab(), "Recent tab unavailable");
-        return;
-      case "nativeNewTab":
-        runGestureActionWithStatus(() => openNativeNewTabWheelTab(), "New tab unavailable");
-        return;
-      case "duplicateTab":
-        runGestureActionWithStatus(() => duplicateCurrentTabWheelTab(), "Duplicate unavailable");
-        return;
-      case "openSettings":
-        runGestureActionWithStatus(() => openTabWheelOptions(), "Settings unavailable");
-        return;
-      case "closeToRecent":
-        runGestureActionWithStatus(() => closeCurrentTabWheelTabAndActivateRecent(), "Close tab failed");
-        return;
-      default: {
-        // New gesture actions must be handled explicitly; do not let an unknown
-        // action fall through to a tab-changing default.
-        const unhandled: never = action;
-        void unhandled;
+  function middleClickHandler(event: MouseEvent): void {
+    const activeSession = getActiveMiddleClickSession(event);
+    if (activeSession) {
+      suppressPageEvent(event);
+      if (shouldRunMiddleClickSession(activeSession, event)) {
+        openSettingsFromMiddleClick(activeSession);
       }
+      if (shouldFinishMiddleClickSession(event)) resetMiddleClickSession();
+      return;
     }
-  }
 
-  function getTabCycleWheelDelta(event: WheelEvent): number {
-    return normalizeWheelDelta(event, window.innerHeight, window.innerWidth, settings.horizontalWheel);
+    if (!isMiddleClickSessionStartEvent(event) || !isEnabledMiddleClickEvent(event)) return;
+    suppressPageEvent(event);
+    middleClickSession = createMiddleClickSession(Date.now());
+    if (shouldRunMiddleClickSession(middleClickSession, event)) {
+      openSettingsFromMiddleClick(middleClickSession);
+    }
+    if (shouldFinishMiddleClickSession(event)) resetMiddleClickSession();
   }
 
   function computeNextBurstCount(now: number): number {
@@ -583,62 +375,35 @@ export function initApp(): void {
       : 0;
   }
 
-  function getWheelTriggerDistance(now: number): number {
-    const baseDistance = resolveWheelTriggerDistance(WHEEL_TRIGGER_THRESHOLD_PX, settings.wheelSensitivity);
-    return resolveAcceleratedWheelTriggerDistance(
-      baseDistance,
-      computeNextBurstCount(now),
-      settings.wheelAcceleration,
-    );
-  }
-
   function runWheelCycle(direction: "prev" | "next", now: number): boolean {
     if (now - lastWheelCycleAt < settings.wheelCooldownMs) return false;
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
-    if (isTabWheelPanelOpen()) dismissPanel();
-    void cycleTabWheel(direction).catch(() => {});
-    return true;
-  }
-
-  function handlePageScrollFilter(event: WheelEvent): boolean {
-    if (!isTopFrameContext) return false;
-    if (!areSettingsLoaded || !event.isTrusted || event.defaultPrevented) return false;
-    if (hasAnyWheelModifier(event)) return false;
-    // Overlays contain their own wheel handling. Letting the page-scroll filter
-    // run underneath would move the document while the overlay is active.
-    if (isTabWheelPanelOpen()) return false;
-    if (shouldUseNativePageScroll(settings.pageScrollSpeedMultiplier, settings.pageScrollViewportCapRatio)) return false;
-    if (event.deltaY === 0) return false;
-    if (isPageScrollFilterBlockedTarget(event.target)) return false;
-    const scrollTarget = resolvePageScrollTarget(event, Math.sign(event.deltaY));
-    if (!scrollTarget) return false;
-    const viewportHeight = getPageScrollTargetViewportHeight(scrollTarget);
-    const rawDeltaY = normalizeWheelDeltaY(event, viewportHeight);
-    if (rawDeltaY === 0) return false;
-    const scaledDeltaY = scalePageScrollDelta(
-      rawDeltaY,
-      settings.pageScrollSpeedMultiplier,
-      viewportHeight,
-      settings.pageScrollViewportCapRatio,
-    );
-    if (scaledDeltaY === 0) return false;
-    suppressPageEvent(event);
-    scrollPageTarget(scrollTarget, scaledDeltaY);
+    void cycleTabWheel(direction, "gesture").catch(() => {});
     return true;
   }
 
   function wheelHandler(event: WheelEvent): void {
-    if (!isKeyboardWheelEvent(event)) {
-      handlePageScrollFilter(event);
-      return;
-    }
-    const wheelDelta = getTabCycleWheelDelta(event);
+    if (!isKeyboardWheelEvent(event)) return;
+    const wheelDelta = normalizeWheelDelta(
+      event,
+      window.innerHeight,
+      window.innerWidth,
+      settings.horizontalWheel,
+    );
     if (wheelDelta === 0) return;
     suppressPageEvent(event);
     const now = Date.now();
     wheelAccumulator += wheelDelta;
-    const triggerDistance = getWheelTriggerDistance(now);
+    const baseDistance = resolveWheelTriggerDistance(
+      WHEEL_TRIGGER_THRESHOLD_PX,
+      settings.wheelSensitivity,
+    );
+    const triggerDistance = resolveAcceleratedWheelTriggerDistance(
+      baseDistance,
+      computeNextBurstCount(now),
+      settings.wheelAcceleration,
+    );
     if (Math.abs(wheelAccumulator) < triggerDistance) return;
     const direction = resolveWheelDirection(wheelAccumulator, settings.invertScroll);
     const cycleRan = runWheelCycle(direction, now);
@@ -646,40 +411,16 @@ export function initApp(): void {
       wheelAccumulator = 0;
       return;
     }
-    wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(Math.abs(wheelAccumulator), triggerDistance);
+    wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
+      Math.abs(wheelAccumulator),
+      triggerDistance,
+    );
   }
 
-  function mouseGestureHandler(event: MouseEvent): void {
-    if (shouldSuppressPanelMouseShortcut(event)) {
-      suppressPageEvent(event);
-      return;
-    }
-
-    const activeSession = getActiveMouseGestureSession(event);
-    if (activeSession) {
-      suppressPageEvent(event);
-      if (shouldRunCoreMouseGestureSession(activeSession, event.type)) runMouseGestureSession(activeSession);
-      if (shouldFinishCoreMouseGestureSession(activeSession, event.type)) finishMouseGestureSession();
-      return;
-    }
-
-    const policy = resolveMouseGesturePolicyForEvent(event);
-    if (!policy) return;
-    suppressPageEvent(event);
-
-    if (isMouseGestureSessionStartEvent(event)) {
-      if (shouldSuppressRedundantGestureStart(event.type, event.button, gestureFiredButtons)) {
-        return;
-      }
-      gestureFiredButtons.delete(event.button);
-      mouseGestureSession = createCoreMouseGestureSession(policy, Date.now());
-      if (shouldRunCoreMouseGestureSession(mouseGestureSession, event.type)) {
-        runMouseGestureSession(mouseGestureSession);
-      }
-      if (shouldFinishCoreMouseGestureSession(mouseGestureSession, event.type)) {
-        finishMouseGestureSession();
-      }
-    }
+  function resetWheelGestureState(): void {
+    wheelAccumulator = 0;
+    lastWheelCycleAt = 0;
+    wheelBurstCount = 0;
   }
 
   function storageChangedHandler(
@@ -688,11 +429,17 @@ export function initApp(): void {
   ): void {
     if (areaName !== "local") return;
     const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
-    if (settingsChange) {
-      settings = normalizeTabWheelSettings(settingsChange.newValue);
-      mouseGesturePolicies = buildMouseGesturePolicies(settings);
-      resetInputGestureState();
+    if (!settingsChange) return;
+    settings = normalizeTabWheelSettings(settingsChange.newValue);
+    if (!settings.restorePagePosition) {
+      cancelScrollRestore();
+      if (scrollSaveTimer) {
+        window.clearTimeout(scrollSaveTimer);
+        scrollSaveTimer = 0;
+      }
     }
+    resetWheelGestureState();
+    resetMiddleClickSession();
   }
 
   function messageHandler(message: unknown): Promise<unknown> | undefined {
@@ -708,19 +455,15 @@ export function initApp(): void {
       case "TABWHEEL_STATUS":
         showStatus(receivedMessage.message);
         return Promise.resolve({ ok: true });
-      case "TABWHEEL_DISMISS_PANEL":
-        dismissPanel();
-        return Promise.resolve({ ok: true });
     }
   }
 
   function visibilityHandler(): void {
     if (document.visibilityState !== "hidden") return;
     cancelScrollRestore();
-    resetInputGestureState();
-    if (!isTopFrameContext) return;
-    flushScrollSnapshot();
-    dismissPanel();
+    resetWheelGestureState();
+    resetMiddleClickSession();
+    if (isTopFrameContext) flushScrollSnapshot();
   }
 
   function pageHideHandler(): void {
@@ -728,18 +471,11 @@ export function initApp(): void {
     flushScrollSnapshot();
   }
 
-  function beforeUnloadHandler(): void {
-    cancelScrollRestore();
-    flushScrollSnapshot();
-  }
-
-  window.addEventListener("pointerdown", mouseGestureHandler, true);
-  window.addEventListener("mousedown", mouseGestureHandler, true);
-  window.addEventListener("pointerup", mouseGestureHandler, true);
-  window.addEventListener("mouseup", mouseGestureHandler, true);
-  window.addEventListener("click", mouseGestureHandler, true);
-  window.addEventListener("auxclick", mouseGestureHandler, true);
-  window.addEventListener("contextmenu", mouseGestureHandler, true);
+  window.addEventListener("pointerdown", middleClickHandler, true);
+  window.addEventListener("mousedown", middleClickHandler, true);
+  window.addEventListener("pointerup", middleClickHandler, true);
+  window.addEventListener("mouseup", middleClickHandler, true);
+  window.addEventListener("auxclick", middleClickHandler, true);
   window.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
   document.addEventListener("visibilitychange", visibilityHandler);
   browser.storage.onChanged.addListener(storageChangedHandler);
@@ -747,32 +483,30 @@ export function initApp(): void {
   if (isTopFrameContext) {
     window.addEventListener("scroll", scheduleScrollSnapshot, { passive: true, capture: true });
     window.addEventListener("pagehide", pageHideHandler);
-    window.addEventListener("beforeunload", beforeUnloadHandler);
+    window.addEventListener("beforeunload", pageHideHandler);
     browser.runtime.onMessage.addListener(messageHandler);
   }
 
   window.__tabWheelCleanup = () => {
-    window.removeEventListener("pointerdown", mouseGestureHandler, true);
-    window.removeEventListener("mousedown", mouseGestureHandler, true);
-    window.removeEventListener("pointerup", mouseGestureHandler, true);
-    window.removeEventListener("mouseup", mouseGestureHandler, true);
-    window.removeEventListener("click", mouseGestureHandler, true);
-    window.removeEventListener("auxclick", mouseGestureHandler, true);
-    window.removeEventListener("contextmenu", mouseGestureHandler, true);
+    window.removeEventListener("pointerdown", middleClickHandler, true);
+    window.removeEventListener("mousedown", middleClickHandler, true);
+    window.removeEventListener("pointerup", middleClickHandler, true);
+    window.removeEventListener("mouseup", middleClickHandler, true);
+    window.removeEventListener("auxclick", middleClickHandler, true);
     window.removeEventListener("wheel", wheelHandler, true);
     document.removeEventListener("visibilitychange", visibilityHandler);
     browser.storage.onChanged.removeListener(storageChangedHandler);
     if (isTopFrameContext) {
       window.removeEventListener("scroll", scheduleScrollSnapshot, true);
       window.removeEventListener("pagehide", pageHideHandler);
-      window.removeEventListener("beforeunload", beforeUnloadHandler);
+      window.removeEventListener("beforeunload", pageHideHandler);
       browser.runtime.onMessage.removeListener(messageHandler);
     }
     cancelScrollRestore();
+    resetMiddleClickSession();
     if (scrollSaveTimer) window.clearTimeout(scrollSaveTimer);
     if (statusTimer) window.clearTimeout(statusTimer);
     document.getElementById(STATUS_ID)?.remove();
-    dismissPanel();
   };
 
   if (isTopFrameContext) {
