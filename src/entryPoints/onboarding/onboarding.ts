@@ -106,13 +106,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   continueDemoBtn.addEventListener("click", () => showStep(2));
   byId<HTMLButtonElement>("skipDemoBtn").addEventListener("click", () => showStep(2));
 
-  // Step 2's panel measured the wheel to suggest a preset. The device
-  // classifier it fed is gone, so nothing here samples, classifies, or
-  // suggests any more: the panel is inert and its only live control is the
-  // button that moves past it. The panel markup, its CSS, and the renumbering
-  // of the remaining steps come out next.
-  byId<HTMLButtonElement>("skipCalibrationBtn").addEventListener("click", () => showStep(3));
-
   byId<HTMLButtonElement>("saveChoicesBtn").addEventListener("click", async () => {
     settings = {
       ...settings,
@@ -122,9 +115,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
     await saveTabWheelSettings(settings);
     renderCombo();
-    showStep(4);
+    showStep(3);
   });
-  document.querySelector<HTMLButtonElement>("[data-back='2']")?.addEventListener("click", () => showStep(2));
+  document.querySelector<HTMLButtonElement>("[data-back='1']")?.addEventListener("click", () => showStep(1));
   byId<HTMLButtonElement>("openSettingsBtn").addEventListener("click", openSettings);
   byId<HTMLButtonElement>("finishBtn").addEventListener("click", async () => {
     onboarding = { ...onboarding, version: 1 };

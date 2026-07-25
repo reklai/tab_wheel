@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Scroll Wheel Tab Switcher",
   "version": "3.1.0",
-  "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling that auto-tunes to your device.",
+  "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling that works on any device.",
   "browser_specific_settings": {
     "gecko": {
       "id": "@tabwheel.reklai",

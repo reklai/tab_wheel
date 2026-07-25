@@ -10,8 +10,6 @@ It keeps the gesture fast and predictable while preserving the page position you
 - Cycles in visible left-to-right order or most-recently-used order.
 - Restores the root page position when you return to a tab and URL.
 - Offers Precise, Balanced, Fast, and Custom wheel feel.
-- On a trackpad, tightens wheel feel and momentum protection to match, without rewriting your stored settings. On a clicky (detented) wheel, shortens the switch cooldown, and — at sensitivity 1.0 or above — matches one notch to one switch; free-spin wheels are recognized only during setup calibration to suggest a matching preset. Clicky and free-spin wheels both stay at full speed through the momentum guard in practice.
-- Recognizing your device takes a short burst of ordinary scrolling, so the very first gestures after installing use the standard feel. The answer is then shared across your tabs in local storage, so it is a one-time warm-up for the browser rather than something each tab repeats, and it is re-learned automatically if you switch devices.
 - Guards against extra tab switches from trackpad momentum, including right after you land on the newly focused tab.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
@@ -24,12 +22,11 @@ Normal scrolling and left/right clicks remain browser-native. Middle click is al
 
 ## First run
 
-The four-step welcome page lets a new user:
+The three-step welcome page lets a new user:
 
 1. Practice the real modifier-wheel gesture in a safe demo.
-2. Calibrate their scrolling: TabWheel samples a short scroll and, when it recognizes a trackpad, free-spin wheel, or clicky wheel, suggests a matching wheel-feel preset.
-3. Choose a modifier, optional Shift requirement, and middle-click behavior.
-4. Review page-position restore, privacy, and protected-page limitations.
+2. Choose a modifier, optional Shift requirement, and middle-click behavior.
+3. Review page-position restore, privacy, and protected-page limitations.
 
 The popup keeps a small first-use hint visible until the first successful real gesture. This state is local and is not analytics.
 
@@ -45,7 +42,6 @@ The popup keeps a small first-use hint visible until the first successful real g
 | Skip pinned tabs | Off |
 | Badge on blocked pages | On |
 | Wheel feel | Balanced |
-| Auto-tune for your device | On |
 | Acceleration | Off |
 | Sensitivity | 1.0× |
 | Cooldown | 160ms |

@@ -11,7 +11,7 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling that auto-tunes to your device.
+Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling that works on any device.
 
 ## Description
 
@@ -25,8 +25,7 @@ BUILT FOR THIS ONE WORKFLOW
 - Recently used mode follows your browsing flow.
 - Page-position restore takes you back to where you stopped reading.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
-- On a trackpad, tightens wheel feel and momentum protection to match, without changing your saved settings. On a clicky mouse wheel, shortens the switch cooldown and, at sensitivity 1.0 or above, switches one tab per notch; free-spin wheels are recognized during setup calibration to suggest a matching preset instead. Clicky and free-spin wheels both stay at full speed through the momentum guard in practice.
-- Recognizing your device takes a short burst of ordinary scrolling, so the first gestures after installing use the standard feel. What it learns is then shared across your tabs, so it is a one-time warm-up rather than something every tab repeats, and it is re-learned automatically if you switch devices.
+- A momentum guard stops trackpad momentum-tail scrolling from firing extra unintended tab switches, including right after you land on a newly focused tab.
 - Works immediately after install or update, even on tabs you already had open — no reload needed.
 - Optional filters can skip pinned or hidden/collapsed tabs.
 - Ctrl / Control and Meta / Command are available as alternative modifiers.
@@ -42,7 +41,6 @@ CURRENT DEFAULTS
 - Skip pinned tabs: off.
 - Badge on blocked pages: on.
 - Wheel feel: Balanced.
-- Auto-tune for your device: on.
 - Sensitivity: 1.0×.
 - Cooldown: 160ms.
 - Acceleration: off.
@@ -51,7 +49,7 @@ Page-position restore, editable-field gestures, horizontal wheel input, protecte
 
 EASY FIRST RUN
 
-A four-step welcome page lets you practice the exact gesture, calibrate your scrolling so TabWheel can suggest a wheel-feel preset for your trackpad, free-spin wheel, or clicky wheel, choose your modifier, optional Shift requirement, and middle-click behavior, and understand page-position restore. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
+A three-step welcome page lets you practice the exact gesture, choose your modifier, optional Shift requirement, and middle-click behavior, and understand page-position restore. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
 
 PROTECTED PAGES
 
@@ -63,7 +61,7 @@ No data leaves your browser for telemetry, tracking, analytics, or developer-own
 
 WHAT'S NEW IN 3.1.0
 
-TabWheel now recognizes the device driving your wheel gesture from ordinary scrolling — a short burst of it, once, after which the answer is shared across your tabs. On a trackpad, it quietly tightens trigger distance, cooldown, and momentum protection to match, without changing your saved settings or presets. On a clicky mouse wheel, it shortens the switch cooldown and, at default sensitivity or above, switches one tab per notch instead of requiring two. Free-spin wheels keep the base feel — the welcome page's new calibration step suggests a matching feel preset for any of the three, and the momentum guard is designed to stay out of their way, keeping clicky and free-spin wheels at full speed in practice. Switching also responds faster after your browser has been idle and while cycling through nearby tabs. A toolbar badge marks pages the browser blocks extensions from. TabWheel now also works immediately after install or update on tabs you already had open, with no reload required.
+Added a momentum guard: an always-on reliability rule that stops trackpad momentum-tail scrolling from firing extra unintended tab switches, including right after you land on a newly focused tab (the cross-tab arrival guard). Added a toolbar badge that marks pages the browser blocks extensions from. Switching also responds faster after your browser has been idle, thanks to a background-worker pre-warm, and while cycling through nearby tabs, thanks to neighbor pre-probing. TabWheel now also works immediately after install or update on tabs you already had open, with no reload required. The welcome page is now a streamlined three-step flow: gesture demo, gesture choices, and ready.
 
 ## Privacy
 

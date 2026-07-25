@@ -434,32 +434,28 @@ test("install and pre-v3 update flows open the appropriate onboarding page once"
   assert.match(onboarding, /resolveWheelDirection/);
 });
 
-test("the onboarding calibration panel is inert and every step is still reachable", () => {
+test("onboarding is a three-step flow with no calibration step", () => {
   const html = readText("src/entryPoints/onboarding/onboarding.html");
   const source = readText("src/entryPoints/onboarding/onboarding.ts");
 
-  // Transitional state: the device classifier the step-2 panel fed is gone, so
-  // its sampling, classification, and suggested-preset wiring were removed
-  // with it. The markup, CSS, and step renumbering come out next, so the panel
-  // is still rendered — Skip is the one control that still does anything, and
-  // it is what keeps the flow traversable in the meantime.
+  // The device classifier the old step-2 panel fed is gone, and so is the
+  // panel itself: onboarding is a straight demo -> choices -> ready flow.
   assert.match(html, /<span class="active" data-progress="1">/);
-  assert.match(html, /<span data-progress="4">/);
+  assert.match(html, /<span data-progress="3">/);
+  assert.doesNotMatch(html, /data-progress="4"/);
   assertOrdered(html, [
     'data-step="1"',
     'data-step="2"',
-    'id="calibrationSampleRegion"',
-    'id="skipCalibrationBtn"',
-    'data-step="3"',
     'id="gestureModifier"',
-    'data-step="4"',
+    'data-back="1"',
+    'data-step="3"',
   ]);
   assert.doesNotMatch(source, /classifyWheelDevice|resolveSuggestedPreset|addWheelSample|SampleWindow/);
-  assert.match(
-    source,
-    /byId<HTMLButtonElement>\("skipCalibrationBtn"\)\.addEventListener\("click", \(\) => showStep\(3\)\);/,
+  assert.doesNotMatch(
+    `${html}\n${source}`,
+    /calibrat|skipCalibrationBtn|useSuggestedFeelBtn|calibrationResult|calibrationSampleRegion/i,
   );
-  assert.match(source, /showStep\(4\)/);
+  assert.match(source, /showStep\(3\)/);
 });
 
 test("popup mirrors the full settings order with protected-page fallbacks", () => {
