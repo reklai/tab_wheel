@@ -10,21 +10,25 @@ It keeps the gesture fast and predictable while preserving the page position you
 - Cycles in visible left-to-right order or most-recently-used order.
 - Restores the root page position when you return to a tab and URL.
 - Offers Precise, Balanced, Fast, and Custom wheel feel.
+- Auto-tunes wheel feel to your trackpad, free-spin wheel, or clicky wheel without rewriting your stored settings or presets.
+- Guards against extra tab switches from trackpad momentum, including right after you land on the newly focused tab.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
 - Opens settings with the configured modifier + middle click by default; this shortcut can be turned Off to keep middle click native.
 - Provides popup Previous/Next buttons when a protected browser page blocks content scripts.
+- Shows a toolbar badge on pages the browser blocks extensions from, such as `chrome://`, `about:`, and extension stores.
 - Stores settings, onboarding state, MRU order, and scroll positions locally.
 
 Normal scrolling and left/right clicks remain browser-native. Middle click is also native when its two-option shortcut is Off.
 
 ## First run
 
-The three-step welcome page lets a new user:
+The four-step welcome page lets a new user:
 
 1. Practice the real modifier-wheel gesture in a safe demo.
-2. Choose a modifier, optional Shift requirement, and middle-click behavior.
-3. Review page-position restore, privacy, and protected-page limitations.
+2. Calibrate their scrolling: TabWheel samples a short scroll and, when it recognizes a trackpad, free-spin wheel, or clicky wheel, suggests a matching wheel-feel preset.
+3. Choose a modifier, optional Shift requirement, and middle-click behavior.
+4. Review page-position restore, privacy, and protected-page limitations.
 
 The popup keeps a small first-use hint visible until the first successful real gesture. This state is local and is not analytics.
 
@@ -38,7 +42,9 @@ The popup keeps a small first-use hint visible until the first successful real g
 | Wheel direction | Wheel down moves to the next tab |
 | Skip hidden/collapsed tabs | On |
 | Skip pinned tabs | Off |
+| Badge on blocked pages | On |
 | Wheel feel | Balanced |
+| Auto-tune for your device | On |
 | Acceleration | Off |
 | Sensitivity | 1.0× |
 | Cooldown | 160ms |
@@ -83,9 +89,9 @@ npm run release:package
 
 This creates:
 
-- `release/tabwheel-chrome-v3.0.0.zip`
-- `release/tabwheel-firefox-v3.0.0.xpi`
-- `release/tabwheel-source-v3.0.0.zip`
+- `release/tabwheel-chrome-v3.1.0.zip`
+- `release/tabwheel-firefox-v3.1.0.xpi`
+- `release/tabwheel-source-v3.1.0.zip`
 
 ## Project structure
 

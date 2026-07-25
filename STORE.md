@@ -11,13 +11,13 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private, and configurable.
+Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling that auto-tunes to your device.
 
 ## Description
 
 SWITCH TABS WITHOUT CHASING THE TAB BAR
 
-Hold Alt / Option and scroll the mouse wheel anywhere on a normal web page. Wheel down moves to the next tab and wheel up moves to the previous tab. Your hand stays on the mouse and your focus stays on the page.
+Hold Alt / Option and scroll the mouse wheel anywhere on a normal web page for instant tab scrolling. Wheel down moves to the next tab and wheel up moves to the previous tab. Chrome removed its built-in tab-strip scrolling, so a lot of people go looking for tab scrolling again — TabWheel brings it back, and it works anywhere on the page instead of a narrow strip of tabs. Your hand stays on the mouse and your focus stays on the page.
 
 BUILT FOR THIS ONE WORKFLOW
 
@@ -25,6 +25,8 @@ BUILT FOR THIS ONE WORKFLOW
 - Recently used mode follows your browsing flow.
 - Page-position restore takes you back to where you stopped reading.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
+- Auto-tunes wheel feel to trackpads, free-spin wheels, and clicky mouse wheels, without changing your saved settings.
+- Works immediately after install or update, even on tabs you already had open — no reload needed.
 - Optional filters can skip pinned or hidden/collapsed tabs.
 - Ctrl / Control and Meta / Command are available as alternative modifiers.
 - The same modifier + middle click opens settings by default, or can be turned Off for native middle-click behavior.
@@ -37,7 +39,9 @@ CURRENT DEFAULTS
 - Wheel direction: wheel down moves to the next tab.
 - Skip hidden or collapsed tabs: on.
 - Skip pinned tabs: off.
+- Badge on blocked pages: on.
 - Wheel feel: Balanced.
+- Auto-tune for your device: on.
 - Sensitivity: 1.0×.
 - Cooldown: 160ms.
 - Acceleration: off.
@@ -46,19 +50,19 @@ Page-position restore, editable-field gestures, horizontal wheel input, protecte
 
 EASY FIRST RUN
 
-A three-step welcome page lets you practice the exact gesture, choose your modifier, optional Shift requirement, and middle-click behavior, and understand page-position restore. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
+A four-step welcome page lets you practice the exact gesture, calibrate your scrolling so TabWheel can suggest a wheel-feel preset for your trackpad, free-spin wheel, or clicky wheel, choose your modifier, optional Shift requirement, and middle-click behavior, and understand page-position restore. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
 
 PROTECTED PAGES
 
-Browser settings, extension stores, PDF viewers, devtools, and some internal pages do not allow extension content scripts. TabWheel handles these restrictions automatically. Open the toolbar popup to use Previous and Next fallback buttons there.
+Browser settings, extension stores, PDF viewers, devtools, and some internal pages do not allow extension content scripts. TabWheel handles these restrictions automatically and marks the toolbar icon with a small badge so you know a page is off-limits. Open the toolbar popup to use Previous and Next fallback buttons there.
 
 PRIVATE BY DESIGN
 
 No data leaves your browser for telemetry, tracking, analytics, or developer-owned services. TabWheel has no remote code and no account. Settings, onboarding progress, most-recently-used tab order, and recent page positions are stored locally.
 
-WHAT CHANGED IN 3.0.0
+WHAT'S NEW IN 3.1.0
 
-TabWheel now owns the scroll-wheel tab-switching niche instead of bundling adjacent browser tools. Search, left/right-click remapping, alternate middle-click actions, and normal page-scroll tuning were removed. The focused modifier + middle-click settings shortcut remains and can be turned Off. Existing core wheel preferences and saved page positions are preserved during upgrade. The extension requests fewer permissions.
+TabWheel now recognizes the device driving your wheel gesture — trackpad, free-spin wheel, or clicky wheel — from ordinary scrolling and quietly matches the trigger distance and cooldown to it, without changing your saved settings or presets. A momentum guard keeps trackpad inertia from firing extra tab switches after a switch, including right after you land on the newly focused tab. A toolbar badge marks pages the browser blocks extensions from. The welcome page adds a calibration step that samples your scrolling and suggests a wheel-feel preset. TabWheel now also works immediately after install or update on tabs you already had open, with no reload required.
 
 ## Privacy
 

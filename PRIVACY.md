@@ -4,11 +4,13 @@ TabWheel does not collect, transmit, or share user data with developer-owned ser
 
 ## Data stored locally
 
-- **Settings** (`tabWheelSettings`): modifier, optional Shift requirement, preserved wheel direction, the Open settings/Off middle-click preference, cycle order, tab filters, wheel feel, sensitivity, cooldown, and acceleration. Reliability rules for page-position restore, editable fields, horizontal input, protected pages, wraparound, and overshoot protection are stored as always enabled.
+- **Settings** (`tabWheelSettings`): modifier, optional Shift requirement, preserved wheel direction, the Open settings/Off middle-click preference, cycle order, tab filters, wheel feel, sensitivity, cooldown, acceleration, whether wheel feel auto-tunes to your device, and whether a badge appears on browser-restricted pages. Reliability rules for page-position restore, editable fields, horizontal input, protected pages, wraparound, and overshoot protection are stored as always enabled.
 - **Onboarding state** (`tabWheelOnboarding`): whether the local demo was completed, whether the first real wheel cycle succeeded, and whether the one-time focused-release notice was seen.
 - **MRU state** (`tabWheelMruState`): recent tab IDs grouped by window for recently used cycling. It is cleared on browser startup and bounded to 100 tabs per window.
 - **Scroll memory** (`tabWheelScrollMemory`): tab and window IDs, the page URL used only to verify that restore targets the same page, root X/Y position, normalized position, page/viewport dimensions, and update time. It is bounded to 300 entries.
 - **Schema version** (`storageSchemaVersion`): a number used to migrate local settings safely.
+
+When auto-tune for your device is on (and during the welcome page's calibration step), TabWheel samples ordinary wheel-event timing, magnitude, and mode to recognize a trackpad, free-spin wheel, or clicky wheel and adjust wheel feel accordingly. These gesture-feel measurements are processed entirely in memory and are never stored, transmitted, or shared.
 
 TabWheel does not read page text, form values, browsing history, or bookmarks. It does not store mouse clicks or normal page scrolling.
 

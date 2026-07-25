@@ -15,6 +15,17 @@ npm run ci
 npm run release:package
 ```
 
+## 3.1.0
+
+Feel and reliability release:
+
+- Added auto-tune for your device (`deviceAwareTuning`, default On): recognizes trackpads, free-spin wheels, and clicky wheels from natural scrolling and adjusts the effective trigger distance and cooldown to match. Stored settings and presets are never rewritten.
+- Added a momentum guard: an always-on internal reliability rule (no setting) that stops trackpad momentum-tail scrolling from firing extra unintended tab switches after a switch, including in the newly focused tab (the arrival guard). Clicky/detented wheels and free-spin traversal are unaffected.
+- Added a toolbar badge for blocked pages (`showRestrictedBadge`, default On): a tab-scoped "!" badge on browser-restricted pages such as `chrome://`, `about:`, and extension stores.
+- Expanded onboarding to four steps: live gesture demo, calibrate your scrolling (device detection with a suggested wheel-feel preset), gesture choices, and ready.
+- Made the zero-reload guarantee test-enforced: `test/zero-reload.test.mjs` locks the install/update reinjection wiring behind automated assertions, in addition to the manual checklist below.
+- Preserved existing wheel preferences and scroll positions through the v15 storage migration, which backfills the two new settings to their defaults for upgrading users.
+
 ## 3.0.0
 
 Focused product release:
