@@ -11,7 +11,7 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling that works on any device.
+Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling for mouse or trackpad.
 
 ## Description
 

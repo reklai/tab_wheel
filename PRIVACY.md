@@ -10,7 +10,7 @@ TabWheel does not collect, transmit, or share user data with developer-owned ser
 - **Scroll memory** (`tabWheelScrollMemory`): tab and window IDs, the page URL used only to verify that restore targets the same page, root X/Y position, normalized position, page/viewport dimensions, and update time. It is bounded to 300 entries.
 - **Schema version** (`storageSchemaVersion`): a number used to migrate local settings safely.
 
-TabWheel processes each wheel event's timing, magnitude, and scroll mode in memory only to recognize and complete the modifier-wheel gesture itself (including the momentum guard that filters out unintended trailing switches); this is never stored, transmitted, or shared, and is discarded as soon as the gesture is handled.
+TabWheel processes the timing, magnitude, and scroll mode of wheel events made with the gesture modifier held in memory only to recognize and complete the gesture itself (including the momentum guard that filters out unintended trailing switches); this is never stored, transmitted, or shared, and is discarded as soon as the gesture is handled.
 
 TabWheel does not read page text, form values, browsing history, or bookmarks. It does not store mouse clicks or normal page scrolling.
 

@@ -25,7 +25,7 @@ Feel and reliability release:
 - Added neighbor pre-probing: after each switch, TabWheel quietly prepares the two nearest tabs in each cycle direction (skipping sleeping/discarded tabs) so cycling on to them lands faster. This speculative warm-up can only make a future switch quicker — it never changes which tabs a cycle can reach.
 - Made the zero-reload guarantee test-enforced: `test/zero-reload.test.mjs` locks the install/update reinjection wiring behind automated assertions, in addition to the manual checklist below.
 - Streamlined onboarding to three steps: live gesture demo, gesture choices, and ready.
-- Preserved existing wheel preferences and scroll positions through the v16 storage migration, which retires the short-lived "Auto-tune for your device" preference and the device profile it wrote, leaving every other setting untouched for upgrading users.
+- Preserved existing wheel preferences and scroll positions through the v16 storage migration, leaving every other setting untouched for upgrading users.
 
 ## 3.0.0
 
@@ -75,5 +75,12 @@ target browsers:
    between them mid-notch. Expect the occasional swallowed notch: a notch
    landing inside the 32ms post-switch arrival window costs that one notch —
    Chrome reports clicky wheels in pixel mode, so it is the more likely of the
-   two browsers to show this occasionally. The check is that it stays
-   occasional, not that it never happens.
+   two browsers to show this occasionally. At the Fast preset the 90ms
+   cooldown itself also drops a notch that lands inside it (the accumulator is
+   zeroed on any blocked crossing), so distinguish that cooldown drop from an
+   arrival-window drop rather than attributing both to the guard. The arrival
+   guard only ever engages on pixel-mode wheel events (`deltaMode === 0`);
+   Firefox reports clicky wheels in line mode, so it can never trigger there,
+   and the Firefox pass of this step is expected to show zero arrival-window
+   drops. The check is that arrival-window drops stay occasional on Chrome,
+   not that they never happen.
