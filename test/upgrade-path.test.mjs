@@ -14,7 +14,7 @@ test("focused v14 migration preserves core state and removes retired state", () 
   assert.match(contract, /scrollMemory:\s*"tabWheelScrollMemory"/);
   assert.match(contract, /mruState:\s*"tabWheelMruState"/);
   assert.match(contract, /onboarding:\s*"tabWheelOnboarding"/);
-  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 15/);
+  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 16/);
   assert.match(migrations, /focusTabWheelSettings\(migratedStorage\)/);
   assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_SEARCH_HISTORY_KEY\)/);
   assert.match(migrations, /"leftClickAction"/);
@@ -28,13 +28,29 @@ test("focused v14 migration preserves core state and removes retired state", () 
   assert.match(migrations, /nextSettings\.skipHiddenTabs = true/);
 });
 
-test("focused v15 migration backfills the device-tuning and restricted-badge settings", () => {
+test("focused v15 migration backfills the reliability settings it introduced", () => {
   const migrations = readText("src/lib/common/utils/storageMigrations.ts");
 
   assert.match(migrations, /if \(fromVersion < 15\)/);
   assert.match(migrations, /backfillFeelAndReliabilitySettings\(migratedStorage\)/);
-  assert.match(migrations, /"deviceAwareTuning"/);
   assert.match(migrations, /"showRestrictedBadge"/);
+  // v15 also backfilled deviceAwareTuning. Historical steps stay frozen, so
+  // the key is still added here and deleted again by v16 below — the net
+  // effect for any snapshot older than 16 is that it never appears.
+  assert.match(migrations, /for \(const key of \["deviceAwareTuning", "showRestrictedBadge"\]\)/);
+});
+
+test("focused v16 migration removes the retired auto-tuning state", () => {
+  const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+
+  assert.match(migrations, /if \(fromVersion < 16\)/);
+  assert.match(migrations, /removeDeviceTuningState\(migratedStorage\)/);
+  // Both halves: the preference inside settings, and the shared profile key
+  // the classifier wrote. Local literals, so renaming a live contract can
+  // never change how old storage is cleaned up.
+  assert.match(migrations, /deleteSettingKey\(storage, "deviceAwareTuning"\)/);
+  assert.match(migrations, /const TABWHEEL_DEVICE_PROFILE_KEY = "tabWheelDeviceProfile";/);
+  assert.match(migrations, /deleteKey\(storage, TABWHEEL_DEVICE_PROFILE_KEY\)/);
 });
 
 test("migration does not downgrade storage created by a future release", () => {

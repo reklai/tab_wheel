@@ -1,18 +1,16 @@
 {
   "input": {
-    "storageSchemaVersion": 15,
+    "storageSchemaVersion": 16,
     "tabWheelSettings": {
       "invertScroll": false,
-      "deviceAwareTuning": true,
       "showRestrictedBadge": true
     },
     "futureKey": true
   },
   "expected": {
-    "storageSchemaVersion": 15,
+    "storageSchemaVersion": 16,
     "tabWheelSettings": {
       "invertScroll": false,
-      "deviceAwareTuning": true,
       "showRestrictedBadge": true
     },
     "futureKey": true

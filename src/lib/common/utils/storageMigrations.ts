@@ -5,7 +5,8 @@ const TABWHEEL_MRU_STATE_KEY = "tabWheelMruState";
 const TABWHEEL_SEARCH_HISTORY_KEY = "tabWheelSearchHistory";
 const TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs";
 const TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList";
-export const STORAGE_SCHEMA_VERSION = 15;
+const TABWHEEL_DEVICE_PROFILE_KEY = "tabWheelDeviceProfile";
+export const STORAGE_SCHEMA_VERSION = 16;
 
 type StorageSnapshot = Record<string, unknown>;
 
@@ -247,6 +248,18 @@ function backfillFeelAndReliabilitySettings(storage: StorageSnapshot): boolean {
   return changed;
 }
 
+// v16 retires the device classifier: the "Auto-tune for your device"
+// preference and the profile key it wrote. The v15 backfill above still adds
+// the setting on its way through — historical steps are left frozen — and this
+// step removes it again, so no snapshot older than 16 keeps it either way.
+// The profile is not a preference, so nothing replaces it: the wheel feel is
+// whatever the preset says, on every device.
+function removeDeviceTuningState(storage: StorageSnapshot): boolean {
+  let changed = deleteSettingKey(storage, "deviceAwareTuning");
+  changed = deleteKey(storage, TABWHEEL_DEVICE_PROFILE_KEY) || changed;
+  return changed;
+}
+
 function isHttpUrl(value: unknown): boolean {
   if (typeof value !== "string") return false;
   try {
@@ -378,6 +391,9 @@ export function migrateStorageSnapshot(input: StorageSnapshot): StorageMigration
   }
   if (fromVersion < 15) {
     changed = backfillFeelAndReliabilitySettings(migratedStorage) || changed;
+  }
+  if (fromVersion < 16) {
+    changed = removeDeviceTuningState(migratedStorage) || changed;
   }
 
   if (migratedStorage[STORAGE_SCHEMA_VERSION_KEY] !== STORAGE_SCHEMA_VERSION) {

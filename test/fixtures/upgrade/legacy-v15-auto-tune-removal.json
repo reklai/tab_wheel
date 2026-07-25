@@ -1,8 +1,15 @@
 {
   "input": {
-    "storageSchemaVersion": 14,
+    "storageSchemaVersion": 15,
     "tabWheelSettings": {
-      "invertScroll": false
+      "invertScroll": false,
+      "deviceAwareTuning": true,
+      "showRestrictedBadge": true
+    },
+    "tabWheelDeviceProfile": {
+      "kind": "discreteWheel",
+      "notchMagnitudePx": 53,
+      "updatedAtMs": 1710000000000
     },
     "futureKey": true
   },

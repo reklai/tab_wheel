@@ -17,7 +17,7 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 15,
+    "storageSchemaVersion": 16,
     "tabWheelSettings": {
       "middleClickAction": "none",
       "gestureModifier": "meta",
@@ -30,7 +30,6 @@
       "overshootGuard": true,
       "invertScroll": true,
       "skipHiddenTabs": true,
-      "deviceAwareTuning": true,
       "showRestrictedBadge": true
     }
   },

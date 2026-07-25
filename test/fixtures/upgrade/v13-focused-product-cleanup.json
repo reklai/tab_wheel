@@ -1,9 +1,14 @@
 {
   "input": {
     "storageSchemaVersion": 13,
-    "tabWheelSearchHistory": ["old search"],
+    "tabWheelSearchHistory": [
+      "old search"
+    ],
     "tabWheelMruState": {
-      "1": [9, 8]
+      "1": [
+        9,
+        8
+      ]
     },
     "tabWheelSettings": {
       "gestureModifier": "ctrl",
@@ -24,9 +29,12 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 15,
+    "storageSchemaVersion": 16,
     "tabWheelMruState": {
-      "1": [9, 8]
+      "1": [
+        9,
+        8
+      ]
     },
     "tabWheelSettings": {
       "gestureModifier": "ctrl",
@@ -44,7 +52,6 @@
       "allowGesturesInEditableFields": true,
       "skipRestrictedPages": true,
       "wrapAround": true,
-      "deviceAwareTuning": true,
       "showRestrictedBadge": true
     }
   },

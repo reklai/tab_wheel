@@ -19,11 +19,12 @@ test("verifyUpgrade script succeeds on fixture snapshots", () => {
 });
 
 
-// The shared device profile is deliberately NOT a settings key: it is
-// evidence, so it must survive every upgrade untouched (no fixture or schema
-// bump is involved) and must equally survive "reset to defaults", which clears
-// preferences only. This locks the passthrough that makes both true.
-test("migrations carry the device profile through untouched", async () => {
+// The device classifier is gone, so the evidence it wrote is not carried
+// forward: leaving the key behind would strand an orphan record of the user's
+// hardware in local storage forever. The fixtures cover the v15 hop; this
+// covers an old snapshot arriving from well below the step, where the key
+// predates several intermediate migrations.
+test("migrations delete the retired device profile and auto-tune preference", async () => {
   const { readFileSync } = await import("node:fs");
   const { transform } = await import("esbuild");
   const source = readFileSync(resolve(root, "src/lib/common/utils/storageMigrations.ts"), "utf8");
@@ -31,13 +32,17 @@ test("migrations carry the device profile through untouched", async () => {
   const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
   const migrations = await import(`data:text/javascript;base64,${encoded}`);
 
-  const deviceProfile = { kind: "discreteWheel", notchMagnitudePx: 48, updatedAtMs: 1 };
   const result = migrations.migrateStorageSnapshot({
     storageSchemaVersion: 12,
-    tabWheelSettings: { wheelSensitivity: 1 },
-    tabWheelDeviceProfile: deviceProfile,
+    tabWheelSettings: { wheelSensitivity: 1, deviceAwareTuning: false },
+    tabWheelDeviceProfile: { kind: "discreteWheel", notchMagnitudePx: 48, updatedAtMs: 1 },
   });
 
-  assert.deepEqual(result.migratedStorage.tabWheelDeviceProfile, deviceProfile);
+  const hasKey = (target, key) => Object.prototype.hasOwnProperty.call(target, key);
+  assert.equal(hasKey(result.migratedStorage, "tabWheelDeviceProfile"), false);
+  // An explicit opt-out is removed too, not just the default-valued key: the
+  // setting no longer exists, so leaving either value behind is stale state.
+  assert.equal(hasKey(result.migratedStorage.tabWheelSettings, "deviceAwareTuning"), false);
+  assert.equal(result.changed, true);
   assert.equal(result.toVersion, migrations.STORAGE_SCHEMA_VERSION);
 });
