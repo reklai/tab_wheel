@@ -2,7 +2,7 @@
   "name": "tabwheel",
   "version": "4.0.0",
   "private": true,
-  "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling for mouse or trackpad.",
+  "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, private, mouse-first tab control.",
   "license": "MIT",
   "scripts": {
     "build": "node esBuildConfig/build.mjs",

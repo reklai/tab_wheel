@@ -17,6 +17,7 @@ const errors = [];
 
 const manifestV2 = readJson("esBuildConfig/manifest_v2.json");
 const manifestV3 = readJson("esBuildConfig/manifest_v3.json");
+const packageJson = readJson("package.json");
 
 const store = readText("STORE.md");
 const privacy = readText("PRIVACY.md");
@@ -41,19 +42,26 @@ if (!extensionNamesMatch) {
   }
 }
 
+let summaryLine = "";
 const summaryMatch = store.match(/## Summary \(short[^\n]*\)\s+([\s\S]*?)\n## /);
 if (!summaryMatch) {
   errors.push("STORE.md must include the short summary section.");
 } else {
-  const summaryLine = summaryMatch[1]
+  summaryLine = summaryMatch[1]
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .find(Boolean);
+    .find(Boolean) || "";
   if (!summaryLine) {
     errors.push("STORE.md short summary cannot be empty.");
   } else if (summaryLine.length > 132) {
     errors.push(`STORE.md short summary must be <=132 chars (found ${summaryLine.length}).`);
   }
+}
+if (summaryLine && manifestV2.description !== summaryLine) {
+  errors.push("Manifest descriptions must match the STORE.md short summary.");
+}
+if (packageJson.description !== manifestV2.description) {
+  errors.push("package.json description must match the manifest descriptions.");
 }
 
 const requiredPermissionDocs = ["tabs", "storage", "scripting", "tabGroups", "<all_urls>"];

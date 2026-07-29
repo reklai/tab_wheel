@@ -11,8 +11,8 @@
     <text x="107" y="89" fill="#fff" text-anchor="middle" font-size="19" font-weight="800">↕</text>
     <text x="136" y="88" fill="#98a5b6" font-size="13" font-weight="700">SCROLL WHEEL TAB SWITCHER</text>
     <text x="90" y="172" fill="#76aaff" font-size="13" font-weight="800" letter-spacing="2">STEP 1 OF 3</text>
-    <text x="90" y="235" fill="#f6f8fb" font-size="49" font-weight="760">Switch tabs without</text>
-    <text x="90" y="290" fill="#f6f8fb" font-size="49" font-weight="760">chasing the tab bar.</text>
+    <text x="90" y="235" fill="#f6f8fb" font-size="49" font-weight="760">Switch tabs from anywhere</text>
+    <text x="90" y="290" fill="#f6f8fb" font-size="49" font-weight="760">on the page.</text>
     <text x="90" y="335" fill="#98a5b6" font-size="20">Hold Alt / Option and scroll inside the test area.</text>
     <g filter="url(#shadow)">
       <rect x="90" y="382" width="1100" height="322" rx="20" fill="#0d131c" stroke="#76aaff" stroke-opacity=".3"/>
@@ -28,6 +28,6 @@
       <text x="635" y="611" fill="#f6f8fb" text-anchor="middle" font-size="19" font-weight="700">Hold Alt / Option + scroll</text>
       <text x="635" y="642" fill="#98a5b6" text-anchor="middle" font-size="14">Try the exact gesture before you start browsing.</text>
     </g>
-    <text x="90" y="756" fill="#98a5b6" font-size="15">One gesture. No tab-bar hovering. No extra browser toolkit.</text>
+    <text x="90" y="756" fill="#98a5b6" font-size="15">Alt + wheel. Fast, private, mouse-first tab control.</text>
   </g>
 </svg>

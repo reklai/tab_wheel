@@ -6,11 +6,11 @@
   </defs>
   <rect width="1280" height="800" fill="url(#bg)"/>
   <g font-family="Inter,Segoe UI,sans-serif">
-    <text x="82" y="220" fill="#75aaff" font-size="14" font-weight="800" letter-spacing="2">EVERYTHING WITHIN REACH</text>
-    <text x="82" y="286" fill="#f5f7fb" font-size="54" font-weight="760">Every control, right</text>
-    <text x="82" y="344" fill="#f5f7fb" font-size="54" font-weight="760">from the toolbar.</text>
-    <text x="82" y="398" fill="#9aa6b6" font-size="20">Check your live keybind, tune the gesture,</text>
-    <text x="82" y="430" fill="#9aa6b6" font-size="20">and shape tab cycling without leaving the page.</text>
+    <text x="82" y="220" fill="#75aaff" font-size="14" font-weight="800" letter-spacing="2">EVERY ACTION WITHIN REACH</text>
+    <text x="82" y="286" fill="#f5f7fb" font-size="54" font-weight="760">Three buttons.</text>
+    <text x="82" y="344" fill="#f5f7fb" font-size="54" font-weight="760">One focused popup.</text>
+    <text x="82" y="398" fill="#9aa6b6" font-size="20">See the live keybind and remap left, middle,</text>
+    <text x="82" y="430" fill="#9aa6b6" font-size="20">or right click without leaving the page.</text>
     <rect x="82" y="491" width="181" height="46" rx="23" fill="#75aaff" fill-opacity=".12" stroke="#75aaff" stroke-opacity=".25"/>
     <circle cx="107" cy="514" r="6" fill="#67d39b"/><text x="126" y="520" fill="#dce6f3" font-size="14" font-weight="700">Ready on this page</text>
 
@@ -26,24 +26,24 @@
       <text x="32" y="139" fill="#f5f7fb" font-size="17" font-weight="760">Alt / Option + wheel down</text>
       <text x="32" y="163" fill="#f5f7fb" font-size="17" font-weight="760">moves through your next tabs.</text>
 
-      <text x="16" y="228" fill="#9aa6b6" font-size="9" font-weight="800" letter-spacing="1">GESTURE</text>
-      <rect x="14" y="238" width="352" height="150" rx="13" fill="#171e29" stroke="#fff" stroke-opacity=".09"/>
-      <text x="28" y="269" fill="#f5f7fb" font-size="11" font-weight="700">Modifier</text>
-      <rect x="236" y="251" width="116" height="34" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="248" y="273" fill="#f5f7fb" font-size="9">Alt / Option ▾</text>
-      <line x1="14" y1="294" x2="366" y2="294" stroke="#fff" stroke-opacity=".09"/>
-      <text x="28" y="322" fill="#f5f7fb" font-size="11" font-weight="700">Require Shift</text>
-      <rect x="314" y="309" width="38" height="20" rx="10" fill="#273140"/><circle cx="325" cy="319" r="8" fill="#dce4ef"/>
-      <line x1="14" y1="340" x2="366" y2="340" stroke="#fff" stroke-opacity=".09"/>
-      <text x="28" y="368" fill="#f5f7fb" font-size="11" font-weight="700">Modifier + middle click</text>
-      <rect x="236" y="350" width="116" height="34" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="248" y="372" fill="#f5f7fb" font-size="9">Open settings ▾</text>
+      <text x="16" y="224" fill="#9aa6b6" font-size="9" font-weight="800" letter-spacing="1">GESTURE</text>
+      <rect x="14" y="234" width="352" height="218" rx="13" fill="#171e29" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="264" fill="#f5f7fb" font-size="11" font-weight="700">Modifier</text>
+      <rect x="222" y="247" width="130" height="30" rx="8" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="234" y="267" fill="#f5f7fb" font-size="9">Alt / Option ▾</text>
+      <line x1="14" y1="286" x2="366" y2="286" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="315" fill="#f5f7fb" font-size="11" font-weight="700">Modifier + left click</text>
+      <rect x="222" y="298" width="130" height="30" rx="8" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="234" y="318" fill="#f5f7fb" font-size="9">Browser new tab ▾</text>
+      <line x1="14" y1="337" x2="366" y2="337" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="366" fill="#f5f7fb" font-size="11" font-weight="700">Modifier + middle click</text>
+      <rect x="222" y="349" width="130" height="30" rx="8" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="234" y="369" fill="#f5f7fb" font-size="9">Most recent tab ▾</text>
+      <line x1="14" y1="388" x2="366" y2="388" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="417" fill="#f5f7fb" font-size="11" font-weight="700">Modifier + right click</text>
+      <rect x="222" y="400" width="130" height="30" rx="8" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="234" y="420" fill="#f5f7fb" font-size="9">Close current tab ▾</text>
 
-      <text x="16" y="415" fill="#9aa6b6" font-size="9" font-weight="800" letter-spacing="1">TAB CYCLING</text>
-      <rect x="14" y="425" width="352" height="99" rx="13" fill="#171e29" stroke="#fff" stroke-opacity=".09"/>
-      <text x="28" y="456" fill="#f5f7fb" font-size="11" font-weight="700">Cycle order</text>
-      <rect x="225" y="438" width="127" height="34" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="237" y="460" fill="#f5f7fb" font-size="9">Left-To-Right ▾</text>
-      <line x1="14" y1="481" x2="366" y2="481" stroke="#fff" stroke-opacity=".09"/>
-      <text x="28" y="509" fill="#f5f7fb" font-size="11" font-weight="700">Wheel direction</text>
-      <rect x="214" y="491" width="138" height="28" rx="8" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="226" y="510" fill="#f5f7fb" font-size="9">Down → Next tab ▾</text>
+      <text x="16" y="476" fill="#9aa6b6" font-size="9" font-weight="800" letter-spacing="1">TAB CYCLING</text>
+      <rect x="14" y="486" width="352" height="38" rx="11" fill="#171e29" stroke="#fff" stroke-opacity=".09"/>
+      <text x="28" y="510" fill="#f5f7fb" font-size="11" font-weight="700">Wheel direction</text>
+      <text x="245" y="510" fill="#f5f7fb" font-size="9">Down → Next tab ▾</text>
 
       <rect y="539" width="380" height="55" fill="#0f141c" stroke="#fff" stroke-opacity=".09"/>
       <rect x="14" y="550" width="171" height="33" rx="9" fill="#1d2633" stroke="#fff" stroke-opacity=".09"/><text x="99" y="571" text-anchor="middle" fill="#f5f7fb" font-size="9">Refresh extension</text>

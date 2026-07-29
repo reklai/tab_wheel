@@ -11,28 +11,33 @@ Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
 
-Switch tabs with Alt + mouse wheel anywhere on the page. Fast, focused, private tab scrolling for mouse or trackpad.
+Switch tabs with Alt + mouse wheel anywhere on the page. Fast, private, mouse-first tab control.
 
 ## Description
 
-SWITCH TABS WITHOUT CHASING THE TAB BAR
+SWITCH TABS FROM ANYWHERE ON THE PAGE
 
 Hold Alt / Option and scroll the mouse wheel anywhere on a normal web page for instant tab scrolling. Wheel down moves to the next tab and wheel up moves to the previous tab. Chrome removed its built-in tab-strip scrolling, so a lot of people go looking for tab scrolling again — TabWheel brings it back, and it works anywhere on the page instead of a narrow strip of tabs. Your hand stays on the mouse and your focus stays on the page.
 
-BUILT FOR MOUSE-FIRST TAB CONTROL
+MOUSE ACTIONS AND SETTINGS
+
+Alt / Option is the default modifier. You can change it to Ctrl / Control or Meta / Command and optionally require Shift.
+
+- Modifier + left click opens the browser's New Tab page beside the current tab.
+- Modifier + middle click returns to the most recent tab.
+- Modifier + right click uses Close current tab and returns to the most recent tab.
+- Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, or Off.
+- Drag current tab moves the active tab live as you drag horizontally, one slot per 56 px, while preserving pinned and tab-group boundaries.
+- Open the extension popup and select the settings icon to review or change every action.
+
+WHEEL EXPERIENCE
 
 - Wheel cycling follows the visible tab strip from left to right.
-- Modifier + left click opens the browser's New Tab page beside the current tab.
-- Modifier + middle click returns to the previous tab.
-- Modifier + right click closes the current tab and returns to the previous tab.
-- Every mouse button can instead return to the previous tab, close the current tab, duplicate a tab, drag the current tab through its strip section, open settings, or be turned Off for fully native behavior.
-- Drag current tab moves the active tab live as you drag horizontally, one slot per 56 px, while preserving pinned and tab-group boundaries.
 - Page-position restore takes you back to where you stopped reading.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
 - A momentum guard stops trackpad momentum-tail scrolling from firing extra unintended tab switches, including right after you land on a newly focused tab.
 - Works immediately after install or update, even on tabs you already had open — no reload needed.
 - Optional filters can skip pinned or hidden/collapsed tabs.
-- Ctrl / Control and Meta / Command are available as alternative modifiers.
 
 CURRENT DEFAULTS
 
@@ -51,21 +56,28 @@ CURRENT DEFAULTS
 - Cooldown: 160ms.
 - Acceleration: off.
 
-Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, overshoot protection, and a toolbar badge marking browser-restricted pages are always enabled automatically.
+Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, overshoot protection, and a toolbar badge marking recognized browser-restricted URLs are always enabled automatically.
 
 EASY FIRST RUN
 
-Fresh installs and V4 updates start with the original wheel demo. Next, a separate mouse-action onboarding experience lets users change each button and immediately test it in the safe simulator. The setup then returns to shared gesture settings, where users can choose the modifier, optional Shift, and revise every mouse-click action before finishing on the wheel-ready screen. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
+Fresh installs and updates from pre-V4 releases start with the original wheel demo. Next, a separate mouse-action onboarding experience lets users change each button and immediately test it in the safe simulator. The setup then returns to shared gesture settings, where users can choose the modifier, optional Shift, and revise every mouse-click action before finishing on the wheel-ready screen. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
 
-PROTECTED PAGES
+LIMITATIONS AND FALLBACK
 
-Browser settings, extension stores, PDF viewers, devtools, and some internal pages do not allow extension content scripts. TabWheel handles these restrictions automatically and marks the toolbar icon with a small badge so you know a page is off-limits. Open the toolbar popup to use Previous and Next fallback buttons there.
+TabWheel works on normal webpages where the browser allows extensions to run. Browser settings, internal pages, extension pages, extension stores, PDF viewers, devtools, and other protected pages may block its content script. TabWheel marks the toolbar icon with a small badge for recognized browser-restricted URLs. If a page gesture is unavailable, open the toolbar popup to use Previous and Next fallback buttons.
 
 Enabled modifier-click actions suppress native page-delivered behavior. Setting a button to Off leaves it completely native. OS shortcuts, browser-chrome shortcuts, and Firefox's reserved Shift + right-click context menu cannot be overridden by a page extension.
 
+ACCESS THE EXTENSION POPUP
+
+1. Look beside the address bar and select the puzzle-piece Extensions icon.
+2. Find Scroll Wheel Tab Switcher.
+3. Select the extension to open its popup.
+4. Optionally select the pin icon to keep it beside the address bar.
+
 PRIVATE BY DESIGN
 
-No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, and recent page positions are stored locally.
+No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, ads, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, recent page positions, and page geometry are stored locally. URLs used to verify page-position restoration remain local. TabWheel does not request browser-history or bookmarks permissions.
 
 WHAT'S NEW IN 4.0.0
 
@@ -93,7 +105,7 @@ Works on Firefox, Chrome, and Zen Browser.
 
 Prepare these from the production Chrome build at 100% browser zoom:
 
-1. 1280 × 800 — onboarding gesture demo, caption: “Switch tabs without chasing the tab bar.”
+1. 1280 × 800 — onboarding gesture demo, caption: “Switch tabs from anywhere on the page.”
 2. 1280 × 800 — three-button onboarding simulator, caption: “One modifier. Three mouse actions.”
 3. 1280 × 800 — shared wheel-and-click settings, caption: “Configure every gesture.”
 4. 1280 × 800 — complete popup ready state, caption: “Every control, right from the toolbar.”

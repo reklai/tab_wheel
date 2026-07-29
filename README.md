@@ -1,8 +1,8 @@
 # Scroll Wheel Tab Switcher
 
-TabWheel is a browser extension built to do one job well: control browser tabs from the mouse without chasing the tab bar.
+TabWheel is a browser extension built to do one job well: switch tabs with `Alt / Option + mouse wheel` anywhere on the page.
 
-It keeps modifier-wheel switching fast and adds focused modifier-mouse actions for creating, revisiting, duplicating, moving, and closing tabs. There is no search feature, page-scroll modification, telemetry, or remote service.
+TabWheel provides fast, private, mouse-first tab control, with focused modifier-mouse actions for creating, revisiting, duplicating, moving, and closing tabs. There is no search feature, page-scroll modification, telemetry, or remote service.
 
 ## What it does
 
@@ -19,14 +19,14 @@ It keeps modifier-wheel switching fast and adds focused modifier-mouse actions f
 - Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, or Off.
 - Drag current tab lets you hold the configured button and drag horizontally; every 56 px moves the active tab one slot without changing its pinned or group membership.
 - Provides popup Previous/Next buttons when a protected browser page blocks content scripts.
-- Shows a toolbar badge on pages the browser blocks extensions from, such as `chrome://`, `about:`, and extension stores.
+- Shows a toolbar badge on recognized browser-restricted URLs, such as `chrome://`, `about:`, and extension stores.
 - Stores settings, onboarding state, recent-tab order, and scroll positions locally.
 
 Setting a physical button to Off leaves its native modifier-click behavior completely untouched. Enabled combinations suppress page-delivered defaults such as opening or downloading links and showing context menus. OS shortcuts, browser-chrome shortcuts, and protected pages cannot be intercepted; Firefox also reserves Shift + right click for its native context menu.
 
 ## First run
 
-Fresh installs and V4 updates follow this sequence:
+Fresh installs and updates from pre-V4 releases follow this sequence:
 
 1. Practice the real modifier-wheel gesture.
 2. Enter the separate mouse-action onboarding to change and immediately preview left/middle/right click.
@@ -54,7 +54,7 @@ The popup keeps a small first-use hint visible until the first successful real g
 | Sensitivity | 1.0× |
 | Cooldown | 160ms |
 
-Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, overshoot protection, and a toolbar badge marking browser-restricted pages are always enabled automatically.
+Page-position restore, editable-field gestures, horizontal wheel input, protected-page skipping, overshoot protection, and a toolbar badge marking recognized browser-restricted URLs are always enabled automatically.
 
 ## Browser support
 

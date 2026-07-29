@@ -8,22 +8,33 @@
   <g font-family="Inter,Segoe UI,sans-serif">
     <rect x="90" y="66" width="34" height="34" rx="11" fill="url(#mark)"/><text x="107" y="89" fill="#fff" text-anchor="middle" font-size="19" font-weight="800">↕</text>
     <text x="136" y="88" fill="#98a5b6" font-size="13" font-weight="700">SCROLL WHEEL TAB SWITCHER</text>
-    <text x="90" y="188" fill="#68d69c" font-size="14" font-weight="800" letter-spacing="2">THAT’S IT</text>
-    <text x="90" y="252" fill="#f6f8fb" font-size="55" font-weight="760">One natural gesture.</text>
-    <text x="90" y="302" fill="#98a5b6" font-size="21">Wheel down moved from Inbox to Research.</text>
+    <text x="90" y="188" fill="#68d69c" font-size="14" font-weight="800" letter-spacing="2">MOUSE-ACTION SETUP</text>
+    <text x="90" y="252" fill="#f6f8fb" font-size="55" font-weight="760">One modifier. Three actions.</text>
+    <text x="90" y="302" fill="#98a5b6" font-size="21">Choose each button, then test it in a safe simulator.</text>
     <g filter="url(#shadow)">
       <rect x="90" y="355" width="1100" height="338" rx="20" fill="#0d131c" stroke="#68d69c" stroke-opacity=".55"/>
-      <rect x="90" y="355" width="1100" height="61" rx="20" fill="#101721"/><path d="M90 396v20h1100v-20" fill="#101721"/>
-      <g font-size="13">
-        <text x="126" y="395" fill="#748194">Inbox</text>
-        <rect x="365" y="367" width="252" height="49" rx="9" fill="#1b2532"/><text x="390" y="397" fill="#f6f8fb">Research</text>
-        <text x="653" y="395" fill="#748194">Docs</text><text x="913" y="395" fill="#748194">Music</text>
+      <text x="130" y="404" fill="#98a5b6" font-size="13" font-weight="700">USING ALT / OPTION + MOUSE</text>
+      <g>
+        <rect x="130" y="438" width="300" height="142" rx="16" fill="#151e29" stroke="#75aaff" stroke-opacity=".28"/>
+        <circle cx="170" cy="479" r="20" fill="#75aaff" fill-opacity=".15"/><text x="170" y="485" fill="#75aaff" text-anchor="middle" font-size="16" font-weight="800">L</text>
+        <text x="202" y="475" fill="#f6f8fb" font-size="16" font-weight="750">Left click</text>
+        <text x="202" y="502" fill="#68d69c" font-size="14" font-weight="700">Browser new tab</text>
+        <text x="158" y="548" fill="#98a5b6" font-size="12">Opens beside the current tab.</text>
+
+        <rect x="490" y="438" width="300" height="142" rx="16" fill="#151e29" stroke="#75aaff" stroke-opacity=".28"/>
+        <circle cx="530" cy="479" r="20" fill="#75aaff" fill-opacity=".15"/><text x="530" y="484" fill="#75aaff" text-anchor="middle" font-size="14" font-weight="800">●</text>
+        <text x="562" y="475" fill="#f6f8fb" font-size="16" font-weight="750">Middle click</text>
+        <text x="562" y="502" fill="#68d69c" font-size="14" font-weight="700">Most recent tab</text>
+        <text x="518" y="548" fill="#98a5b6" font-size="12">Returns to where you were.</text>
+
+        <rect x="850" y="438" width="300" height="142" rx="16" fill="#151e29" stroke="#75aaff" stroke-opacity=".28"/>
+        <circle cx="890" cy="479" r="20" fill="#75aaff" fill-opacity=".15"/><text x="890" y="485" fill="#75aaff" text-anchor="middle" font-size="16" font-weight="800">R</text>
+        <text x="922" y="475" fill="#f6f8fb" font-size="16" font-weight="750">Right click</text>
+        <text x="922" y="502" fill="#68d69c" font-size="14" font-weight="700">Close current tab</text>
+        <text x="878" y="548" fill="#98a5b6" font-size="12">Returns to the recent tab.</text>
       </g>
-      <line x1="90" y1="416" x2="1190" y2="416" stroke="#fff" stroke-opacity=".09"/>
-      <circle cx="635" cy="509" r="48" fill="#68d69c" opacity=".12"/>
-      <path d="M612 508l15 15 32-36" fill="none" stroke="#68d69c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="635" y="596" fill="#f6f8fb" text-anchor="middle" font-size="22" font-weight="750">Perfect — that is the whole gesture.</text>
-      <text x="635" y="630" fill="#98a5b6" text-anchor="middle" font-size="15">Alt / Option + wheel works anywhere on a supported page.</text>
+      <text x="635" y="632" fill="#f6f8fb" text-anchor="middle" font-size="19" font-weight="750">Preview every action without changing real tabs.</text>
+      <text x="635" y="660" fill="#98a5b6" text-anchor="middle" font-size="14">Every button can be remapped—or set to Off.</text>
     </g>
     <rect x="970" y="724" width="220" height="48" rx="12" fill="#5f94e8"/><text x="1080" y="755" fill="#07111f" text-anchor="middle" font-size="15" font-weight="800">Continue</text>
   </g>
