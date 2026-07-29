@@ -13,7 +13,7 @@ test("the product promise is focused and local-only", () => {
 
   assert.match(readme, /one job/i);
   assert.match(readme, /Alt\s*\/\s*Option \+ (?:mouse )?wheel/i);
-  assert.match(store, /No data leaves your browser/);
+  assert.match(store, /No data is sent to TabWheel/);
   assert.match(privacy, /does not collect, transmit, or share/i);
   assert.doesNotMatch(`${readme}\n${store}`, /feature-rich promise/i);
 });
@@ -26,7 +26,9 @@ test("runtime keeps gesture, serialized cycling, and scroll restore mechanisms e
   assert.match(app, /cycleTabWheel\(direction,\s*"gesture"\)/);
   assert.match(app, /applyScrollRestoreAttempt/);
   assert.match(domain, /runSerializedWindowTask/);
-  assert.match(domain, /resolveMruCycleSessionTabs/);
+  assert.match(domain, /const candidateTabs = eligibleTabs;/);
+  assert.match(domain, /getRecentCandidateTabs/);
+  assert.doesNotMatch(domain, /cycleScope|MruCycleSession/);
   assert.match(domain, /scrollRestoreTokensByTabId/);
   assert.match(domain, /restorePagePosition/);
 });

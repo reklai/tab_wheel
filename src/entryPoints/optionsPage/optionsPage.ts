@@ -18,8 +18,7 @@ import {
   resetTabWheelState,
 } from "../../lib/adapters/runtime/tabWheelApi";
 import {
-  populateCycleScopeSelect,
-  populateMiddleClickActionSelect,
+  populateClickActionSelect,
   populateModifierSelect,
   populatePresetSelect,
 } from "../../lib/ui/settings/settingsControls";
@@ -29,8 +28,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const settingsTitle = byId<HTMLElement>("settingsTitle");
   const gestureModifier = byId<HTMLSelectElement>("gestureModifier");
   const gestureWithShift = byId<HTMLInputElement>("gestureWithShift");
+  const leftClickAction = byId<HTMLSelectElement>("leftClickAction");
   const middleClickAction = byId<HTMLSelectElement>("middleClickAction");
-  const cycleScope = byId<HTMLSelectElement>("cycleScope");
+  const rightClickAction = byId<HTMLSelectElement>("rightClickAction");
   const wheelDirection = byId<HTMLSelectElement>("wheelDirection");
   const wheelPreset = byId<HTMLSelectElement>("wheelPreset");
   const wheelSensitivity = byId<HTMLInputElement>("wheelSensitivity");
@@ -58,8 +58,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       ...settings,
       gestureModifier: gestureModifier.value as TabWheelModifierKey,
       gestureWithShift: gestureWithShift.checked,
-      middleClickAction: middleClickAction.value as TabWheelMiddleClickAction,
-      cycleScope: cycleScope.value as TabWheelCycleScope,
+      leftClickAction: leftClickAction.value as TabWheelClickAction,
+      middleClickAction: middleClickAction.value as TabWheelClickAction,
+      rightClickAction: rightClickAction.value as TabWheelClickAction,
       invertScroll: wheelDirection.value === "previous",
       wheelPreset: wheelPreset.value as TabWheelPreset,
       wheelSensitivity: Number(wheelSensitivity.value),
@@ -77,8 +78,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     settings = next;
     gestureModifier.value = next.gestureModifier;
     gestureWithShift.checked = next.gestureWithShift;
+    leftClickAction.value = next.leftClickAction;
     middleClickAction.value = next.middleClickAction;
-    cycleScope.value = next.cycleScope;
+    rightClickAction.value = next.rightClickAction;
     wheelDirection.value = next.invertScroll ? "previous" : "next";
     wheelPreset.value = next.wheelPreset;
     wheelSensitivity.value = String(next.wheelSensitivity);
@@ -107,8 +109,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   populateModifierSelect(gestureModifier, settings.gestureModifier);
-  populateMiddleClickActionSelect(middleClickAction, settings.middleClickAction);
-  populateCycleScopeSelect(cycleScope, settings.cycleScope);
+  populateClickActionSelect(leftClickAction, settings.leftClickAction);
+  populateClickActionSelect(middleClickAction, settings.middleClickAction);
+  populateClickActionSelect(rightClickAction, settings.rightClickAction);
   populatePresetSelect(wheelPreset, settings.wheelPreset);
   wheelSensitivity.min = String(MIN_WHEEL_SENSITIVITY);
   wheelSensitivity.max = String(MAX_WHEEL_SENSITIVITY);
@@ -125,8 +128,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   for (const control of [
     gestureModifier,
     gestureWithShift,
+    leftClickAction,
     middleClickAction,
-    cycleScope,
+    rightClickAction,
     wheelDirection,
     wheelAcceleration,
     skipPinnedTabs,

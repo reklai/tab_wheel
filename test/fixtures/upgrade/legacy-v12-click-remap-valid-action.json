@@ -24,14 +24,13 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 17,
+    "storageSchemaVersion": 19,
     "tabWheelSettings": {
+      "middleClickAction": "openSettings",
       "invertScroll": false,
       "gestureModifier": "alt",
       "gestureWithShift": false,
       "allowGesturesInEditableFields": true,
-      "middleClickAction": "openSettings",
-      "cycleScope": "general",
       "skipPinnedTabs": false,
       "skipRestrictedPages": true,
       "wrapAround": true,
@@ -44,7 +43,9 @@
       "restorePagePosition": true,
       "skipHiddenTabs": true,
       "showRestrictedBadge": true,
-      "cycleWithinTabGroup": false
+      "cycleWithinTabGroup": false,
+      "leftClickAction": "nativeNewTab",
+      "rightClickAction": "closeToRecent"
     }
   },
   "expectedChanged": true

@@ -9,18 +9,22 @@ const readText = (path) => readFileSync(resolve(ROOT, path), "utf8");
 test("focused v14 migration preserves core state and removes retired state", () => {
   const contract = readText("src/lib/common/contracts/tabWheel.ts");
   const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+  const focusedMigration = migrations.slice(
+    migrations.indexOf("function focusTabWheelSettings("),
+    migrations.indexOf("function backfillFeelAndReliabilitySettings("),
+  );
 
   assert.match(contract, /settings:\s*"tabWheelSettings"/);
   assert.match(contract, /scrollMemory:\s*"tabWheelScrollMemory"/);
-  assert.match(contract, /mruState:\s*"tabWheelMruState"/);
+  assert.match(contract, /recentTabs:\s*"tabWheelRecentTabs"/);
   assert.match(contract, /onboarding:\s*"tabWheelOnboarding"/);
-  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 17/);
+  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 19/);
   assert.match(migrations, /focusTabWheelSettings\(migratedStorage\)/);
   assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_SEARCH_HISTORY_KEY\)/);
   assert.match(migrations, /"leftClickAction"/);
   assert.match(migrations, /"pageScrollSpeedMultiplier"/);
   assert.match(migrations, /nextSettings\.middleClickAction !== "openSettings"/);
-  assert.doesNotMatch(migrations, /\[\s*"leftClickAction",\s*"middleClickAction"/);
+  assert.doesNotMatch(focusedMigration, /\[\s*"leftClickAction",\s*"middleClickAction"/);
   assert.match(migrations, /"restorePagePosition"/);
   assert.match(migrations, /"wrapAround"/);
   assert.match(migrations, /"horizontalWheel"/);
@@ -67,6 +71,26 @@ test("focused v17 migration backfills the cycle-within-group setting it introduc
     migrations.slice(migrations.indexOf("function backfillCycleWithinTabGroupSetting(")),
     /wrapAround/,
   );
+});
+
+test("v18 restores click actions and removes MRU wheel cycling", () => {
+  const contract = readText("src/lib/common/contracts/tabWheel.ts");
+  const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+
+  assert.match(migrations, /if \(fromVersion < 18\)/);
+  assert.match(migrations, /restoreClickActionsAndRetireMruCycle\(migratedStorage\)/);
+  assert.match(migrations, /\["leftClickAction", "nativeNewTab"\]/);
+  assert.match(migrations, /\["middleClickAction", "recentTab"\]/);
+  assert.match(migrations, /\["rightClickAction", "closeToRecent"\]/);
+  assert.match(migrations, /deleteKey\(nextSettings, "cycleScope"\)/);
+  assert.match(migrations, /TABWHEEL_RECENT_TABS_KEY/);
+  assert.doesNotMatch(contract, /cycleScope|TABWHEEL_CYCLE_SCOPES/);
+});
+
+test("v19 advances the schema without changing click mappings", () => {
+  const migrations = readText("src/lib/common/utils/storageMigrations.ts");
+
+  assert.match(migrations, /STORAGE_SCHEMA_VERSION = 19/);
 });
 
 test("migration does not downgrade storage created by a future release", () => {

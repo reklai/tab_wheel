@@ -25,11 +25,13 @@ export function notifyTabWheelContentReady(): Promise<TabWheelActionResult> {
 export function cycleTabWheel(
   direction: "prev" | "next",
   source: TabWheelCycleSource = "gesture",
+  windowId?: number,
 ): Promise<TabWheelActionResult> {
   return sendRuntimeMessage<TabWheelActionResult>({
     type: "TABWHEEL_CYCLE",
     direction,
     source,
+    windowId,
   });
 }
 
@@ -40,16 +42,58 @@ export function refreshCurrentTabWheel(windowId?: number): Promise<TabWheelRefre
   });
 }
 
-export function setTabWheelCycleScope(
-  cycleScope: TabWheelCycleScope,
+export function openNativeNewTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_OPEN_NATIVE_NEW_TAB",
+    windowId,
+  });
+}
+
+export function activateMostRecentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_ACTIVATE_MOST_RECENT_TAB",
+    windowId,
+  });
+}
+
+export function closeCurrentTabWheelTabAndActivateRecent(
   windowId?: number,
-  options: TabWheelStatusOptions = {},
 ): Promise<TabWheelActionResult> {
   return sendRuntimeMessage<TabWheelActionResult>({
-    type: "TABWHEEL_SET_CYCLE_SCOPE",
-    cycleScope,
+    type: "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT",
     windowId,
-    suppressPageStatus: options.suppressPageStatus,
+  });
+}
+
+export function duplicateCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_DUPLICATE_TAB",
+    windowId,
+  });
+}
+
+export function moveCurrentTabWheelTab(
+  direction: TabWheelMoveDirection,
+  gestureId: string,
+): Promise<TabWheelMoveResult> {
+  return sendRuntimeMessage<TabWheelMoveResult>({
+    type: "TABWHEEL_MOVE_CURRENT_TAB",
+    direction,
+    gestureId,
+  });
+}
+
+export function beginTabWheelDragGesture(gestureId: string): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_BEGIN_TAB_DRAG",
+    gestureId,
+  });
+}
+
+export function endTabWheelDragGesture(gestureId: string): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_END_TAB_DRAG",
+    gestureId,
   });
 }
 

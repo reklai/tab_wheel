@@ -13,7 +13,7 @@ test("contributor docs point to release, listing, and privacy sources", () => {
   }
 });
 
-test("public docs describe the same focused 3.0 product and defaults", () => {
+test("public docs describe the same mouse-first product and defaults", () => {
   const combined = [
     readText("README.md"),
     readText("STORE.md"),
@@ -24,23 +24,34 @@ test("public docs describe the same focused 3.0 product and defaults", () => {
   assert.match(combined, /Alt\s*\/\s*Option \+ (?:mouse )?wheel/i);
   assert.match(combined, /page.position/i);
   assert.match(combined, /left.to.right/i);
-  assert.match(combined, /recently used/i);
+  assert.match(combined, /Most recent tab/i);
+  assert.match(combined, /Modifier \+ left click/i);
   assert.match(combined, /modifier \+ middle click/i);
+  assert.match(combined, /modifier \+ right click/i);
   assert.match(combined, /Open settings/i);
   assert.match(combined, /Off/i);
+  assert.match(combined, /Browser new tab/i);
+  assert.match(combined, /Close current tab/i);
+  assert.match(combined, /Drag current tab/i);
+  assert.match(combined, /drag horizontally/i);
+  assert.match(combined, /4\.0\.0/);
   assert.match(combined, /3\.0\.0/);
   assert.match(readText("STORE.md"), /CURRENT DEFAULTS/);
-  assert.match(readText("STORE.md"), /No data leaves your browser/);
+  assert.match(readText("STORE.md"), /No data is sent to TabWheel/);
+  assert.doesNotMatch(
+    combined,
+    /Close current\s*→\s*recent|close-to-previous|close to the previous tab/i,
+  );
 });
 
-test("public docs no longer market the retired adjacent features", () => {
+test("public docs do not revive retired search or page-scroll modification", () => {
   const combined = [
     readText("README.md"),
     readText("STORE.md"),
     readText("PRIVACY.md"),
   ].join("\n");
 
-  assert.doesNotMatch(combined, /TabWheel Search now|CLICK ACTIONS:|Google fallback|history suggestions|general click remapping is available/i);
-  assert.doesNotMatch(combined, /Alt \+ Left Click|Alt \+ Middle Click|Alt \+ Right Click/i);
+  assert.doesNotMatch(combined, /Google fallback|history suggestions|Search API|search permission/i);
+  assert.doesNotMatch(combined, /recently.used (?:mode|cycling)|MRU (?:mode|cycling)/i);
   assert.doesNotMatch(combined, /page-scroll speed|viewport step cap|"Wheel List"|tag\/untag/i);
 });

@@ -21,33 +21,37 @@
     <section class="settings-card">
       <div class="section-heading">
         <span class="step">01</span>
-        <div><h2>Gesture</h2><p>Choose the keys and middle-click behavior.</p></div>
+        <div><h2>Gesture</h2><p>Choose the shared chord and each mouse-button action.</p></div>
       </div>
 
       <label class="setting-row" for="gestureModifier">
-        <span><strong>Modifier</strong><small>Hold this key while scrolling or middle-clicking.</small></span>
+        <span><strong>Modifier</strong><small>Hold this key while scrolling or clicking.</small></span>
         <select id="gestureModifier"></select>
       </label>
       <label class="setting-row" for="gestureWithShift">
         <span><strong>Require Shift</strong><small>Add a second key to avoid conflicts.</small></span>
         <input id="gestureWithShift" type="checkbox" />
       </label>
+      <label class="setting-row" for="leftClickAction">
+        <span><strong>Modifier + left click</strong><small>Choose an action, or Off to preserve native behavior.</small></span>
+        <select id="leftClickAction"></select>
+      </label>
       <label class="setting-row" for="middleClickAction">
-        <span><strong>Modifier + middle click</strong><small>Open settings, or leave middle click completely native.</small></span>
+        <span><strong>Modifier + middle click</strong><small>Choose an action, or Off to preserve native behavior.</small></span>
         <select id="middleClickAction"></select>
+      </label>
+      <label class="setting-row" for="rightClickAction">
+        <span><strong>Modifier + right click</strong><small>Choose an action, or Off to preserve the native context menu.</small></span>
+        <select id="rightClickAction"></select>
       </label>
     </section>
 
     <section class="settings-card">
       <div class="section-heading">
         <span class="step">02</span>
-        <div><h2>Tab Cycling</h2><p>Choose the route, wheel feel, and participating tabs.</p></div>
+        <div><h2>Tab Cycling</h2><p>Tune the wheel feel and participating tabs.</p></div>
       </div>
 
-      <label class="setting-row" for="cycleScope">
-        <span><strong>Cycle order</strong><small>Follow the tab strip or your recently used tabs.</small></span>
-        <select id="cycleScope"></select>
-      </label>
       <label class="setting-row" for="wheelDirection">
         <span><strong>Wheel direction</strong><small>Choose what scrolling down does.</small></span>
         <select id="wheelDirection">
@@ -94,6 +98,9 @@
       <ul>
         <li>Use the gesture on normal web pages, including text fields and editors.</li>
         <li>Browser settings, extension stores, PDF viewers, devtools, and internal pages may block it.</li>
+        <li>OS or browser-chrome shortcuts that never reach the page cannot be overridden.</li>
+        <li>Firefox always keeps Shift + right click available for its native context menu.</li>
+        <li>Browser New Tab is protected by the browser, so page gestures resume after you navigate.</li>
         <li>On a blocked page, open the popup and use Previous or Next.</li>
       </ul>
     </aside>

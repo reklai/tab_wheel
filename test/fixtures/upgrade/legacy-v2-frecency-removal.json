@@ -31,24 +31,7 @@
     ]
   },
   "expected": {
-    "storageSchemaVersion": 17,
-    "tabWheelSettings": {
-      "allowGesturesInEditableFields": true,
-      "middleClickAction": "openSettings",
-      "cycleScope": "general",
-      "skipRestrictedPages": true,
-      "wheelPreset": "balanced",
-      "horizontalWheel": true,
-      "overshootGuard": true,
-      "wheelAcceleration": false,
-      "wheelCooldownMs": 160,
-      "wheelSensitivity": 1,
-      "restorePagePosition": true,
-      "skipHiddenTabs": true,
-      "wrapAround": true,
-      "showRestrictedBadge": true,
-      "cycleWithinTabGroup": false
-    },
+    "storageSchemaVersion": 19,
     "tabManagerList": [
       {
         "tabId": 7,
@@ -58,7 +41,25 @@
         "scrollX": 0,
         "scrollY": 200
       }
-    ]
+    ],
+    "tabWheelSettings": {
+      "allowGesturesInEditableFields": true,
+      "skipRestrictedPages": true,
+      "wheelPreset": "balanced",
+      "horizontalWheel": true,
+      "overshootGuard": true,
+      "wheelAcceleration": false,
+      "wheelCooldownMs": 160,
+      "wheelSensitivity": 1,
+      "middleClickAction": "openSettings",
+      "restorePagePosition": true,
+      "wrapAround": true,
+      "skipHiddenTabs": true,
+      "showRestrictedBadge": true,
+      "cycleWithinTabGroup": false,
+      "leftClickAction": "nativeNewTab",
+      "rightClickAction": "closeToRecent"
+    }
   },
   "expectedChanged": true
 }

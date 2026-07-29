@@ -25,12 +25,19 @@ interface TabWheelScrollMemoryEntry {
 }
 
 type TabWheelModifierKey = "alt" | "ctrl" | "meta";
-type TabWheelCycleScope = "general" | "mru";
 type TabWheelPreset = "precise" | "balanced" | "fast" | "custom";
 type TabWheelCycleSource = "gesture" | "popup";
-type TabWheelMiddleClickAction = "openSettings" | "none";
+type TabWheelMoveDirection = "left" | "right";
+type TabWheelClickAction =
+  | "nativeNewTab"
+  | "recentTab"
+  | "closeToRecent"
+  | "duplicateTab"
+  | "dragCurrentTab"
+  | "openSettings"
+  | "none";
 type TabWheelContentScriptStatus = "ready" | "unavailable";
-type TabWheelMruState = Record<string, number[]>;
+type TabWheelRecentTabState = Record<string, number[]>;
 
 interface TabWheelContentScriptActivationResult {
   attempted: number;
@@ -44,8 +51,9 @@ interface TabWheelSettings {
   gestureModifier: TabWheelModifierKey;
   gestureWithShift: boolean;
   allowGesturesInEditableFields: boolean;
-  middleClickAction: TabWheelMiddleClickAction;
-  cycleScope: TabWheelCycleScope;
+  leftClickAction: TabWheelClickAction;
+  middleClickAction: TabWheelClickAction;
+  rightClickAction: TabWheelClickAction;
   restorePagePosition: boolean;
   skipPinnedTabs: boolean;
   skipRestrictedPages: boolean;
@@ -65,7 +73,7 @@ interface TabWheelOnboardingState {
   version: number;
   demoCompleted: boolean;
   firstGestureCycleCompleted: boolean;
-  focusedReleaseSeen: boolean;
+  clickActionsReleaseSeen: boolean;
 }
 
 interface TabWheelActionResult {
@@ -73,7 +81,11 @@ interface TabWheelActionResult {
   reason?: string;
   count?: number;
   tabId?: number;
-  cycleScope?: TabWheelCycleScope;
+}
+
+interface TabWheelMoveResult extends TabWheelActionResult {
+  moved: boolean;
+  index?: number;
 }
 
 interface TabWheelRefreshResult extends TabWheelActionResult {
@@ -82,15 +94,10 @@ interface TabWheelRefreshResult extends TabWheelActionResult {
   injected?: boolean;
 }
 
-interface TabWheelStatusOptions {
-  suppressPageStatus?: boolean;
-}
-
 interface TabWheelOverview {
   activeIndex: number;
   activeTabId?: number;
   tabCount: number;
-  cycleScope: TabWheelCycleScope;
   contentScriptStatus: TabWheelContentScriptStatus;
   firstGestureCycleCompleted: boolean;
 }

@@ -13,15 +13,15 @@
       <span>Scroll Wheel Tab Switcher</span>
     </header>
 
-    <section id="installFlow" class="flow-card">
-      <div class="progress" aria-label="Setup progress">
+    <section id="wheelFlow" class="flow-card">
+      <div class="progress wheel-progress" id="wheelProgress" aria-label="Wheel setup progress">
         <span class="active" data-progress="1"></span>
         <span data-progress="2"></span>
         <span data-progress="3"></span>
       </div>
 
-      <section class="step-panel" data-step="1">
-        <p class="eyebrow">Step 1 of 3</p>
+      <section class="step-panel" data-wheel-step="1">
+        <p class="eyebrow">Wheel setup · Step 1 of 3</p>
         <h1>Switch tabs without chasing the tab bar.</h1>
         <p class="lead">Hold <strong id="demoCombo">Alt / Option</strong> and scroll <span class="highlight">anywhere on the page</span> — no need to point at the tab bar.</p>
 
@@ -46,39 +46,62 @@
         </div>
       </section>
 
-      <section class="step-panel" data-step="2" hidden>
-        <p class="eyebrow">Step 2 of 3</p>
-        <h1>Make the gesture yours.</h1>
-        <p class="lead">Choose the gesture that fits your setup. Everything else already has safe defaults.</p>
+      <section class="step-panel" data-wheel-step="2" hidden>
+        <p class="eyebrow">Shared gesture setup · Step 2 of 3</p>
+        <h1>One modifier for the wheel and mouse clicks.</h1>
+        <p class="lead">Choose the key combination that activates both tab scrolling and the left, middle, and right click actions you just configured.</p>
 
         <div class="choice-list">
           <label for="gestureModifier">
-            <span><strong>Modifier</strong><small>Hold this while scrolling or middle-clicking.</small></span>
+            <span><strong>Shared modifier</strong><small>Hold this while scrolling or using a configured mouse click.</small></span>
             <select id="gestureModifier"></select>
           </label>
           <label for="gestureWithShift">
-            <span><strong>Require Shift</strong><small>Add a second key to avoid conflicts.</small></span>
+            <span><strong>Require Shift</strong><small>Add Shift to both the wheel and mouse-click combinations.</small></span>
             <input id="gestureWithShift" type="checkbox" />
           </label>
-          <label for="middleClickAction">
-            <span><strong>Modifier + middle click</strong><small>Open settings, or leave middle click completely native.</small></span>
+        </div>
+
+        <div class="settings-wheel-combo" aria-label="Configured wheel combination">
+          <span class="setup-chip" aria-hidden="true">↕</span>
+          <span><strong>Scroll wheel</strong><small id="settingsWheelCombo">Alt / Option + wheel</small></span>
+        </div>
+
+        <div class="settings-section-heading">
+          <strong>Mouse click actions</strong>
+          <small>Choose exactly what the shared modifier does with each physical button.</small>
+        </div>
+        <div class="action-grid">
+          <label class="action-card" for="leftClickAction">
+            <span class="button-chip">L</span>
+            <span><strong>Left click</strong><small id="leftActionHint">Open the browser's New Tab page.</small></span>
+            <select id="leftClickAction"></select>
+          </label>
+          <label class="action-card" for="middleClickAction">
+            <span class="button-chip">●</span>
+            <span><strong>Middle click</strong><small id="middleActionHint">Return to the most recent tab.</small></span>
             <select id="middleClickAction"></select>
+          </label>
+          <label class="action-card" for="rightClickAction">
+            <span class="button-chip">R</span>
+            <span><strong>Right click</strong><small id="rightActionHint">Close this tab and return.</small></span>
+            <select id="rightClickAction"></select>
           </label>
         </div>
 
         <div class="step-actions">
-          <button class="text-button" data-back="1" type="button">Back</button>
-          <button class="primary-button" id="saveChoicesBtn" type="button">Save and continue</button>
+          <button class="text-button" id="wheelBackBtn" type="button">Back</button>
+          <button class="primary-button" id="saveWheelChoicesBtn" type="button">Save shared setup</button>
         </div>
       </section>
 
-      <section class="step-panel" data-step="3" hidden>
-        <p class="eyebrow">Step 3 of 3</p>
-        <h1>You’re ready to roll.</h1>
-        <p class="lead">Use <strong id="readyCombo">Alt / Option + wheel</strong> <span class="highlight">anywhere on any normal web page</span>. Your pointer never needs to visit the tab strip.</p>
+      <section class="step-panel" data-wheel-step="3" hidden>
+        <p class="eyebrow">Wheel setup · Step 3 of 3</p>
+        <h1>Your wheel gesture is ready.</h1>
+        <p class="lead">Use <strong id="wheelReadyCombo">Alt / Option + wheel</strong> <span class="highlight">anywhere on any normal web page</span>. Your pointer never needs to visit the tab strip.</p>
 
         <div class="ready-grid">
-          <div><span>↔</span><strong>Predictable order</strong><small>Follows your visible tab strip by default.</small></div>
+          <div><span>↔</span><strong>Predictable order</strong><small>Follows your visible tab strip.</small></div>
           <div><span>⌖</span><strong>Keeps your place</strong><small>Restores the page position you left.</small></div>
           <div><span>◇</span><strong>Private by design</strong><small>Settings and positions stay in your browser.</small></div>
         </div>
@@ -97,35 +120,73 @@
       </section>
     </section>
 
-    <section id="updateFlow" class="flow-card update-card" hidden>
-      <p class="eyebrow">TabWheel 3.0</p>
-      <h1>Focused on the gesture you installed it for.</h1>
-      <p class="lead">TabWheel is now purpose-built for fast, reliable scroll-wheel tab switching.</p>
-      <div class="update-columns">
-        <div>
-          <strong>Still here</strong>
-          <ul>
-            <li>Alt / Option + wheel tab switching</li>
-            <li>Left-to-right and recently used modes</li>
-            <li>Wheel feel and filtering preferences</li>
-            <li>Reliable page-position restoration</li>
-            <li>Modifier + middle click opens settings</li>
-          </ul>
+    <section id="mouseFlow" class="flow-card" hidden>
+      <section class="step-panel" data-mouse-step="1">
+        <p class="eyebrow" id="clickStepEyebrow">Mouse-action onboarding</p>
+        <h1 id="clickStepTitle">One modifier. Three mouse actions.</h1>
+        <p class="lead" id="clickStepLead">Choose what each mouse button does, then click or drag with the exact combination in the practice area.</p>
+
+        <div class="shared-combo" aria-label="Shared mouse-action modifier">
+          <span>Using your current modifier</span>
+          <strong id="clickCombo">Alt / Option + click</strong>
+          <small>You can change it in wheel settings next. Off leaves a button combination browser-native.</small>
         </div>
-        <div>
-          <strong>Removed</strong>
-          <ul>
-            <li>Search and search-history access</li>
-            <li>Left/right-click remapping and alternate click actions</li>
-            <li>Normal page-scroll modification</li>
-          </ul>
+
+        <div class="mouse-intro-actions" aria-label="Configure and preview mouse actions">
+          <div>
+            <span class="intro-action-heading"><span>L</span><strong>Left click</strong></span>
+            <select id="introLeftClickAction" aria-label="Left-click action"></select>
+            <button type="button" data-preview-button="0">Preview</button>
+          </div>
+          <div>
+            <span class="intro-action-heading"><span>●</span><strong>Middle click</strong></span>
+            <select id="introMiddleClickAction" aria-label="Middle-click action"></select>
+            <button type="button" data-preview-button="1">Preview</button>
+          </div>
+          <div>
+            <span class="intro-action-heading"><span>R</span><strong>Right click</strong></span>
+            <select id="introRightClickAction" aria-label="Right-click action"></select>
+            <button type="button" data-preview-button="2">Preview</button>
+          </div>
         </div>
-      </div>
-      <p class="constraint">Your core wheel preferences and saved page positions were preserved. The extension now requests fewer permissions.</p>
-      <div class="step-actions">
-        <button class="text-button" id="updateSettingsBtn" type="button">Review settings</button>
-        <button class="primary-button" id="dismissUpdateBtn" type="button">Got it</button>
-      </div>
+
+        <div class="click-system">
+          <div class="click-practice" id="clickGestureDemo" tabindex="0" role="application"
+            aria-label="Practice your configured modifier and mouse-button actions">
+            <div class="practice-heading">
+              <span class="eyebrow">Safe practice area</span>
+              <strong id="clickPracticePrompt">Hold Alt / Option, then click or drag with a mouse button here</strong>
+              <small>No real tabs will be changed.</small>
+            </div>
+            <div class="mouse-map" aria-hidden="true">
+              <span class="mouse-button left" data-mouse-part="0">L</span>
+              <span class="mouse-button middle" data-mouse-part="1">●</span>
+              <span class="mouse-button right" data-mouse-part="2">R</span>
+            </div>
+          </div>
+
+          <div class="browser-simulator" id="browserSimulator" data-state="idle" aria-live="polite">
+            <div class="sim-tabs">
+              <span class="sim-tab recent" id="simRecentTab">Research</span>
+              <span class="sim-tab current active" id="simCurrentTab">Current tab</span>
+              <span class="sim-tab result" id="simResultTab" hidden>New tab</span>
+            </div>
+            <div class="sim-address" id="simAddress">Current page</div>
+            <div class="sim-content">
+              <span class="sim-icon" id="simIcon">↕</span>
+              <strong id="simTitle">Try a configured click</strong>
+              <small id="simDescription">The preview shows what TabWheel will do.</small>
+            </div>
+          </div>
+        </div>
+
+        <p class="demo-result" id="clickDemoStatus" role="status" aria-live="polite">Try a button above or use the configured modifier in the safe practice area.</p>
+
+        <div class="step-actions">
+          <button class="text-button" id="clickBackBtn" type="button">Back</button>
+          <button class="primary-button" id="saveChoicesBtn" type="button">Continue to shared settings</button>
+        </div>
+      </section>
     </section>
   </main>
   <script src="onboarding.js"></script>

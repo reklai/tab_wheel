@@ -2,20 +2,24 @@
 // normalizers, storage keys, and focused-product state together.
 
 import browser from "webextension-polyfill";
+import {
+  DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
+  TABWHEEL_CLICK_ACTIONS,
+} from "../../core/tabWheel/mouseGestureCore";
+
+export { TABWHEEL_CLICK_ACTIONS };
 
 export const MAX_SCROLL_MEMORY_ENTRIES = 300;
-export const MAX_MRU_TABS = 100;
-export const TABWHEEL_ONBOARDING_VERSION = 1;
+export const MAX_RECENT_TABS = 100;
+export const TABWHEEL_ONBOARDING_VERSION = 2;
 export const TABWHEEL_STORAGE_KEYS = {
   settings: "tabWheelSettings",
   scrollMemory: "tabWheelScrollMemory",
-  mruState: "tabWheelMruState",
+  recentTabs: "tabWheelRecentTabs",
   onboarding: "tabWheelOnboarding",
 } as const;
 export const TABWHEEL_MODIFIER_KEYS: readonly TabWheelModifierKey[] = ["alt", "ctrl", "meta"];
-export const TABWHEEL_CYCLE_SCOPES: readonly TabWheelCycleScope[] = ["general", "mru"];
 export const TABWHEEL_PRESETS: readonly TabWheelPreset[] = ["precise", "balanced", "fast", "custom"];
-export const TABWHEEL_MIDDLE_CLICK_ACTIONS: readonly TabWheelMiddleClickAction[] = ["openSettings", "none"];
 export const MIN_WHEEL_SENSITIVITY = 0.5;
 export const MAX_WHEEL_SENSITIVITY = 2;
 export const MIN_WHEEL_COOLDOWN_MS = 60;
@@ -52,8 +56,7 @@ export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   gestureModifier: "alt",
   gestureWithShift: false,
   allowGesturesInEditableFields: true,
-  middleClickAction: "openSettings",
-  cycleScope: "general",
+  ...DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
   restorePagePosition: true,
   skipPinnedTabs: false,
   skipRestrictedPages: true,
@@ -73,7 +76,7 @@ export const DEFAULT_TABWHEEL_ONBOARDING_STATE: TabWheelOnboardingState = {
   version: TABWHEEL_ONBOARDING_VERSION,
   demoCompleted: false,
   firstGestureCycleCompleted: false,
-  focusedReleaseSeen: false,
+  clickActionsReleaseSeen: false,
 };
 
 function normalizeModifierKey(value: unknown): TabWheelModifierKey {
@@ -97,22 +100,16 @@ function normalizeNumberInRange(
   return Math.max(min, Math.min(max, numeric));
 }
 
-export function normalizeTabWheelCycleScope(value: unknown): TabWheelCycleScope {
-  return TABWHEEL_CYCLE_SCOPES.includes(value as TabWheelCycleScope)
-    ? value as TabWheelCycleScope
-    : DEFAULT_TABWHEEL_SETTINGS.cycleScope;
-}
-
 function normalizeWheelPreset(value: unknown): TabWheelPreset {
   return TABWHEEL_PRESETS.includes(value as TabWheelPreset)
     ? value as TabWheelPreset
     : DEFAULT_TABWHEEL_SETTINGS.wheelPreset;
 }
 
-function normalizeMiddleClickAction(value: unknown): TabWheelMiddleClickAction {
-  return TABWHEEL_MIDDLE_CLICK_ACTIONS.includes(value as TabWheelMiddleClickAction)
-    ? value as TabWheelMiddleClickAction
-    : DEFAULT_TABWHEEL_SETTINGS.middleClickAction;
+function normalizeClickAction(value: unknown, fallback: TabWheelClickAction): TabWheelClickAction {
+  return TABWHEEL_CLICK_ACTIONS.includes(value as TabWheelClickAction)
+    ? value as TabWheelClickAction
+    : fallback;
 }
 
 export function detectTabWheelPreset(settings: Pick<
@@ -151,8 +148,18 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
     gestureModifier: normalizeModifierKey(settings.gestureModifier),
     gestureWithShift: settings.gestureWithShift === true,
     allowGesturesInEditableFields: true,
-    middleClickAction: normalizeMiddleClickAction(settings.middleClickAction),
-    cycleScope: normalizeTabWheelCycleScope(settings.cycleScope),
+    leftClickAction: normalizeClickAction(
+      settings.leftClickAction,
+      DEFAULT_TABWHEEL_SETTINGS.leftClickAction,
+    ),
+    middleClickAction: normalizeClickAction(
+      settings.middleClickAction,
+      DEFAULT_TABWHEEL_SETTINGS.middleClickAction,
+    ),
+    rightClickAction: normalizeClickAction(
+      settings.rightClickAction,
+      DEFAULT_TABWHEEL_SETTINGS.rightClickAction,
+    ),
     restorePagePosition: true,
     skipPinnedTabs: normalizeEnabledFlag(settings.skipPinnedTabs, DEFAULT_TABWHEEL_SETTINGS.skipPinnedTabs),
     skipRestrictedPages: true,
@@ -200,7 +207,7 @@ export function normalizeTabWheelOnboardingState(value: unknown): TabWheelOnboar
       : TABWHEEL_ONBOARDING_VERSION,
     demoCompleted: state.demoCompleted === true,
     firstGestureCycleCompleted: state.firstGestureCycleCompleted === true,
-    focusedReleaseSeen: state.focusedReleaseSeen === true,
+    clickActionsReleaseSeen: state.clickActionsReleaseSeen === true,
   };
 }
 
@@ -225,12 +232,16 @@ export function formatTabWheelPresetLabel(preset: TabWheelPreset): string {
   return "Balanced";
 }
 
-export function formatTabWheelCycleScopeLabel(scope: TabWheelCycleScope): string {
-  return scope === "mru" ? "Most Recently Used" : "Left-To-Right";
-}
-
-export function formatTabWheelMiddleClickAction(action: TabWheelMiddleClickAction): string {
-  return action === "openSettings" ? "Open settings" : "Off";
+export function formatTabWheelClickAction(action: TabWheelClickAction): string {
+  switch (action) {
+    case "nativeNewTab": return "Browser new tab";
+    case "recentTab": return "Most recent tab";
+    case "closeToRecent": return "Close current tab";
+    case "duplicateTab": return "Duplicate tab";
+    case "dragCurrentTab": return "Drag current tab";
+    case "openSettings": return "Open settings";
+    case "none": return "Off";
+  }
 }
 
 export async function loadTabWheelSettings(): Promise<TabWheelSettings> {

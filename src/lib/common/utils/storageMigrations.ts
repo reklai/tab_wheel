@@ -2,11 +2,12 @@ export const STORAGE_SCHEMA_VERSION_KEY = "storageSchemaVersion";
 const TABWHEEL_SETTINGS_KEY = "tabWheelSettings";
 const TABWHEEL_SCROLL_MEMORY_KEY = "tabWheelScrollMemory";
 const TABWHEEL_MRU_STATE_KEY = "tabWheelMruState";
+const TABWHEEL_RECENT_TABS_KEY = "tabWheelRecentTabs";
 const TABWHEEL_SEARCH_HISTORY_KEY = "tabWheelSearchHistory";
 const TABWHEEL_LEGACY_TAGGED_TABS_KEY = "tabWheelTaggedTabs";
 const TABWHEEL_WHEEL_LIST_KEY = "tabWheelWheelList";
 const TABWHEEL_DEVICE_PROFILE_KEY = "tabWheelDeviceProfile";
-export const STORAGE_SCHEMA_VERSION = 17;
+export const STORAGE_SCHEMA_VERSION = 19;
 
 type StorageSnapshot = Record<string, unknown>;
 
@@ -141,6 +142,7 @@ const TABWHEEL_CLICK_ACTION_VALUES = [
   "recentTab",
   "closeToRecent",
   "duplicateTab",
+  "dragCurrentTab",
   "openSettings",
   "none",
 ];
@@ -277,6 +279,45 @@ function backfillCycleWithinTabGroupSetting(storage: StorageSnapshot): boolean {
   }
 
   if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
+  return changed;
+}
+
+// v18 restores remappable click actions while retiring MRU as a wheel-cycle
+// mode. The old activation list remains useful, but is renamed to reflect that
+// it now serves only the recent-tab click actions.
+function restoreClickActionsAndRetireMruCycle(storage: StorageSnapshot): boolean {
+  const settings = storage[TABWHEEL_SETTINGS_KEY];
+  const hasExistingSettings = typeof settings === "object" && settings !== null && !Array.isArray(settings);
+  const nextSettings = hasExistingSettings ? { ...(settings as Record<string, unknown>) } : {};
+  const validActions = new Set([
+    "nativeNewTab",
+    "recentTab",
+    "closeToRecent",
+    "duplicateTab",
+    "dragCurrentTab",
+    "openSettings",
+    "none",
+  ]);
+  let changed = !hasExistingSettings;
+
+  const defaults: ReadonlyArray<[string, string]> = [
+    ["leftClickAction", "nativeNewTab"],
+    ["middleClickAction", "recentTab"],
+    ["rightClickAction", "closeToRecent"],
+  ];
+  for (const [key, fallback] of defaults) {
+    if (validActions.has(String(nextSettings[key]))) continue;
+    nextSettings[key] = fallback;
+    changed = true;
+  }
+  if (deleteKey(nextSettings, "cycleScope")) changed = true;
+  if (changed) storage[TABWHEEL_SETTINGS_KEY] = nextSettings;
+
+  if (!hasKey(storage, TABWHEEL_RECENT_TABS_KEY) && hasKey(storage, TABWHEEL_MRU_STATE_KEY)) {
+    storage[TABWHEEL_RECENT_TABS_KEY] = storage[TABWHEEL_MRU_STATE_KEY];
+    changed = true;
+  }
+  changed = deleteKey(storage, TABWHEEL_MRU_STATE_KEY) || changed;
   return changed;
 }
 
@@ -418,7 +459,9 @@ export function migrateStorageSnapshot(input: StorageSnapshot): StorageMigration
   if (fromVersion < 17) {
     changed = backfillCycleWithinTabGroupSetting(migratedStorage) || changed;
   }
-
+  if (fromVersion < 18) {
+    changed = restoreClickActionsAndRetireMruCycle(migratedStorage) || changed;
+  }
   if (migratedStorage[STORAGE_SCHEMA_VERSION_KEY] !== STORAGE_SCHEMA_VERSION) {
     migratedStorage[STORAGE_SCHEMA_VERSION_KEY] = STORAGE_SCHEMA_VERSION;
     changed = true;

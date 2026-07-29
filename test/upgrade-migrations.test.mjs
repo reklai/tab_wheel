@@ -46,3 +46,50 @@ test("migrations delete the retired device profile and auto-tune preference", as
   assert.equal(result.changed, true);
   assert.equal(result.toVersion, migrations.STORAGE_SCHEMA_VERSION);
 });
+
+test("v19 preserves native-new-tab mappings", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { transform } = await import("esbuild");
+  const source = readFileSync(resolve(root, "src/lib/common/utils/storageMigrations.ts"), "utf8");
+  const transformed = await transform(source, { loader: "ts", format: "esm", target: "es2022" });
+  const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
+  const migrations = await import(`data:text/javascript;base64,${encoded}`);
+
+  const result = migrations.migrateStorageSnapshot({
+    storageSchemaVersion: 18,
+    tabWheelSettings: {
+      leftClickAction: "nativeNewTab",
+      middleClickAction: "nativeNewTab",
+      rightClickAction: "none",
+    },
+  });
+
+  assert.deepEqual(result.migratedStorage.tabWheelSettings, {
+    leftClickAction: "nativeNewTab",
+    middleClickAction: "nativeNewTab",
+    rightClickAction: "none",
+  });
+  assert.equal(result.migratedStorage.storageSchemaVersion, 19);
+  assert.equal(result.changed, true);
+});
+
+test("v18 click-action restoration preserves drag-current-tab mappings", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { transform } = await import("esbuild");
+  const source = readFileSync(resolve(root, "src/lib/common/utils/storageMigrations.ts"), "utf8");
+  const transformed = await transform(source, { loader: "ts", format: "esm", target: "es2022" });
+  const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
+  const migrations = await import(`data:text/javascript;base64,${encoded}`);
+
+  const result = migrations.migrateStorageSnapshot({
+    storageSchemaVersion: 17,
+    tabWheelSettings: {
+      leftClickAction: "dragCurrentTab",
+      middleClickAction: "recentTab",
+      rightClickAction: "closeToRecent",
+    },
+  });
+
+  assert.equal(result.migratedStorage.tabWheelSettings.leftClickAction, "dragCurrentTab");
+  assert.equal(result.migratedStorage.storageSchemaVersion, 19);
+});

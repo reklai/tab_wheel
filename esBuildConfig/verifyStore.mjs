@@ -66,8 +66,8 @@ for (const permission of requiredPermissionDocs) {
   }
 }
 
-if (!store.includes("No data leaves your browser")) {
-  errors.push("STORE.md must state local-only data handling.");
+if (!store.includes("No data is sent to TabWheel")) {
+  errors.push("STORE.md must state that no data is sent to TabWheel or developer-owned services.");
 }
 if (!store.includes("Works on Firefox, Chrome, and Zen Browser")) {
   errors.push("STORE.md must mention Firefox/Chrome/Zen support.");
@@ -75,12 +75,12 @@ if (!store.includes("Works on Firefox, Chrome, and Zen Browser")) {
 if (!privacy.includes("does not collect, transmit, or share")) {
   errors.push("PRIVACY.md summary must explicitly state no data collection/transmission.");
 }
-const retiredPermissionStatement = "does not request `search`, `history`, or `bookmarks` permissions";
+const retiredPermissionStatement = "does not request `history` or `bookmarks` permissions";
 if (!store.includes(retiredPermissionStatement)) {
-  errors.push("STORE.md must state that search/history/bookmarks permissions are not requested.");
+  errors.push("STORE.md must state that history/bookmarks permissions are not requested.");
 }
 if (!privacy.includes(retiredPermissionStatement)) {
-  errors.push("PRIVACY.md must state that search/history/bookmarks permissions are not requested.");
+  errors.push("PRIVACY.md must state that history/bookmarks permissions are not requested.");
 }
 
 if (errors.length > 0) {

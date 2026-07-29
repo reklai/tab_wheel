@@ -18,14 +18,29 @@ import {
   resolveWheelTriggerDistance,
 } from "../core/tabWheel/tabWheelCore";
 import {
-  createMiddleClickSession,
-  isMiddleClickEvent,
-  isMiddleClickSessionExpired,
-  isMiddleClickSessionStartEvent,
-  shouldFinishMiddleClickSession,
-  shouldRunMiddleClickSession,
-  TabWheelMiddleClickSession,
-} from "../core/tabWheel/middleClickCore";
+  advanceTabDragState,
+  clearTabDragBoundary,
+  coalesceTabDragDirections,
+  createTabDragState,
+  isTabDragButtonPressed,
+  markTabDragBoundary,
+  reconcileTabDragBoundaryDirections,
+  TabDragDirection,
+  TabDragState,
+} from "../core/tabWheel/tabDragCore";
+import {
+  buildMouseGesturePolicies,
+  createMouseGestureSession,
+  isMouseGestureEventForSession,
+  isMouseGestureSessionExpired,
+  isMouseGestureSessionStartEvent,
+  MOUSE_GESTURE_CLAIM_MS,
+  resolveMouseGesturePolicy,
+  shouldFinishMouseGestureSession,
+  shouldRunMouseGestureSession,
+  TabWheelMouseGesturePolicy,
+  TabWheelMouseGestureSession,
+} from "../core/tabWheel/mouseGestureCore";
 import {
   createMomentumGuardSession,
   DEFAULT_MOMENTUM_GUARD_TUNING,
@@ -33,8 +48,15 @@ import {
   shouldBlockWheelDelta,
 } from "../core/tabWheel/momentumGuardCore";
 import {
+  activateMostRecentTabWheelTab,
+  beginTabWheelDragGesture,
+  closeCurrentTabWheelTabAndActivateRecent,
   cycleTabWheel,
+  duplicateCurrentTabWheelTab,
+  endTabWheelDragGesture,
+  moveCurrentTabWheelTab,
   notifyTabWheelContentReady,
+  openNativeNewTabWheelTab,
   openTabWheelOptions,
   saveTabWheelScrollPosition,
 } from "../adapters/runtime/tabWheelApi";
@@ -42,6 +64,10 @@ import {
 declare global {
   interface Window {
     __tabWheelCleanup?: () => void;
+    __tabWheelMouseClaim?: {
+      button: number;
+      expiresAt: number;
+    };
   }
 }
 
@@ -66,12 +92,29 @@ const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
 const WORKER_PREWARM_INTERVAL_MS = 15000;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
 const STATUS_TIMEOUT_MS = 1500;
+const TAB_DRAG_KEEPALIVE_MS = 15000;
 const STATUS_ID = "tw-status-indicator";
 const SCROLL_RESTORE_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600];
 const LAYOUT_STABILITY_TIMEOUT_MS = 1600;
 const LAYOUT_STABILITY_REQUIRED_FRAMES = 3;
 const LAYOUT_DIMENSION_TOLERANCE_PX = 4;
 const LAYOUT_DIMENSION_MATCH_RATIO = 0.08;
+
+interface ActiveTabDragGesture {
+  pointerId: number;
+  button: number;
+  gestureId: string;
+  state: TabDragState;
+  captureTarget: Element | null;
+  pendingDirections: TabDragDirection[];
+  moveInFlight: boolean;
+  released: boolean;
+  completionReceived: boolean;
+  cancelled: boolean;
+  finishTimer: number;
+  waitForPreviousDrag: Promise<void>;
+  releaseDragQueue: () => void;
+}
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
@@ -234,12 +277,15 @@ export function initApp(): void {
   let lastWorkerPrewarmAt = 0;
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
-  let middleClickSession: TabWheelMiddleClickSession | null = null;
+  let mouseGesturePolicies = buildMouseGesturePolicies(settings);
+  let mouseGestureSession: TabWheelMouseGestureSession | null = null;
+  let tabDragGesture: ActiveTabDragGesture | null = null;
   let momentumGuardSession: MomentumGuardSession | null = null;
 
   void loadTabWheelSettings()
     .then((loadedSettings) => {
       settings = loadedSettings;
+      mouseGesturePolicies = buildMouseGesturePolicies(settings);
     })
     .finally(() => {
       areSettingsLoaded = true;
@@ -348,56 +394,447 @@ export function initApp(): void {
       && (settings.allowGesturesInEditableFields || !isEditableTarget(event.target));
   }
 
-  function isEnabledMiddleClickEvent(event: MouseEvent): boolean {
-    return areSettingsLoaded
-      && settings.middleClickAction === "openSettings"
-      && event.isTrusted
-      && isMiddleClickEvent(event)
-      && isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)
-      && (settings.allowGesturesInEditableFields || !isEditableTarget(event.target));
+  function resolveMousePolicy(event: MouseEvent): TabWheelMouseGesturePolicy | null {
+    if (!areSettingsLoaded || !event.isTrusted) return null;
+    if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return null;
+    if (!settings.allowGesturesInEditableFields && isEditableTarget(event.target)) return null;
+    return resolveMouseGesturePolicy(event.button, mouseGesturePolicies);
   }
 
-  function resetMiddleClickSession(): void {
-    middleClickSession = null;
+  function resetMouseGestureSession(): void {
+    mouseGestureSession = null;
   }
 
-  function getActiveMiddleClickSession(event: MouseEvent): TabWheelMiddleClickSession | null {
-    if (!middleClickSession) return null;
-    if (isMiddleClickSessionExpired(middleClickSession, Date.now())) {
-      resetMiddleClickSession();
+  function rememberTabDragMouseClaim(session: ActiveTabDragGesture): void {
+    if (session.completionReceived) return;
+    window.__tabWheelMouseClaim = {
+      button: session.button,
+      expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
+    };
+  }
+
+  function rememberMouseClaimForReinjection(): void {
+    let button = mouseGestureSession?.policy.button;
+    if (button === undefined) {
+      if (tabDragGesture) {
+        rememberTabDragMouseClaim(tabDragGesture);
+        return;
+      }
+    }
+    if (button === undefined) return;
+    window.__tabWheelMouseClaim = {
+      button,
+      expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
+    };
+  }
+
+  function isMouseClaimCompletionEvent(button: number, event: MouseEvent): boolean {
+    if (button === 0) return event.type === "click";
+    if (button === 1) return event.type === "auxclick";
+    return event.type === "contextmenu";
+  }
+
+  function isMouseClaimReleaseEvent(event: MouseEvent): boolean {
+    return event.type === "pointerup" || event.type === "mouseup";
+  }
+
+  function handleCarriedMouseClaim(event: MouseEvent): boolean {
+    const claim = window.__tabWheelMouseClaim;
+    if (!claim) return false;
+    if (event.type === "pointerdown") {
+      delete window.__tabWheelMouseClaim;
+      return false;
+    }
+    const matchesButton = event.button === claim.button
+      || (claim.button === 2 && event.type === "contextmenu");
+    if (!matchesButton) return false;
+    if (isMouseClaimReleaseEvent(event) || isMouseClaimCompletionEvent(claim.button, event)) {
+      suppressPageEvent(event);
+      if (isMouseClaimCompletionEvent(claim.button, event)) {
+        delete window.__tabWheelMouseClaim;
+      }
+      return true;
+    }
+    if (Date.now() > claim.expiresAt) {
+      delete window.__tabWheelMouseClaim;
+      return false;
+    }
+    suppressPageEvent(event);
+    return true;
+  }
+
+  function releaseTabDragPointerCapture(session: ActiveTabDragGesture): void {
+    try {
+      if (session.captureTarget?.hasPointerCapture(session.pointerId)) {
+        session.captureTarget.releasePointerCapture(session.pointerId);
+      }
+    } catch (_) {
+      // The page may remove the capture target during the drag.
+    }
+  }
+
+  function reserveTabDragQueue(): Pick<
+    ActiveTabDragGesture,
+    "gestureId" | "waitForPreviousDrag" | "releaseDragQueue"
+  > {
+    const gestureId = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const waitForPreviousDrag = beginTabWheelDragGesture(gestureId).then((result) => {
+      if (!result.ok) throw new Error(result.reason || "Tab drag unavailable");
+    });
+    let isReleased = false;
+    let keepAliveTimer = 0;
+    void waitForPreviousDrag
+      .then(() => {
+        if (isReleased) return;
+        keepAliveTimer = window.setInterval(() => {
+          void beginTabWheelDragGesture(gestureId).catch(() => {});
+        }, TAB_DRAG_KEEPALIVE_MS);
+      })
+      .catch(() => {});
+    return {
+      gestureId,
+      waitForPreviousDrag,
+      releaseDragQueue: () => {
+        if (isReleased) return;
+        isReleased = true;
+        if (keepAliveTimer) window.clearInterval(keepAliveTimer);
+        void waitForPreviousDrag
+          .catch(() => {})
+          .then(() => endTabWheelDragGesture(gestureId))
+          .catch(() => {});
+      },
+    };
+  }
+
+  function resetTabDragGesture(session: ActiveTabDragGesture): void {
+    if (session.finishTimer) window.clearTimeout(session.finishTimer);
+    releaseTabDragPointerCapture(session);
+    session.releaseDragQueue();
+    if (tabDragGesture === session) tabDragGesture = null;
+  }
+
+  function finishTabDragGestureWhenIdle(session: ActiveTabDragGesture): void {
+    if (
+      session.cancelled
+      || session.moveInFlight
+      || session.pendingDirections.length > 0
+      || !session.released
+      || !session.completionReceived
+    ) return;
+    resetTabDragGesture(session);
+  }
+
+  function cancelTabDragGesture(preserveCompletionClaim = false): void {
+    const session = tabDragGesture;
+    if (!session) return;
+    if (preserveCompletionClaim) rememberTabDragMouseClaim(session);
+    session.cancelled = true;
+    session.pendingDirections = [];
+    resetTabDragGesture(session);
+  }
+
+  function cancelUnreleasedTabDragGesture(): void {
+    if (!tabDragGesture?.released) cancelTabDragGesture();
+  }
+
+  function drainTabDragMoves(session: ActiveTabDragGesture): void {
+    if (
+      session.cancelled
+      || session.moveInFlight
+      || session.pendingDirections.length === 0
+    ) {
+      finishTabDragGestureWhenIdle(session);
+      return;
+    }
+    const direction = session.pendingDirections.shift() as TabDragDirection;
+    session.moveInFlight = true;
+    void session.waitForPreviousDrag
+      .then(() => {
+        if (session.cancelled || tabDragGesture !== session) return null;
+        return moveCurrentTabWheelTab(direction, session.gestureId);
+      })
+      .then((result) => {
+        if (!result || session.cancelled || tabDragGesture !== session) return;
+        if (!result.ok) {
+          showStatus(result.reason || "Tab move failed");
+          cancelTabDragGesture(true);
+          return;
+        }
+        if (!result.moved) {
+          session.state = markTabDragBoundary(session.state, direction);
+          session.pendingDirections = reconcileTabDragBoundaryDirections(
+            session.pendingDirections,
+            direction,
+          );
+        } else {
+          session.state = clearTabDragBoundary(session.state);
+        }
+      })
+      .catch(() => {
+        if (session.cancelled || tabDragGesture !== session) return;
+        showStatus("Tab move failed");
+        cancelTabDragGesture(true);
+      })
+      .finally(() => {
+        session.moveInFlight = false;
+        if (session.cancelled || tabDragGesture !== session) return;
+        drainTabDragMoves(session);
+      });
+  }
+
+  function startTabDragGesture(
+    event: PointerEvent,
+    policy: TabWheelMouseGesturePolicy,
+  ): void {
+    const captureTarget = event.target instanceof Element ? event.target : null;
+    const dragQueue = reserveTabDragQueue();
+    const session: ActiveTabDragGesture = {
+      pointerId: event.pointerId,
+      button: policy.button,
+      state: createTabDragState(event.clientX),
+      captureTarget,
+      pendingDirections: [],
+      moveInFlight: false,
+      released: false,
+      completionReceived: false,
+      cancelled: false,
+      finishTimer: 0,
+      ...dragQueue,
+    };
+    tabDragGesture = session;
+    try {
+      captureTarget?.setPointerCapture(event.pointerId);
+    } catch (_) {
+      // Window-level capture listeners still cover movement inside the page.
+    }
+  }
+
+  function releaseActiveTabDragGesture(session: ActiveTabDragGesture): void {
+    if (session.released) return;
+    session.released = true;
+    releaseTabDragPointerCapture(session);
+    scheduleTabDragFinishTimer(session);
+    finishTabDragGestureWhenIdle(session);
+  }
+
+  function scheduleTabDragFinishTimer(session: ActiveTabDragGesture): void {
+    if (session.finishTimer) window.clearTimeout(session.finishTimer);
+    session.finishTimer = window.setTimeout(() => {
+      session.completionReceived = true;
+      finishTabDragGestureWhenIdle(session);
+    }, MOUSE_GESTURE_CLAIM_MS);
+  }
+
+  function claimTabDragPressWhileDraining(
+    session: ActiveTabDragGesture,
+    event: PointerEvent,
+  ): void {
+    suppressPageEvent(event);
+    session.pointerId = event.pointerId;
+    session.button = event.button;
+    session.captureTarget = null;
+    session.completionReceived = false;
+    if (session.finishTimer) {
+      window.clearTimeout(session.finishTimer);
+      session.finishTimer = 0;
+    }
+  }
+
+  function tabDragPointerMoveHandler(event: PointerEvent): void {
+    const session = tabDragGesture;
+    if (!session || session.released || event.pointerId !== session.pointerId) return;
+    if (!isTabDragButtonPressed(session.button, event.buttons)) {
+      cancelTabDragGesture();
+      return;
+    }
+    suppressPageEvent(event);
+    const advanced = advanceTabDragState(session.state, event.clientX);
+    session.state = advanced.state;
+    if (advanced.directions.length === 0) return;
+    session.pendingDirections = coalesceTabDragDirections(
+      session.pendingDirections,
+      advanced.directions,
+    );
+    drainTabDragMoves(session);
+  }
+
+  function tabDragPointerCancelHandler(event: PointerEvent): void {
+    const session = tabDragGesture;
+    if (!session || event.pointerId !== session.pointerId) return;
+    suppressPageEvent(event);
+    cancelUnreleasedTabDragGesture();
+  }
+
+  function tabDragPointerCaptureLostHandler(event: PointerEvent): void {
+    const session = tabDragGesture;
+    if (
+      !session
+      || session.released
+      || session.cancelled
+      || event.pointerId !== session.pointerId
+    ) return;
+    cancelUnreleasedTabDragGesture();
+  }
+
+  function isTabDragCompletionEvent(
+    session: ActiveTabDragGesture,
+    event: MouseEvent,
+  ): boolean {
+    if (session.button === 0) return event.type === "click";
+    if (session.button === 1) return event.type === "auxclick";
+    return event.type === "contextmenu";
+  }
+
+  function handleActiveTabDragMouseEvent(event: MouseEvent): boolean {
+    const session = tabDragGesture;
+    if (!session) return false;
+    if (session.released && session.completionReceived) return false;
+    if (
+      typeof PointerEvent !== "undefined"
+      && event instanceof PointerEvent
+      && event.pointerId !== session.pointerId
+    ) return false;
+    const matchesButton = event.button === session.button
+      || (session.button === 2 && event.type === "contextmenu");
+    if (!matchesButton) return false;
+    suppressPageEvent(event);
+    if (event.type === "pointerup") {
+      if (session.released) scheduleTabDragFinishTimer(session);
+      else releaseActiveTabDragGesture(session);
+    }
+    if (isTabDragCompletionEvent(session, event)) {
+      session.completionReceived = true;
+      if (session.finishTimer) {
+        window.clearTimeout(session.finishTimer);
+        session.finishTimer = 0;
+      }
+      finishTabDragGestureWhenIdle(session);
+    }
+    return true;
+  }
+
+  function getActiveMouseGestureSession(event: MouseEvent): TabWheelMouseGestureSession | null {
+    if (!mouseGestureSession) return null;
+    if (isMouseGestureSessionExpired(mouseGestureSession, Date.now())) {
+      resetMouseGestureSession();
       return null;
     }
-    return isMiddleClickEvent(event) ? middleClickSession : null;
+    return isMouseGestureEventForSession(mouseGestureSession, event)
+      ? mouseGestureSession
+      : null;
   }
 
-  function openSettingsFromMiddleClick(session: TabWheelMiddleClickSession): void {
+  async function runActionWithStatus(
+    task: () => Promise<TabWheelActionResult>,
+    failureStatus: string,
+  ): Promise<void> {
+    try {
+      const result = await task();
+      if (!result.ok) showStatus(result.reason || failureStatus);
+    } catch (_) {
+      showStatus(failureStatus);
+    }
+  }
+
+  async function executeMouseGestureSession(
+    session: TabWheelMouseGestureSession,
+  ): Promise<void> {
+    switch (session.policy.action) {
+      case "nativeNewTab":
+        await runActionWithStatus(openNativeNewTabWheelTab, "New tab unavailable");
+        return;
+      case "recentTab":
+        await runActionWithStatus(activateMostRecentTabWheelTab, "Recent tab unavailable");
+        return;
+      case "closeToRecent":
+        await runActionWithStatus(closeCurrentTabWheelTabAndActivateRecent, "Close tab failed");
+        return;
+      case "duplicateTab":
+        await runActionWithStatus(duplicateCurrentTabWheelTab, "Duplicate unavailable");
+        return;
+      case "dragCurrentTab":
+        return;
+      case "openSettings":
+        await runActionWithStatus(openTabWheelOptions, "Settings unavailable");
+        return;
+    }
+  }
+
+  function runMouseGestureSession(session: TabWheelMouseGestureSession): void {
     if (session.hasRun) return;
     session.hasRun = true;
-    void openTabWheelOptions()
-      .then((result) => {
-        if (!result.ok) showStatus(result.reason || "Settings unavailable");
-      })
-      .catch(() => showStatus("Settings unavailable"));
+    if (
+      tabDragGesture?.released
+      && (tabDragGesture.moveInFlight || tabDragGesture.pendingDirections.length > 0)
+    ) {
+      return;
+    }
+    void executeMouseGestureSession(session);
   }
 
-  function middleClickHandler(event: MouseEvent): void {
-    const activeSession = getActiveMiddleClickSession(event);
-    if (activeSession) {
-      suppressPageEvent(event);
-      if (shouldRunMiddleClickSession(activeSession, event)) {
-        openSettingsFromMiddleClick(activeSession);
+  function mouseGestureHandler(event: MouseEvent): void {
+    if (handleCarriedMouseClaim(event)) return;
+    if (
+      event.type === "pointerdown"
+      && typeof PointerEvent !== "undefined"
+      && event instanceof PointerEvent
+      && event.pointerType === "mouse"
+    ) {
+      const existingDrag = tabDragGesture;
+      if (existingDrag?.released) {
+        if (existingDrag.moveInFlight || existingDrag.pendingDirections.length > 0) {
+          const drainingPolicy = resolveMousePolicy(event);
+          if (drainingPolicy?.interaction === "drag") {
+            claimTabDragPressWhileDraining(existingDrag, event);
+            return;
+          }
+          existingDrag.completionReceived = true;
+          if (existingDrag.finishTimer) {
+            window.clearTimeout(existingDrag.finishTimer);
+            existingDrag.finishTimer = 0;
+          }
+        }
+        if (!existingDrag.moveInFlight && existingDrag.pendingDirections.length === 0) {
+          resetTabDragGesture(existingDrag);
+        }
+      } else if (existingDrag) {
+        cancelTabDragGesture();
       }
-      if (shouldFinishMiddleClickSession(event)) resetMiddleClickSession();
+    }
+    if (handleActiveTabDragMouseEvent(event)) {
       return;
     }
 
-    if (!isMiddleClickSessionStartEvent(event) || !isEnabledMiddleClickEvent(event)) return;
-    suppressPageEvent(event);
-    middleClickSession = createMiddleClickSession(Date.now());
-    if (shouldRunMiddleClickSession(middleClickSession, event)) {
-      openSettingsFromMiddleClick(middleClickSession);
+    const activeSession = getActiveMouseGestureSession(event);
+    if (activeSession) {
+      suppressPageEvent(event);
+      if (shouldRunMouseGestureSession(activeSession, event.type)) {
+        runMouseGestureSession(activeSession);
+      }
+      if (shouldFinishMouseGestureSession(activeSession, event.type)) {
+        resetMouseGestureSession();
+      }
+      return;
     }
-    if (shouldFinishMiddleClickSession(event)) resetMiddleClickSession();
+
+    if (!isMouseGestureSessionStartEvent(event)) return;
+    const policy = resolveMousePolicy(event);
+    if (!policy) return;
+    if (policy.interaction === "drag") {
+      if (
+        event.type !== "pointerdown"
+        || typeof PointerEvent === "undefined"
+        || !(event instanceof PointerEvent)
+        || event.pointerType !== "mouse"
+      ) return;
+      suppressPageEvent(event);
+      startTabDragGesture(event, policy);
+      return;
+    }
+    suppressPageEvent(event);
+    mouseGestureSession = createMouseGestureSession(policy, Date.now());
   }
 
   function computeNextBurstCount(now: number): number {
@@ -445,7 +882,7 @@ export function initApp(): void {
     // cold start overlaps the accumulation below instead of delaying the
     // switch that ends it. TABWHEEL_CONTENT_READY is reused rather than adding
     // a wake type: its handler is the only one in the router that returns
-    // without awaiting anything (no tabs query, no injection; the one MRU
+    // without awaiting anything (no tabs query or injection; the recent-tab
     // touch it triggers is detached and a no-op for a tab that is already
     // current), and what it asserts is literally true right here — this
     // content script is alive and handling an event. A worker that just
@@ -559,12 +996,13 @@ export function initApp(): void {
   ): void {
     if (areaName !== "local") return;
     // Filtering by key keeps the reset scoped to a real settings change: every
-    // other key this extension writes (scroll memory, MRU, onboarding) lands
+    // other key this extension writes (scroll memory, recent tabs, onboarding) lands
     // mid-gesture, and zeroing the accumulator on one would silently eat the
     // switch the user is actively scrolling toward.
     const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
     if (!settingsChange) return;
     settings = normalizeTabWheelSettings(settingsChange.newValue);
+    mouseGesturePolicies = buildMouseGesturePolicies(settings);
     if (!settings.restorePagePosition) {
       cancelScrollRestore();
       if (scrollSaveTimer) {
@@ -573,7 +1011,8 @@ export function initApp(): void {
       }
     }
     resetWheelGestureState();
-    resetMiddleClickSession();
+    resetMouseGestureSession();
+    cancelUnreleasedTabDragGesture();
   }
 
   function messageHandler(message: unknown): Promise<unknown> | undefined {
@@ -585,9 +1024,6 @@ export function initApp(): void {
         return Promise.resolve(getRootScrollSnapshot());
       case "SET_SCROLL":
         void restoreWindowScroll(receivedMessage);
-        return Promise.resolve({ ok: true });
-      case "TABWHEEL_STATUS":
-        showStatus(receivedMessage.message);
         return Promise.resolve({ ok: true });
     }
   }
@@ -602,7 +1038,8 @@ export function initApp(): void {
     }
     cancelScrollRestore();
     resetWheelGestureState();
-    resetMiddleClickSession();
+    resetMouseGestureSession();
+    cancelUnreleasedTabDragGesture();
     if (isTopFrameContext) flushScrollSnapshot();
   }
 
@@ -611,11 +1048,17 @@ export function initApp(): void {
     flushScrollSnapshot();
   }
 
-  window.addEventListener("pointerdown", middleClickHandler, true);
-  window.addEventListener("mousedown", middleClickHandler, true);
-  window.addEventListener("pointerup", middleClickHandler, true);
-  window.addEventListener("mouseup", middleClickHandler, true);
-  window.addEventListener("auxclick", middleClickHandler, true);
+  window.addEventListener("pointerdown", mouseGestureHandler, true);
+  window.addEventListener("pointermove", tabDragPointerMoveHandler, { passive: false, capture: true });
+  window.addEventListener("pointercancel", tabDragPointerCancelHandler, true);
+  window.addEventListener("lostpointercapture", tabDragPointerCaptureLostHandler, true);
+  window.addEventListener("mousedown", mouseGestureHandler, true);
+  window.addEventListener("pointerup", mouseGestureHandler, true);
+  window.addEventListener("mouseup", mouseGestureHandler, true);
+  window.addEventListener("click", mouseGestureHandler, true);
+  window.addEventListener("auxclick", mouseGestureHandler, true);
+  window.addEventListener("contextmenu", mouseGestureHandler, true);
+  window.addEventListener("blur", cancelUnreleasedTabDragGesture);
   window.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
   document.addEventListener("visibilitychange", visibilityHandler);
   browser.storage.onChanged.addListener(storageChangedHandler);
@@ -628,11 +1071,18 @@ export function initApp(): void {
   }
 
   window.__tabWheelCleanup = () => {
-    window.removeEventListener("pointerdown", middleClickHandler, true);
-    window.removeEventListener("mousedown", middleClickHandler, true);
-    window.removeEventListener("pointerup", middleClickHandler, true);
-    window.removeEventListener("mouseup", middleClickHandler, true);
-    window.removeEventListener("auxclick", middleClickHandler, true);
+    rememberMouseClaimForReinjection();
+    window.removeEventListener("pointerdown", mouseGestureHandler, true);
+    window.removeEventListener("pointermove", tabDragPointerMoveHandler, true);
+    window.removeEventListener("pointercancel", tabDragPointerCancelHandler, true);
+    window.removeEventListener("lostpointercapture", tabDragPointerCaptureLostHandler, true);
+    window.removeEventListener("mousedown", mouseGestureHandler, true);
+    window.removeEventListener("pointerup", mouseGestureHandler, true);
+    window.removeEventListener("mouseup", mouseGestureHandler, true);
+    window.removeEventListener("click", mouseGestureHandler, true);
+    window.removeEventListener("auxclick", mouseGestureHandler, true);
+    window.removeEventListener("contextmenu", mouseGestureHandler, true);
+    window.removeEventListener("blur", cancelUnreleasedTabDragGesture);
     window.removeEventListener("wheel", wheelHandler, true);
     document.removeEventListener("visibilitychange", visibilityHandler);
     browser.storage.onChanged.removeListener(storageChangedHandler);
@@ -643,7 +1093,8 @@ export function initApp(): void {
       browser.runtime.onMessage.removeListener(messageHandler);
     }
     cancelScrollRestore();
-    resetMiddleClickSession();
+    resetMouseGestureSession();
+    if (!tabDragGesture?.released) cancelTabDragGesture();
     if (scrollSaveTimer) window.clearTimeout(scrollSaveTimer);
     if (statusTimer) window.clearTimeout(statusTimer);
     document.getElementById(STATUS_ID)?.remove();

@@ -15,6 +15,18 @@ npm run ci
 npm run release:package
 ```
 
+## 4.0.0
+
+- Restored remappable modifier + left, middle, and right click actions.
+- Made Browser New Tab the default left-click action; it opens actively beside the current tab.
+- Added Browser New Tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, and Off choices for every physical button.
+- Added the optional Drag current tab action: hold its configured mouse button and drag horizontally to move the active tab live, one slot per 56 px, without crossing pinned or tab-group boundaries.
+- Made Off a strict native pass-through: no gesture session, default cancellation, or propagation suppression.
+- Removed the MRU wheel-cycle mode; wheel and popup cycling now always follow tab-strip order.
+- Retained bounded recent-tab history only for the previous-tab click actions and renamed its storage record in schema v18.
+- Preserved the wheel demo as the first onboarding screen, followed it with a separate live mouse-action setup where mappings can be changed and tested immediately, then returned users to shared settings where they can revise the modifier and all three click actions before the wheel-ready screen. Fresh installs and pre-V4 updates follow the same sequence.
+- Documented the WebExtension boundary for OS/browser-chrome shortcuts, protected pages, and Firefox Shift + right click.
+
 ## 3.1.0
 
 Feel and reliability release:

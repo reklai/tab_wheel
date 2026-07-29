@@ -29,18 +29,11 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 17,
-    "tabWheelMruState": {
-      "1": [
-        9,
-        8
-      ]
-    },
+    "storageSchemaVersion": 19,
     "tabWheelSettings": {
       "gestureModifier": "ctrl",
       "gestureWithShift": true,
       "middleClickAction": "openSettings",
-      "cycleScope": "mru",
       "wheelPreset": "balanced",
       "wheelSensitivity": 1,
       "wheelCooldownMs": 160,
@@ -48,12 +41,20 @@
       "horizontalWheel": true,
       "overshootGuard": true,
       "skipHiddenTabs": false,
-      "restorePagePosition": true,
       "allowGesturesInEditableFields": true,
+      "restorePagePosition": true,
       "skipRestrictedPages": true,
       "wrapAround": true,
       "showRestrictedBadge": true,
-      "cycleWithinTabGroup": false
+      "cycleWithinTabGroup": false,
+      "leftClickAction": "nativeNewTab",
+      "rightClickAction": "closeToRecent"
+    },
+    "tabWheelRecentTabs": {
+      "1": [
+        9,
+        8
+      ]
     }
   },
   "expectedChanged": true

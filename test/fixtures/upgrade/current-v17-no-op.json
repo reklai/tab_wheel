@@ -8,12 +8,15 @@
     "futureKey": true
   },
   "expected": {
-    "storageSchemaVersion": 17,
+    "storageSchemaVersion": 19,
     "tabWheelSettings": {
       "invertScroll": false,
-      "showRestrictedBadge": true
+      "showRestrictedBadge": true,
+      "leftClickAction": "nativeNewTab",
+      "middleClickAction": "recentTab",
+      "rightClickAction": "closeToRecent"
     },
     "futureKey": true
   },
-  "expectedChanged": false
+  "expectedChanged": true
 }

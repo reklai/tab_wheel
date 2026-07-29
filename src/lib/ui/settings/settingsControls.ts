@@ -2,12 +2,10 @@
 // two surfaces cannot drift.
 
 import {
-  formatTabWheelCycleScopeLabel,
+  formatTabWheelClickAction,
   formatTabWheelModifierKey,
-  formatTabWheelMiddleClickAction,
   formatTabWheelPresetLabel,
-  TABWHEEL_CYCLE_SCOPES,
-  TABWHEEL_MIDDLE_CLICK_ACTIONS,
+  TABWHEEL_CLICK_ACTIONS,
   TABWHEEL_MODIFIER_KEYS,
   TABWHEEL_PRESETS,
 } from "../../common/contracts/tabWheel";
@@ -36,27 +34,15 @@ export function populatePresetSelect(
   );
 }
 
-export function populateCycleScopeSelect(
+export function populateClickActionSelect(
   select: HTMLSelectElement,
-  selected: TabWheelCycleScope,
+  selected: TabWheelClickAction,
 ): void {
   setSelectOptions(
     select,
-    TABWHEEL_CYCLE_SCOPES,
+    TABWHEEL_CLICK_ACTIONS,
     selected,
-    (value) => formatTabWheelCycleScopeLabel(value as TabWheelCycleScope),
-  );
-}
-
-export function populateMiddleClickActionSelect(
-  select: HTMLSelectElement,
-  selected: TabWheelMiddleClickAction,
-): void {
-  setSelectOptions(
-    select,
-    TABWHEEL_MIDDLE_CLICK_ACTIONS,
-    selected,
-    (value) => formatTabWheelMiddleClickAction(value as TabWheelMiddleClickAction),
+    (value) => formatTabWheelClickAction(value as TabWheelClickAction),
   );
 }
 

@@ -14,12 +14,12 @@ test("compatibility verifier succeeds", () => {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
-test("manifests ship the same focused 3.0 product", () => {
+test("manifests ship the same V4 product", () => {
   const firefox = readJson("esBuildConfig/manifest_v2.json");
   const chrome = readJson("esBuildConfig/manifest_v3.json");
   const pkg = readJson("package.json");
 
-  assert.equal(pkg.version, "3.1.0");
+  assert.equal(pkg.version, "4.0.0");
   assert.equal(firefox.version, pkg.version);
   assert.equal(chrome.version, pkg.version);
   assert.equal(firefox.name, "Scroll Wheel Tab Switcher");
@@ -28,10 +28,10 @@ test("manifests ship the same focused 3.0 product", () => {
   assert.equal(chrome.action.default_title, firefox.browser_action.default_title);
 });
 
-test("manifests contain only permissions needed by tab cycling and restore", () => {
+test("manifests contain only permissions needed by tab cycling, restore, and click actions", () => {
   const firefox = readJson("esBuildConfig/manifest_v2.json");
   const chrome = readJson("esBuildConfig/manifest_v3.json");
-  const retired = ["search", "history", "bookmarks", "contextMenus"];
+  const retired = ["history", "bookmarks", "contextMenus", "search"];
 
   assert.deepEqual(firefox.permissions.sort(), ["<all_urls>", "storage", "tabs"].sort());
   assert.deepEqual(chrome.permissions.sort(), ["scripting", "storage", "tabGroups", "tabs"].sort());

@@ -14,11 +14,14 @@
     "futureKey": true
   },
   "expected": {
-    "storageSchemaVersion": 17,
+    "storageSchemaVersion": 19,
     "tabWheelSettings": {
       "invertScroll": false,
       "showRestrictedBadge": true,
-      "cycleWithinTabGroup": false
+      "cycleWithinTabGroup": false,
+      "leftClickAction": "nativeNewTab",
+      "middleClickAction": "recentTab",
+      "rightClickAction": "closeToRecent"
     },
     "futureKey": true
   },

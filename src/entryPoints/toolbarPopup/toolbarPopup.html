@@ -36,16 +36,24 @@
         <h2>Gesture</h2>
         <div class="settings-card">
           <label class="setting-row" for="gestureModifier">
-            <span><strong>Modifier</strong><small>Hold this key while scrolling or middle-clicking.</small></span>
+            <span><strong>Modifier</strong><small>Hold this key while scrolling or clicking.</small></span>
             <select id="gestureModifier"></select>
           </label>
           <label class="setting-row" for="gestureWithShift">
             <span><strong>Require Shift</strong><small>Add a second key to avoid conflicts.</small></span>
             <input id="gestureWithShift" type="checkbox" />
           </label>
+          <label class="setting-row" for="leftClickAction">
+            <span><strong>Modifier + left click</strong><small>Choose an action or keep it native.</small></span>
+            <select id="leftClickAction"></select>
+          </label>
           <label class="setting-row" for="middleClickAction">
-            <span><strong>Modifier + middle click</strong><small>Open settings or keep middle click native.</small></span>
+            <span><strong>Modifier + middle click</strong><small>Choose an action or keep it native.</small></span>
             <select id="middleClickAction"></select>
+          </label>
+          <label class="setting-row" for="rightClickAction">
+            <span><strong>Modifier + right click</strong><small>Choose an action or keep the context menu.</small></span>
+            <select id="rightClickAction"></select>
           </label>
         </div>
       </section>
@@ -53,10 +61,6 @@
       <section class="settings-group">
         <h2>Tab Cycling</h2>
         <div class="settings-card">
-          <label class="setting-row" for="cycleScope">
-            <span><strong>Cycle order</strong><small>Tab strip or recently used tabs.</small></span>
-            <select id="cycleScope"></select>
-          </label>
           <label class="setting-row" for="wheelDirection">
             <span><strong>Wheel direction</strong><small>Choose what scrolling down does.</small></span>
             <select id="wheelDirection">
@@ -104,6 +108,8 @@
         <ul>
           <li>Normal web pages, including text fields and editors.</li>
           <li>Browser settings, stores, PDF viewers, devtools, and internal pages may block it.</li>
+          <li>OS and browser-chrome shortcuts that never reach the page cannot be overridden.</li>
+          <li>Browser New Tab is protected, so page gestures resume after navigation.</li>
           <li>On a blocked page, use Previous or Next above.</li>
         </ul>
       </aside>

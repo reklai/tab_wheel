@@ -23,7 +23,7 @@ export function createTabWheelMessageHandler(
         return domain.markContentScriptReady(sender.tab);
 
       case "TABWHEEL_CYCLE":
-        return await domain.cycle(message.direction, message.source, sender.tab);
+        return await domain.cycle(message.direction, message.source, sender.tab, message.windowId);
 
       case "TABWHEEL_REFRESH_CURRENT_TAB":
         return await domain.refreshCurrentTab(sender.tab, message.windowId ?? sender.tab?.windowId);
@@ -31,10 +31,26 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_GET_OVERVIEW":
         return await domain.getOverview(sender.tab, message.windowId ?? sender.tab?.windowId);
 
-      case "TABWHEEL_SET_CYCLE_SCOPE":
-        return await domain.setCycleScope(message.cycleScope, sender.tab, message.windowId, {
-          suppressPageStatus: message.suppressPageStatus,
-        });
+      case "TABWHEEL_OPEN_NATIVE_NEW_TAB":
+        return await domain.openNativeNewTab(sender.tab, message.windowId);
+
+      case "TABWHEEL_ACTIVATE_MOST_RECENT_TAB":
+        return await domain.activateMostRecentTab(sender.tab, message.windowId);
+
+      case "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT":
+        return await domain.closeCurrentTabAndActivateRecent(sender.tab, message.windowId);
+
+      case "TABWHEEL_DUPLICATE_TAB":
+        return await domain.duplicateTab(sender.tab, message.windowId);
+
+      case "TABWHEEL_BEGIN_TAB_DRAG":
+        return await domain.beginTabDrag(message.gestureId, sender.tab);
+
+      case "TABWHEEL_MOVE_CURRENT_TAB":
+        return await domain.moveCurrentTab(message.direction, sender.tab, message.gestureId);
+
+      case "TABWHEEL_END_TAB_DRAG":
+        return await domain.endTabDrag(message.gestureId, sender.tab);
 
       case "TABWHEEL_SAVE_SCROLL_POSITION": {
         const tabId = sender.tab?.id;
@@ -49,6 +65,7 @@ export function createTabWheelMessageHandler(
       }
 
       case "TABWHEEL_OPEN_OPTIONS":
+        await domain.waitForTabDrag(sender.tab);
         return await openOptionsPage();
 
       case "TABWHEEL_RESET_STATE":

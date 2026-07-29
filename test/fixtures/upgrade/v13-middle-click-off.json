@@ -17,11 +17,10 @@
     }
   },
   "expected": {
-    "storageSchemaVersion": 17,
+    "storageSchemaVersion": 19,
     "tabWheelSettings": {
       "middleClickAction": "none",
       "gestureModifier": "meta",
-      "cycleScope": "general",
       "allowGesturesInEditableFields": true,
       "restorePagePosition": true,
       "skipRestrictedPages": true,
@@ -31,7 +30,9 @@
       "invertScroll": true,
       "skipHiddenTabs": true,
       "showRestrictedBadge": true,
-      "cycleWithinTabGroup": false
+      "cycleWithinTabGroup": false,
+      "leftClickAction": "nativeNewTab",
+      "rightClickAction": "closeToRecent"
     }
   },
   "expectedChanged": true
