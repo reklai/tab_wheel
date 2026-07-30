@@ -74,6 +74,30 @@ test("registerLifecycleListeners primes active tabs on every worker (re)start, n
   assert.match(registerFnSource, /void ensureActiveTabContentScripts\(\)\.catch\(\(\) => \{\}\);/);
 });
 
+test("onStartup reinjects content scripts into restored tabs without reloading them", () => {
+  const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
+  const startupHandlerSource = domain.slice(
+    domain.indexOf("browser.runtime.onStartup.addListener"),
+    domain.indexOf("\n  return {\n    ensureLoaded,"),
+  );
+  assert.ok(
+    startupHandlerSource.includes("browser.runtime.onStartup.addListener"),
+    "onStartup listener should be found in source",
+  );
+
+  // Protects: browser cold start is thinner than install/update today unless
+  // the same inject chain runs after startup housekeeping. Full tab reload is
+  // not the product answer — programmatic inject must run instead.
+  assertOrdered(startupHandlerSource, [
+    "await ensureLoaded()",
+    "await browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.recentTabs)",
+    "void activateExistingContentScripts()",
+    ".then(ensureActiveTabContentScripts)",
+  ]);
+  // No forced navigation on cold start — inject only.
+  assert.doesNotMatch(startupHandlerSource, /browser\.tabs\.reload\s*\(/);
+});
+
 test("initApp begins execution with the re-injection guard so double injection never stacks listeners", () => {
   const app = readText("src/lib/appInit/appInit.ts");
   const initAppSource = app.slice(app.indexOf("export function initApp(): void {"));

@@ -1753,6 +1753,14 @@ export function createTabWheelDomain(options: {
       discardedWakeHoldByWindowId.clear();
       await saveScrollMemory();
       await browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.recentTabs);
+      // Browser cold start restores tabs without an install/update event. Reuse
+      // the install inject path so gestures work on restored pages without
+      // forcing a navigation on every tab (zero-reload promise).
+      void activateExistingContentScripts()
+        .then(ensureActiveTabContentScripts)
+        .catch((error) => {
+          console.warn("[TabWheel] startup content script activation failed:", error);
+        });
     });
 
     // Re-enabling the extension does not fire onInstalled, but it does kill page
