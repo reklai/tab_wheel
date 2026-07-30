@@ -92,8 +92,14 @@ test("store assets use V4 copy and current mouse-action defaults", () => {
   assert.match(assetReadme, /^# TabWheel 4\.0 store assets/m);
   assert.doesNotMatch(submittedCopy, rejectedPhrase);
   assert.match(assetCopy, /Browser new tab/);
-  assert.match(assetCopy, /Most recent tab/);
+  assert.match(assetCopy, /Drag current tab/);
   assert.match(assetCopy, /Close current tab/);
+  // Middle-click default is Drag current tab — store art must not still sell Most recent tab as the default control label.
+  assert.doesNotMatch(assetCopy, /Most recent tab ▾/);
+  assert.doesNotMatch(
+    assetCopy,
+    /Middle click[\s\S]{0,120}Most recent tab/,
+  );
 });
 
 test("store badge copy is limited to URLs TabWheel can recognize as restricted", () => {

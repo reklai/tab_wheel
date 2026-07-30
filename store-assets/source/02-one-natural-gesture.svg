@@ -24,8 +24,8 @@
         <rect x="490" y="438" width="300" height="142" rx="16" fill="#151e29" stroke="#75aaff" stroke-opacity=".28"/>
         <circle cx="530" cy="479" r="20" fill="#75aaff" fill-opacity=".15"/><text x="530" y="484" fill="#75aaff" text-anchor="middle" font-size="14" font-weight="800">●</text>
         <text x="562" y="475" fill="#f6f8fb" font-size="16" font-weight="750">Middle click</text>
-        <text x="562" y="502" fill="#68d69c" font-size="14" font-weight="700">Most recent tab</text>
-        <text x="518" y="548" fill="#98a5b6" font-size="12">Returns to where you were.</text>
+        <text x="562" y="502" fill="#68d69c" font-size="14" font-weight="700">Drag current tab</text>
+        <text x="518" y="548" fill="#98a5b6" font-size="12">Hold and drag horizontally.</text>
 
         <rect x="850" y="438" width="300" height="142" rx="16" fill="#151e29" stroke="#75aaff" stroke-opacity=".28"/>
         <circle cx="890" cy="479" r="20" fill="#75aaff" fill-opacity=".15"/><text x="890" y="485" fill="#75aaff" text-anchor="middle" font-size="16" font-weight="800">R</text>

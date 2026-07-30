@@ -37,7 +37,7 @@
       <text x="234" y="411" fill="#f5f7fb" font-size="9">Browser new tab ▾</text>
       <line x1="14" y1="427" x2="366" y2="427" stroke="#fff" stroke-opacity=".09"/>
       <text x="28" y="454" fill="#f5f7fb" font-size="10" font-weight="700">Middle click</text>
-      <text x="234" y="454" fill="#f5f7fb" font-size="9">Most recent tab ▾</text>
+      <text x="234" y="454" fill="#f5f7fb" font-size="9">Drag current tab ▾</text>
       <line x1="14" y1="470" x2="366" y2="470" stroke="#fff" stroke-opacity=".09"/>
       <text x="28" y="497" fill="#f5f7fb" font-size="10" font-weight="700">Right click</text>
       <text x="234" y="497" fill="#f5f7fb" font-size="9">Close current tab ▾</text>
