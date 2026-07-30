@@ -1739,28 +1739,46 @@ export function createTabWheelDomain(options: {
     });
 
     browser.runtime.onStartup.addListener(async () => {
-      await ensureLoaded();
-      scrollMemoryByTabId = trimScrollMemory(scrollMemoryByTabId);
-      recentTabIdsByWindowId = {};
-      windowTabsCacheByWindowId.clear();
-      collapsedTabGroupIdsCacheByWindowId.clear();
-      contentScriptReadyUrlsByTabId.clear();
-      contentScriptUnavailableUrlsByTabId.clear();
-      neighborPreprobedUntilByTabId.clear();
-      neighborWarmupGenerationByWindowId.clear();
-      scrollRestoreTokensByTabId.clear();
-      activeTabIdsByWindowId.clear();
-      discardedWakeHoldByWindowId.clear();
-      await saveScrollMemory();
-      await browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.recentTabs);
-      // Browser cold start restores tabs without an install/update event. Reuse
-      // the install inject path so gestures work on restored pages without
-      // forcing a navigation on every tab (zero-reload promise).
-      void activateExistingContentScripts()
-        .then(ensureActiveTabContentScripts)
-        .catch((error) => {
-          console.warn("[TabWheel] startup content script activation failed:", error);
-        });
+      // Housekeeping is best-effort: storage failures must not skip reinject.
+      try {
+        await ensureLoaded();
+        scrollMemoryByTabId = trimScrollMemory(scrollMemoryByTabId);
+        recentTabIdsByWindowId = {};
+        windowTabsCacheByWindowId.clear();
+        collapsedTabGroupIdsCacheByWindowId.clear();
+        contentScriptReadyUrlsByTabId.clear();
+        contentScriptUnavailableUrlsByTabId.clear();
+        neighborPreprobedUntilByTabId.clear();
+        neighborWarmupGenerationByWindowId.clear();
+        scrollRestoreTokensByTabId.clear();
+        activeTabIdsByWindowId.clear();
+        discardedWakeHoldByWindowId.clear();
+        await saveScrollMemory();
+        await browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.recentTabs);
+      } catch (error) {
+        console.warn("[TabWheel] startup housekeeping failed:", error);
+      }
+
+      // Browser cold start restores tabs without an install/update event. Await
+      // the install inject path so the MV3 worker stays alive for the full scan
+      // (void fire-and-forget can be killed mid-Promise.all). No forced navigation.
+      const activateRestoredTabs = async (): Promise<void> => {
+        await activateExistingContentScripts();
+        await ensureActiveTabContentScripts();
+      };
+      try {
+        await activateRestoredTabs();
+      } catch (error) {
+        console.warn("[TabWheel] startup content script activation failed:", error);
+      }
+      // Session restore can finish after the first query; one delayed pass covers
+      // tabs that were still loading or not yet present (inject only).
+      try {
+        await sleep(2000);
+        await activateRestoredTabs();
+      } catch (error) {
+        console.warn("[TabWheel] delayed startup content script activation failed:", error);
+      }
     });
 
     // Re-enabling the extension does not fire onInstalled, but it does kill page

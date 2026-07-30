@@ -85,16 +85,17 @@ test("onStartup reinjects content scripts into restored tabs without reloading t
     "onStartup listener should be found in source",
   );
 
-  // Protects: browser cold start is thinner than install/update today unless
-  // the same inject chain runs after startup housekeeping. Full tab reload is
-  // not the product answer — programmatic inject must run instead.
+  // Protects: browser cold start reinjects via the install-equivalent path
+  // without forced navigation. Await keeps the MV3 worker alive for the scan;
+  // inject must not be gated solely on storage housekeeping success.
   assertOrdered(startupHandlerSource, [
     "await ensureLoaded()",
     "await browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.recentTabs)",
-    "void activateExistingContentScripts()",
-    ".then(ensureActiveTabContentScripts)",
+    "await activateExistingContentScripts()",
+    "await ensureActiveTabContentScripts()",
   ]);
-  // No forced navigation on cold start — inject only.
+  assert.match(startupHandlerSource, /startup housekeeping failed/);
+  assert.match(startupHandlerSource, /await sleep\(2000\)/);
   assert.doesNotMatch(startupHandlerSource, /browser\.tabs\.reload\s*\(/);
 });
 
