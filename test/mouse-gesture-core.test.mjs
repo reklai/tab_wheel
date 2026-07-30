@@ -28,7 +28,7 @@ test("default policies map all three physical buttons", async () => {
 
   assert.deepEqual(policies, [
     { action: "nativeNewTab", button: 0, interaction: "click", runPhase: "click" },
-    { action: "recentTab", button: 1, interaction: "click", runPhase: "auxclick" },
+    { action: "dragCurrentTab", button: 1, interaction: "drag" },
     { action: "closeToRecent", button: 2, interaction: "click", runPhase: "contextmenu" },
   ]);
 });
@@ -63,9 +63,12 @@ test("Drag current tab is a drag policy without a click completion phase", async
 
 test("sessions start only on press events and run once on completion", async () => {
   const core = await loadCore();
-  const policies = core.buildMouseGesturePolicies(
-    core.DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
-  );
+  // Click-style middle mapping: default middle is drag, so pin a click action here.
+  const policies = core.buildMouseGesturePolicies({
+    leftClickAction: "none",
+    middleClickAction: "recentTab",
+    rightClickAction: "none",
+  });
   const policy = core.resolveMouseGesturePolicy(1, policies);
   const session = core.createMouseGestureSession(policy, 100);
 

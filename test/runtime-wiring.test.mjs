@@ -435,7 +435,7 @@ test("defaults support a predictable first run", () => {
   assert.match(contract, /gestureModifier:\s*"alt"/);
   const clickCore = readText("src/lib/core/tabWheel/mouseGestureCore.ts");
   assert.match(clickCore, /leftClickAction:\s*"nativeNewTab"/);
-  assert.match(clickCore, /middleClickAction:\s*"recentTab"/);
+  assert.match(clickCore, /middleClickAction:\s*"dragCurrentTab"/);
   assert.match(clickCore, /rightClickAction:\s*"closeToRecent"/);
   assert.match(contract, /restorePagePosition:\s*true/);
   assert.match(contract, /skipRestrictedPages:\s*true/);

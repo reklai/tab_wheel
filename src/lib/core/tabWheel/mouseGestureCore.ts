@@ -43,7 +43,7 @@ export const TABWHEEL_CLICK_ACTIONS: readonly TabWheelClickAction[] = [
 
 export const DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS: TabWheelClickActionSettings = {
   leftClickAction: "nativeNewTab",
-  middleClickAction: "recentTab",
+  middleClickAction: "dragCurrentTab",
   rightClickAction: "closeToRecent",
 };
 

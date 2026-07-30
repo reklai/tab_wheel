@@ -14,7 +14,7 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
 - Opens the browser's New Tab page beside the current tab with modifier + left click.
-- Returns to the previous tab with modifier + middle click.
+- Drags the current tab with modifier + middle click (hold and drag horizontally).
 - Closes the current tab and returns to the previous tab with modifier + right click.
 - Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, or Off.
 - Drag current tab lets you hold the configured button and drag horizontally; every 56 px moves the active tab one slot without changing its pinned or group membership.
@@ -41,7 +41,7 @@ The popup keeps a small first-use hint visible until the first successful real g
 | --- | --- |
 | Gesture | `Alt / Option + wheel` |
 | Modifier + left click | Browser new tab |
-| Modifier + middle click | Most recent tab |
+| Modifier + middle click | Drag current tab |
 | Modifier + right click | Close current tab |
 | Wheel order | Left-to-right |
 | Wheel direction | Wheel down moves to the next tab |

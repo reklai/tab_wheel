@@ -24,7 +24,7 @@ MOUSE ACTIONS AND SETTINGS
 Alt / Option is the default modifier. You can change it to Ctrl / Control or Meta / Command and optionally require Shift.
 
 - Modifier + left click opens the browser's New Tab page beside the current tab.
-- Modifier + middle click returns to the most recent tab.
+- Modifier + middle click drags the current tab (hold and drag horizontally).
 - Modifier + right click uses Close current tab and returns to the most recent tab.
 - Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, or Off.
 - Drag current tab moves the active tab live as you drag horizontally, one slot per 56 px, while preserving pinned and tab-group boundaries.
@@ -43,7 +43,7 @@ CURRENT DEFAULTS
 
 - Gesture: Alt / Option + wheel.
 - Modifier + left click: Browser new tab.
-- Modifier + middle click: Most recent tab.
+- Modifier + middle click: Drag current tab.
 - Modifier + right click: Close current tab.
 - Wheel order: Left-to-right.
 - Wheel direction: wheel down moves to the next tab.
