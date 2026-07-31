@@ -15,6 +15,15 @@ npm run ci
 npm run release:package
 ```
 
+## 4.0.1
+
+- Made Drag current tab the default middle-click action for fresh installs and resets. Upgrades preserve every valid saved middle-click mapping, including through the historical v14 migration step that previously narrowed them.
+- Activated restored tabs on browser cold start: `runtime.onStartup` now reinjects the content script into eligible restored tabs (immediate pass plus an independent two-second retry), so gestures work after a browser restart without reloading any tab.
+- Injected with `injectImmediately` on Chrome so restored documents that never reach the idle phase still connect.
+- Left discarded (sleeping) tabs asleep at startup; they gain gestures when they wake normally, and waking preserves their saved page position.
+- Isolated startup housekeeping, the initial activation pass, and the delayed retry from each other, so one failure or stall cannot cancel the rest.
+- Aligned onboarding copy and store assets with the middle-click drag default.
+
 ## 4.0.0
 
 - Restored remappable modifier + left, middle, and right click actions.
