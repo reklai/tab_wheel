@@ -49,6 +49,10 @@ test("executeContentScriptInTab injects via the MV3 scripting API with an MV2 ta
   // target the real content script bundle.
   assert.match(fnSource, /runtimeBrowser\.scripting\?\.executeScript/);
   assert.match(fnSource, /await runtimeBrowser\.scripting\.executeScript\(\{/);
+  assert.match(
+    fnSource,
+    /target:\s*\{\s*tabId,\s*\.\.\.\(allFrames\s*\?\s*\{\s*allFrames:\s*true\s*\}\s*:\s*\{\s*\}\)\s*\}/,
+  );
   assert.match(fnSource, /files:\s*\["contentScript\.js"\]/);
 
   // Protects: the same promise on MV2 browsers (Firefox), where
@@ -57,6 +61,19 @@ test("executeContentScriptInTab injects via the MV3 scripting API with an MV2 ta
   assert.match(fnSource, /if \(runtimeBrowser\.tabs\.executeScript\)/);
   assert.match(fnSource, /await runtimeBrowser\.tabs\.executeScript\(tabId,\s*\{/);
   assert.match(fnSource, /file:\s*"contentScript\.js"/);
+  assert.match(
+    fnSource,
+    /await runtimeBrowser\.tabs\.executeScript\(tabId,\s*\{[\s\S]*?\.\.\.\(allFrames\s*\?\s*\{\s*allFrames:\s*true\s*\}\s*:\s*\{\s*\}\)/,
+  );
+
+  const injectFnSource = domain.slice(
+    domain.indexOf("async function injectContentScriptIntoTab"),
+    domain.indexOf("async function resetState"),
+  );
+  assertOrdered(injectFnSource, [
+    "executeContentScriptInTab(tab.id, true)",
+    "executeContentScriptInTab(tab.id, false)",
+  ]);
 });
 
 test("registerLifecycleListeners primes active tabs on every worker (re)start, not just onInstalled", () => {
