@@ -1007,6 +1007,11 @@ export function createTabWheelDomain(options: {
     for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
       const targetTab = resolveCycleTargetTab(activeTab, remainingTabs, direction, settings);
       if (!targetTab?.id || targetTab.id === activeTab.id) return null;
+      // A sleeping (discarded) tab cannot answer a probe and injection refuses
+      // to wake it, so probing would misfile it as unusable. Asleep is not
+      // broken: landing on it is the real switch that may wake it, and the
+      // eligibility filter has already applied the restricted-URL check.
+      if (targetTab.discarded === true) return targetTab;
       if (!settings.skipRestrictedPages || await ensurePageGestureAvailable(targetTab)) return targetTab;
       remainingTabs = remainingTabs.filter((candidate) => candidate.id !== targetTab.id);
     }

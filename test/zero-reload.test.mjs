@@ -337,6 +337,46 @@ test("onStartup schedules its delayed scan while an immediate MV3 injection is s
   }
 });
 
+test("wheel cycling lands on a sleeping (discarded) neighbor by activating it, never by injecting into it", async () => {
+  const awakeTab = { id: 1, windowId: 5, index: 0, active: true, url: "https://awake.test/" };
+  const sleepingTab = { id: 2, windowId: 5, index: 1, active: false, discarded: true, url: "https://asleep.test/" };
+  const updatedTabIds = [];
+  const injectedTabIds = [];
+  const browserMock = {
+    runtime: { getURL: (path) => path },
+    scripting: {
+      executeScript: async ({ target }) => { injectedTabIds.push(target.tabId); },
+    },
+    storage: {
+      local: {
+        get: async () => ({}),
+        set: async () => {},
+        remove: async () => {},
+      },
+    },
+    tabs: {
+      get: async (tabId) => [awakeTab, sleepingTab].find((tab) => tab.id === tabId) ?? null,
+      query: async () => [awakeTab, sleepingTab],
+      sendMessage: async (tabId) => {
+        if (tabId === sleepingTab.id) throw new Error("a discarded tab has no page to receive messages");
+        return {};
+      },
+      update: async (tabId) => {
+        updatedTabIds.push(tabId);
+        return { ...sleepingTab, active: true };
+      },
+    },
+  };
+  const { createTabWheelDomain } = await loadTabWheelDomain(browserMock, async () => {});
+  const result = await createTabWheelDomain().cycle("next", "gesture", awakeTab);
+  await flushAsyncWork();
+
+  assert.equal(result.ok, true, `cycle should land on the sleeping neighbor, got: ${JSON.stringify(result)}`);
+  assert.equal(result.tabId, sleepingTab.id);
+  assert.ok(updatedTabIds.includes(sleepingTab.id), "the sleeping tab should be woken by activation");
+  assert.ok(!injectedTabIds.includes(sleepingTab.id), "waking must come from activation, not injection");
+});
+
 test("initApp begins execution with the re-injection guard so double injection never stacks listeners", () => {
   const app = readText("src/lib/appInit/appInit.ts");
   const initAppSource = app.slice(app.indexOf("export function initApp(): void {"));
