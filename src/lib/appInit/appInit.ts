@@ -90,6 +90,10 @@ const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
 // comfortably covers the idle threshold without turning every wheel event into
 // a message.
 const WORKER_PREWARM_INTERVAL_MS = 15000;
+// KeyboardEvent.key values for the configurable gesture modifiers, so the
+// modifier press itself — which precedes the first wheel notch by the user's
+// wind-up — can trigger the same pre-warm.
+const MODIFIER_PREWARM_KEYS = { alt: "Alt", ctrl: "Control", meta: "Meta" } as const;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
 const STATUS_TIMEOUT_MS = 1500;
 const TAB_DRAG_KEEPALIVE_MS = 15000;
@@ -863,6 +867,22 @@ export function initApp(): void {
     return true;
   }
 
+  // The earliest observable moment of a gesture is the modifier going down,
+  // which beats the first wheel notch by the user's wind-up. Warming here
+  // hides more of an MV3 cold start than the wheel-time ping alone; a press
+  // that never becomes a gesture (Alt-Tab, shortcuts) costs at most one
+  // rate-limited no-op message per interval. Same top-frame gate and shared
+  // rate-limit clock as the wheel-time pre-warm, and equally fire-and-forget.
+  function modifierKeydownPrewarmHandler(event: KeyboardEvent): void {
+    if (!event.isTrusted) return;
+    if (event.key !== MODIFIER_PREWARM_KEYS[settings.gestureModifier]) return;
+    const now = Date.now();
+    if (isTopFrameContext && now - lastWorkerPrewarmAt >= WORKER_PREWARM_INTERVAL_MS) {
+      lastWorkerPrewarmAt = now;
+      void notifyTabWheelContentReady().catch(() => {});
+    }
+  }
+
   function wheelHandler(event: WheelEvent): void {
     // Cheapest possible exit for plain scrolling, which is the overwhelming
     // majority of wheel events on any page: the chord check (which includes
@@ -1059,6 +1079,7 @@ export function initApp(): void {
   window.addEventListener("auxclick", mouseGestureHandler, true);
   window.addEventListener("contextmenu", mouseGestureHandler, true);
   window.addEventListener("blur", cancelUnreleasedTabDragGesture);
+  window.addEventListener("keydown", modifierKeydownPrewarmHandler, true);
   window.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
   document.addEventListener("visibilitychange", visibilityHandler);
   browser.storage.onChanged.addListener(storageChangedHandler);
@@ -1083,6 +1104,7 @@ export function initApp(): void {
     window.removeEventListener("auxclick", mouseGestureHandler, true);
     window.removeEventListener("contextmenu", mouseGestureHandler, true);
     window.removeEventListener("blur", cancelUnreleasedTabDragGesture);
+    window.removeEventListener("keydown", modifierKeydownPrewarmHandler, true);
     window.removeEventListener("wheel", wheelHandler, true);
     document.removeEventListener("visibilitychange", visibilityHandler);
     browser.storage.onChanged.removeListener(storageChangedHandler);

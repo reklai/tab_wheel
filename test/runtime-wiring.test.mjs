@@ -294,6 +294,33 @@ test("the gesture path pre-warms the MV3 worker on a rate limit, off the accumul
   ]);
 });
 
+test("pressing the gesture modifier pre-warms the worker before the first wheel notch", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+  const keydownHandlerSource = app.slice(
+    app.indexOf("function modifierKeydownPrewarmHandler"),
+    app.indexOf("function wheelHandler"),
+  );
+  assert.ok(keydownHandlerSource.length > 0, "modifierKeydownPrewarmHandler should be found in source");
+
+  // Only a trusted press of the configured modifier warms; auto-repeat and
+  // unrelated keys fall to the same rate limit and key check.
+  assert.match(keydownHandlerSource, /if \(!event\.isTrusted\) return;/);
+  assert.match(keydownHandlerSource, /settings\.gestureModifier/);
+
+  // Shares the wheel pre-warm's rate limit and top-frame gate, and stays
+  // fire-and-forget: a slow or failed wake must never affect the gesture.
+  assert.match(
+    keydownHandlerSource,
+    /if \(isTopFrameContext && now - lastWorkerPrewarmAt >= WORKER_PREWARM_INTERVAL_MS\) \{\s*\n\s*lastWorkerPrewarmAt = now;\s*\n\s*void notifyTabWheelContentReady\(\)\.catch\(\(\) => \{\}\);\s*\n\s*\}/,
+  );
+  assert.doesNotMatch(keydownHandlerSource, /await notifyTabWheelContentReady/);
+
+  // Registered and cleaned up like every other page listener, so re-injection
+  // never stacks a second warmer.
+  assert.match(app, /window\.addEventListener\("keydown", modifierKeydownPrewarmHandler, true\);/);
+  assert.match(app, /window\.removeEventListener\("keydown", modifierKeydownPrewarmHandler, true\);/);
+});
+
 test("a completed cycle pre-probes its neighbors off the hot path without waking discarded tabs", () => {
   const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
   const cycleSource = domain.slice(
