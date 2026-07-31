@@ -23,7 +23,7 @@ test("focused v14 migration preserves core state and removes retired state", () 
   assert.match(migrations, /deleteKey\(migratedStorage,\s*TABWHEEL_SEARCH_HISTORY_KEY\)/);
   assert.match(migrations, /"leftClickAction"/);
   assert.match(migrations, /"pageScrollSpeedMultiplier"/);
-  assert.match(migrations, /nextSettings\.middleClickAction !== "openSettings"/);
+  assert.match(focusedMigration, /!isClickActionValue\(nextSettings\.middleClickAction\)/);
   assert.doesNotMatch(focusedMigration, /\[\s*"leftClickAction",\s*"middleClickAction"/);
   assert.match(migrations, /"restorePagePosition"/);
   assert.match(migrations, /"wrapAround"/);

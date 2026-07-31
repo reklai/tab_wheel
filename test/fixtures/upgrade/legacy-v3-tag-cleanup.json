@@ -36,7 +36,7 @@
       "wheelAcceleration": false,
       "wheelCooldownMs": 160,
       "wheelSensitivity": 1,
-      "middleClickAction": "openSettings",
+      "middleClickAction": "recentTab",
       "restorePagePosition": true,
       "wrapAround": true,
       "skipHiddenTabs": true,

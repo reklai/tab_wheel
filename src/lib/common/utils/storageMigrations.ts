@@ -189,7 +189,7 @@ function focusTabWheelSettings(storage: StorageSnapshot): boolean {
     changed = deleteKey(nextSettings, key) || changed;
   }
 
-  if (nextSettings.middleClickAction !== "openSettings" && nextSettings.middleClickAction !== "none") {
+  if (!isClickActionValue(nextSettings.middleClickAction)) {
     nextSettings.middleClickAction = "openSettings";
     changed = true;
   }

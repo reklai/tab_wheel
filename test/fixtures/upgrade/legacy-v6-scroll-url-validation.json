@@ -49,7 +49,7 @@
       "wheelAcceleration": false,
       "wheelCooldownMs": 160,
       "wheelSensitivity": 1,
-      "middleClickAction": "openSettings",
+      "middleClickAction": "recentTab",
       "allowGesturesInEditableFields": true,
       "restorePagePosition": true,
       "wrapAround": true,

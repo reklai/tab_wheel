@@ -37,7 +37,7 @@
       "wheelAcceleration": false,
       "horizontalWheel": true,
       "overshootGuard": true,
-      "middleClickAction": "openSettings",
+      "middleClickAction": "recentTab",
       "restorePagePosition": true,
       "skipHiddenTabs": true,
       "showRestrictedBadge": true,

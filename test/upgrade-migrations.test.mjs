@@ -73,6 +73,24 @@ test("v19 preserves native-new-tab mappings", async () => {
   assert.equal(result.changed, true);
 });
 
+test("historical migrations preserve a valid middle-click mapping", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { transform } = await import("esbuild");
+  const source = readFileSync(resolve(root, "src/lib/common/utils/storageMigrations.ts"), "utf8");
+  const transformed = await transform(source, { loader: "ts", format: "esm", target: "es2022" });
+  const encoded = Buffer.from(transformed.code, "utf8").toString("base64");
+  const migrations = await import(`data:text/javascript;base64,${encoded}`);
+
+  const result = migrations.migrateStorageSnapshot({
+    storageSchemaVersion: 12,
+    tabWheelSettings: {
+      middleClickAction: "recentTab",
+    },
+  });
+
+  assert.equal(result.migratedStorage.tabWheelSettings.middleClickAction, "recentTab");
+});
+
 test("v18 click-action restoration preserves drag-current-tab mappings", async () => {
   const { readFileSync } = await import("node:fs");
   const { transform } = await import("esbuild");
