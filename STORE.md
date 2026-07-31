@@ -81,7 +81,7 @@ No data is sent to TabWheel, its developer, or any developer-owned service. TabW
 
 WHAT'S NEW IN 4.0.0
 
-Modifier + left, middle, and right mouse actions are back. Browser New Tab is the default left-click action and opens actively beside the current tab. Drag current tab is an optional mapping that reorders the active tab live when you drag horizontally. Recently-used wheel cycling was removed; the wheel always follows tab-strip order. Onboarding now runs in the intended order: wheel demo, separate live mouse-action setup, shared wheel-and-click settings, then the wheel-ready screen.
+Modifier + left, middle, and right mouse actions are back. Browser New Tab is the default left-click action and opens actively beside the current tab. Drag current tab is the default middle-click mapping and remains remappable. It reorders the active tab live when you drag horizontally. Recently-used wheel cycling was removed; the wheel always follows tab-strip order. Onboarding now runs in the intended order: wheel demo, separate live mouse-action setup, shared wheel-and-click settings, then the wheel-ready screen.
 
 ## Privacy
 

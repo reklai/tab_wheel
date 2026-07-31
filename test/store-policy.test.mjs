@@ -46,6 +46,17 @@ test("store and package metadata use the approved mouse-first summary", () => {
   assert.match(store, /Fresh installs and updates from pre-V4 releases/);
 });
 
+test("store release copy identifies Drag current tab as the remappable middle-click default", () => {
+  const store = readText("STORE.md");
+  const whatsNew = store.match(/WHAT'S NEW IN 4\.0\.0\s+([^\n]+)/)?.[1] || "";
+
+  assert.match(
+    whatsNew,
+    /Drag current tab is the default middle-click mapping and remains remappable\./,
+  );
+  assert.doesNotMatch(whatsNew, /Drag current tab is an optional mapping/);
+});
+
 test("source releases preflight before output and exclude previous release artifacts", () => {
   const packaging = readText("esBuildConfig/packageRelease.mjs");
   const main = packaging.match(/function main\(\) \{([\s\S]*?)\n\}/)?.[1] || "";
