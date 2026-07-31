@@ -2,9 +2,135 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { build } from "esbuild";
 
 const ROOT = process.cwd();
 const readText = (path) => readFileSync(resolve(ROOT, path), "utf8");
+let domainBundlePromise;
+let domainImportSerial = 0;
+
+function createDeferred() {
+  let resolveDeferred = () => {};
+  const promise = new Promise((resolvePromise) => {
+    resolveDeferred = resolvePromise;
+  });
+  return { promise, resolve: resolveDeferred };
+}
+
+function createListenerEvent() {
+  let listener;
+  return {
+    addListener(nextListener) {
+      listener = nextListener;
+    },
+    get listener() {
+      return listener;
+    },
+  };
+}
+
+async function flushAsyncWork() {
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
+}
+
+async function loadTabWheelDomain(browserMock, sleepMock) {
+  domainBundlePromise ??= build({
+    entryPoints: [resolve(ROOT, "src/lib/backgroundRuntime/domains/tabWheelDomain.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    target: "es2022",
+    write: false,
+    plugins: [{
+      name: "startup-browser-boundary",
+      setup(builder) {
+        builder.onResolve(
+          { filter: /^webextension-polyfill$/ },
+          () => ({ path: "browser-polyfill", namespace: "startup-test" }),
+        );
+        builder.onLoad(
+          { filter: /^browser-polyfill$/, namespace: "startup-test" },
+          () => ({
+            contents: "export default globalThis.__tabWheelStartupBrowserMock;",
+            loader: "js",
+          }),
+        );
+        builder.onResolve(
+          { filter: /^\.\.\/\.\.\/common\/utils\/asyncFlow$/ },
+          (args) => args.importer.endsWith("tabWheelDomain.ts")
+            ? { path: "async-flow", namespace: "startup-test" }
+            : null,
+        );
+        builder.onLoad(
+          { filter: /^async-flow$/, namespace: "startup-test" },
+          () => ({
+            contents: `
+              export {
+                createInFlightMemo,
+                createKeyedTaskQueue,
+                createWriteChain,
+              } from ${JSON.stringify(resolve(ROOT, "src/lib/common/utils/asyncFlow.ts"))};
+              export const sleep = globalThis.__tabWheelStartupSleepMock;
+            `,
+            loader: "js",
+            resolveDir: ROOT,
+          }),
+        );
+      },
+    }],
+  }).then((result) => result.outputFiles[0].text);
+
+  globalThis.__tabWheelStartupBrowserMock = browserMock;
+  globalThis.__tabWheelStartupSleepMock = sleepMock;
+  const bundledCode = await domainBundlePromise;
+  const encoded = Buffer.from(bundledCode, "utf8").toString("base64");
+  domainImportSerial += 1;
+  return import(`data:text/javascript;base64,${encoded}#startup-${domainImportSerial}`);
+}
+
+async function createStartupHarness({ tabsQuery, executeScript, sleep }) {
+  const onStartup = createListenerEvent();
+  const passiveEvent = () => createListenerEvent();
+  const browserMock = {
+    runtime: {
+      getURL: (path) => path,
+      onInstalled: passiveEvent(),
+      onStartup,
+    },
+    scripting: { executeScript },
+    storage: {
+      local: {
+        get: async () => { throw new Error("skip startup housekeeping in lifecycle test"); },
+        remove: async () => {},
+        set: async () => {},
+      },
+      onChanged: passiveEvent(),
+    },
+    tabs: {
+      query: tabsQuery,
+      get: async () => null,
+      sendMessage: async () => {},
+      create: async () => {},
+      executeScript: undefined,
+      onCreated: passiveEvent(),
+      onActivated: passiveEvent(),
+      onMoved: passiveEvent(),
+      onAttached: passiveEvent(),
+      onDetached: passiveEvent(),
+      onRemoved: passiveEvent(),
+      onUpdated: passiveEvent(),
+    },
+    windows: {
+      getAll: async () => [],
+      onRemoved: passiveEvent(),
+    },
+  };
+  const { createTabWheelDomain } = await loadTabWheelDomain(browserMock, sleep);
+  createTabWheelDomain().registerLifecycleListeners();
+  assert.equal(typeof onStartup.listener, "function", "onStartup handler should be registered");
+  return onStartup.listener;
+}
+
 const assertOrdered = (text, snippets) => {
   let cursor = -1;
   for (const snippet of snippets) {
@@ -53,6 +179,7 @@ test("executeContentScriptInTab injects via the MV3 scripting API with an MV2 ta
     fnSource,
     /target:\s*\{\s*tabId,\s*\.\.\.\(allFrames\s*\?\s*\{\s*allFrames:\s*true\s*\}\s*:\s*\{\s*\}\)\s*\}/,
   );
+  assert.match(fnSource, /injectImmediately:\s*true/);
   assert.match(fnSource, /files:\s*\["contentScript\.js"\]/);
 
   // Protects: the same promise on MV2 browsers (Firefox), where
@@ -114,6 +241,100 @@ test("onStartup reinjects content scripts into restored tabs without reloading t
   assert.match(startupHandlerSource, /startup housekeeping failed/);
   assert.match(startupHandlerSource, /await sleep\(2000\)/);
   assert.doesNotMatch(startupHandlerSource, /browser\.tabs\.reload\s*\(/);
+});
+
+test("onStartup isolates a failed initial activation and retries after two seconds", async () => {
+  const delay = createDeferred();
+  const sleepCalls = [];
+  const warnings = [];
+  const sequence = [];
+  let activationCalls = 0;
+  const startupHandler = await createStartupHarness({
+    tabsQuery: async () => {
+      activationCalls += 1;
+      sequence.push(`activation:${activationCalls}`);
+      throw new Error(`activation ${activationCalls} failed`);
+    },
+    executeScript: async () => {},
+    sleep: async (milliseconds) => {
+      sleepCalls.push(milliseconds);
+      sequence.push(`sleep:${milliseconds}`);
+      await delay.promise;
+    },
+  });
+  const originalWarn = console.warn;
+  console.warn = (message) => {
+    const warning = String(message);
+    warnings.push(warning);
+    if (warning.includes("delayed startup content script activation failed")) sequence.push("warning:delayed");
+    else if (warning.includes("startup content script activation failed")) sequence.push("warning:initial");
+  };
+  try {
+    const startup = startupHandler();
+    await flushAsyncWork();
+
+    assert.equal(activationCalls, 1);
+    assert.deepEqual(sleepCalls, [2000]);
+    assert.ok(warnings.some((warning) => warning.includes("startup content script activation failed")));
+    assert.deepEqual(sequence, ["activation:1", "sleep:2000", "warning:initial"]);
+
+    delay.resolve();
+    await startup;
+
+    assert.equal(activationCalls, 2);
+    assert.ok(warnings.some((warning) => warning.includes("delayed startup content script activation failed")));
+    assert.deepEqual(sequence, [
+      "activation:1",
+      "sleep:2000",
+      "warning:initial",
+      "activation:2",
+      "warning:delayed",
+    ]);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test("onStartup schedules its delayed scan while an immediate MV3 injection is still pending", async () => {
+  const delay = createDeferred();
+  const neverSettles = new Promise(() => {});
+  const sleepCalls = [];
+  const injectionDetails = [];
+  let activationCalls = 0;
+  const startupHandler = await createStartupHarness({
+    tabsQuery: async () => {
+      activationCalls += 1;
+      return activationCalls === 1
+        ? [{ id: 17, discarded: false, url: "https://example.test/" }]
+        : [];
+    },
+    executeScript: async (details) => {
+      injectionDetails.push(details);
+      return neverSettles;
+    },
+    sleep: async (milliseconds) => {
+      sleepCalls.push(milliseconds);
+      await delay.promise;
+    },
+  });
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    void startupHandler();
+    await flushAsyncWork();
+
+    assert.equal(activationCalls, 1);
+    assert.deepEqual(sleepCalls, [2000]);
+    assert.equal(injectionDetails.length, 1);
+    assert.equal(injectionDetails[0].injectImmediately, true);
+
+    delay.resolve();
+    await flushAsyncWork();
+
+    assert.equal(activationCalls, 2);
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test("initApp begins execution with the re-injection guard so double injection never stacks listeners", () => {

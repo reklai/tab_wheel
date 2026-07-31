@@ -649,7 +649,11 @@ export function createTabWheelDomain(options: {
   async function executeContentScriptInTab(tabId: number, allFrames: boolean): Promise<boolean> {
     const runtimeBrowser = browser as typeof browser & {
       scripting?: {
-        executeScript(details: { target: { tabId: number; allFrames?: boolean }; files: string[] }): Promise<unknown>;
+        executeScript(details: {
+          target: { tabId: number; allFrames?: boolean };
+          files: string[];
+          injectImmediately?: boolean;
+        }): Promise<unknown>;
       };
       tabs: typeof browser.tabs & {
         executeScript?: (tabId: number, details: { file: string; runAt?: string; allFrames?: boolean }) => Promise<unknown>;
@@ -661,6 +665,8 @@ export function createTabWheelDomain(options: {
         await runtimeBrowser.scripting.executeScript({
           target: { tabId, ...(allFrames ? { allFrames: true } : {}) },
           files: ["contentScript.js"],
+          // Restored documents may never reach the default document_idle phase.
+          injectImmediately: true,
         });
         return true;
       }
@@ -1759,26 +1765,27 @@ export function createTabWheelDomain(options: {
         console.warn("[TabWheel] startup housekeeping failed:", error);
       }
 
-      // Browser cold start restores tabs without an install/update event. Await
-      // the install inject path so the MV3 worker stays alive for the full scan
-      // (void fire-and-forget can be killed mid-Promise.all). No forced navigation.
+      // Browser cold start restores tabs without an install/update event. Keep
+      // both inject passes awaited so the MV3 worker stays alive, but start the
+      // delayed pass before awaiting either one so a stuck scan cannot gate it.
       const activateRestoredTabs = async (): Promise<void> => {
         await activateExistingContentScripts();
         await ensureActiveTabContentScripts();
       };
-      try {
-        await activateRestoredTabs();
-      } catch (error) {
+      const immediateActivation = activateRestoredTabs().catch((error) => {
         console.warn("[TabWheel] startup content script activation failed:", error);
-      }
+      });
       // Session restore can finish after the first query; one delayed pass covers
       // tabs that were still loading or not yet present (inject only).
-      try {
-        await sleep(2000);
-        await activateRestoredTabs();
-      } catch (error) {
-        console.warn("[TabWheel] delayed startup content script activation failed:", error);
-      }
+      const delayedActivation = (async () => {
+        try {
+          await sleep(2000);
+          await activateRestoredTabs();
+        } catch (error) {
+          console.warn("[TabWheel] delayed startup content script activation failed:", error);
+        }
+      })();
+      await Promise.all([immediateActivation, delayedActivation]);
     });
 
     // Re-enabling the extension does not fire onInstalled, but it does kill page
