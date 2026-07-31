@@ -125,11 +125,14 @@ const FALLBACK_CYCLE_LOCK_WINDOW_ID = 0;
 const LEGACY_RECENT_TABS_STORAGE_KEY = "tabWheelMruState";
 const WINDOW_TABS_CACHE_TTL_MS = 350;
 const SCROLL_MEMORY_SAVE_DEBOUNCE_MS = 120;
-const GESTURE_TARGET_PROBE_TIMEOUT_MS = 320;
+// Bounds how long resolving a switch may wait on one candidate's readiness.
+// Expiry means "slow", which lands rather than skips, so the budget only has
+// to cover the common fast path — not protect reachability.
+const GESTURE_TARGET_PROBE_TIMEOUT_MS = 150;
 const MAX_GESTURE_PROBE_ATTEMPTS = 4;
 // How far the post-switch pre-probe looks in each cycle direction. Two covers
 // the tabs a continued gesture reaches within the next couple of cooldowns
-// (which is what the 320ms hot-path probe is currently paid for), while
+// (which is what the hot-path readiness probe is currently paid for), while
 // keeping the speculative work per switch bounded at four tabs.
 const NEIGHBOR_PREPROBE_DEPTH = 2;
 const CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS = 2500;
@@ -141,7 +144,13 @@ const NEIGHBOR_PREPROBE_RETRY_COOLDOWN_MS = CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL
 const GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS = [0, 80, 180] as const;
 const SCROLL_RESTORE_RETRY_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600] as const;
 const DISCARDED_SCROLL_RESTORE_RETRY_DELAYS_MS = [...SCROLL_RESTORE_RETRY_DELAYS_MS, 4000] as const;
-const DISCARDED_WAKE_CYCLE_HOLD_MS = 700;
+// A safety net, not the real release: the hold lifts when the wake completes
+// (onUpdated status "complete"), the user switches away, or the tab closes.
+// It only has to outlast a pathological never-completing load, so it must be
+// generous — real wakes routinely exceed any sub-second grace period, and an
+// expired hold lets cycle-away capture a waking document's top-of-page scroll
+// over the position the user actually left.
+const DISCARDED_WAKE_HOLD_SAFETY_MS = 15000;
 const TAB_DRAG_SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
 function windowKey(windowId: number): string {
@@ -608,7 +617,7 @@ export function createTabWheelDomain(options: {
     if (tab.id == null || tab.windowId == null || tab.discarded !== true) return;
     discardedWakeHoldByWindowId.set(tab.windowId, {
       tabId: tab.id,
-      expiresAt: Date.now() + DISCARDED_WAKE_CYCLE_HOLD_MS,
+      expiresAt: Date.now() + DISCARDED_WAKE_HOLD_SAFETY_MS,
     });
   }
 
@@ -845,44 +854,50 @@ export function createTabWheelDomain(options: {
     return { ok: true };
   }
 
-  // recordFailure writes the negative cache, and that cache feeds
-  // getGestureEligibleTabs — so it does not merely remember a slow tab, it
-  // removes the tab from what the next cycle can reach. Only a caller
-  // resolving a switch the user actually asked for has earned that: probing
-  // *injects*, injection is itself what wakes a frozen or throttled tab, and
-  // so a 320ms timeout is frequently a tab the probe just made usable rather
-  // than evidence of one that is broken.
-  async function ensurePageGestureAvailable(
+  // The negative cache feeds getGestureEligibleTabs — a write removes the tab
+  // from what the next cycle can reach — so only provable rejection may write
+  // it: a restricted URL, or an injection the browser refused. "Slow" —
+  // readiness lagging the probe budget, including the budget expiring — never
+  // writes it: a successful injection proves the page can host the script, so
+  // lag is slowness, not evidence of a broken page.
+  async function resolvePageGestureReadiness(
     tab: Tabs.Tab,
     { recordFailure = true }: EnsurePageGestureProbeOptions = {},
-  ): Promise<boolean> {
-    if (tab.id == null) return false;
+  ): Promise<"ready" | "slow" | "unavailable"> {
+    if (tab.id == null) return "unavailable";
     const tabId = tab.id;
     if (isPageGestureRestrictedUrl(tab.url)) {
       if (recordFailure) markContentScriptUnavailable(tab);
-      return false;
+      return "unavailable";
     }
     const url = normalizePageUrl(tab.url);
-    if (!url) return false;
+    if (!url) return "unavailable";
     if (contentScriptReadyUrlsByTabId.get(tab.id) === url) {
       contentScriptUnavailableUrlsByTabId.delete(tab.id);
-      return true;
+      return "ready";
     }
-    const didBecomeReady = await resolveWithTimeout(
+    const readiness = await resolveWithTimeout<"ready" | "slow" | "unavailable">(
       (async () => {
-        if (await pingContentScript(tab)) return true;
+        if (await pingContentScript(tab)) return "ready";
         const injection = await injectContentScriptIntoTab(tab);
-        if (injection !== "injected") return false;
+        if (injection !== "injected") return "unavailable";
         const currentTab = await browser.tabs.get(tabId).catch(() => tab);
-        return await waitForContentScriptReady(currentTab, GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS);
+        return await waitForContentScriptReady(currentTab, GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS)
+          ? "ready"
+          : "slow";
       })(),
       GESTURE_TARGET_PROBE_TIMEOUT_MS,
-      false,
+      "slow",
     );
-    if (didBecomeReady) return true;
+    if (readiness === "unavailable" && recordFailure) markContentScriptUnavailable(tab);
+    return readiness;
+  }
 
-    if (recordFailure) markContentScriptUnavailable(tab);
-    return false;
+  async function ensurePageGestureAvailable(
+    tab: Tabs.Tab,
+    options: EnsurePageGestureProbeOptions = {},
+  ): Promise<boolean> {
+    return await resolvePageGestureReadiness(tab, options) === "ready";
   }
 
   async function restoreScroll(tab: Tabs.Tab): Promise<boolean> {
@@ -1012,7 +1027,10 @@ export function createTabWheelDomain(options: {
       // broken: landing on it is the real switch that may wake it, and the
       // eligibility filter has already applied the restricted-URL check.
       if (targetTab.discarded === true) return targetTab;
-      if (!settings.skipRestrictedPages || await ensurePageGestureAvailable(targetTab)) return targetTab;
+      // Land on "slow" too: the strip the user sees must be the strip the
+      // wheel walks, so only provable rejection may remove a stop from it.
+      if (!settings.skipRestrictedPages) return targetTab;
+      if (await resolvePageGestureReadiness(targetTab) !== "unavailable") return targetTab;
       remainingTabs = remainingTabs.filter((candidate) => candidate.id !== targetTab.id);
     }
     // Do not activate an unprobed restricted-page candidate. Failed probes are
@@ -1088,7 +1106,7 @@ export function createTabWheelDomain(options: {
     return contentScriptReadyUrlsByTabId.get(tab.id) !== url;
   }
 
-  // Fire-and-forget speculation that pays down the 320ms-per-candidate probe
+  // Fire-and-forget speculation that pays down the per-candidate readiness probe
   // the next gesture would otherwise pay in its hot path, before tabs.update.
   // It is never awaited by the cycle that spawns it (see cycleUnlocked), so
   // neither the cycle's response nor the serialized window queue waits on it.
@@ -1312,7 +1330,7 @@ export function createTabWheelDomain(options: {
     // Detached on purpose. `void` keeps these probes out of the promise this
     // function returns, and that promise is the one runSerializedWindowTask
     // chains the next queued gesture on — so a second gesture starts the
-    // moment this switch resolves, never behind up to four 320ms probes.
+    // moment this switch resolves, never behind a chain of readiness probes.
     // Awaiting here would delay both the response and the next switch.
     void warmNeighborReadiness(targetTab, candidateTabs, settings).catch(() => {});
     if (source === "gesture") {

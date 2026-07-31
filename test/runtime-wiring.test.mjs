@@ -367,44 +367,46 @@ test("a speculative probe can never change what the next cycle is allowed to rea
   // The invariant: pre-probing may only ever make the next cycle faster, never
   // narrower. markContentScriptUnavailable feeds getGestureEligibleTabs, so
   // writing it from a speculative probe would let a probe *remove* a tab from
-  // the user's cycle. That is unsound here in a way it is not on the hot path:
-  // probing injects, injection is itself what wakes a frozen or throttled tab,
-  // and so a 320ms timeout on a speculative probe is not evidence the tab is
-  // unusable — it is frequently a tab the probe just made usable. Only the hot
-  // path, which is resolving a switch the user actually asked for, may record.
+  // the user's cycle. The probe classifies tri-state: "slow" — readiness
+  // lagging the budget, including the budget expiring — is never recorded at
+  // all, because a successful injection proves the page can host the script.
+  // Only provable rejection may record, and only for the hot path, which is
+  // resolving a switch the user actually asked for.
   assert.match(
     domain,
-    /async function ensurePageGestureAvailable\(\s*\n\s*tab: Tabs\.Tab,\s*\n\s*\{ recordFailure = true \}: EnsurePageGestureProbeOptions = \{\},\s*\n\s*\): Promise<boolean> \{/,
+    /async function resolvePageGestureReadiness\(\s*\n\s*tab: Tabs\.Tab,\s*\n\s*\{ recordFailure = true \}: EnsurePageGestureProbeOptions = \{\},\s*\n\s*\): Promise<"ready" \| "slow" \| "unavailable"> \{/,
   );
   // Every negative-cache write inside the probe must sit behind the flag.
   // Counting rather than matching one occurrence is deliberate: the probe has
-  // two failure exits (restricted URL, and the 320ms timeout), and gating only
-  // one of them re-arms the bug for speculative callers while still matching
-  // any single-site assertion.
+  // two rejection exits (restricted URL, and refused injection), and gating
+  // only one of them re-arms the bug for speculative callers while still
+  // matching any single-site assertion.
   const probeSource = domain.slice(
-    domain.indexOf("async function ensurePageGestureAvailable("),
+    domain.indexOf("async function resolvePageGestureReadiness("),
     domain.indexOf("async function restoreScroll("),
   );
-  assert.ok(probeSource.length > 0, "ensurePageGestureAvailable should be found in source");
+  assert.ok(probeSource.length > 0, "resolvePageGestureReadiness should be found in source");
   const negativeCacheWrites = probeSource.match(/markContentScriptUnavailable/g) ?? [];
   const gatedNegativeCacheWrites = probeSource
-    .match(/if \(recordFailure\) markContentScriptUnavailable\(tab\);/g) ?? [];
-  assert.ok(negativeCacheWrites.length > 0, "the probe should still record failures for the hot path");
+    .match(/if \((?:readiness === "unavailable" && )?recordFailure\) markContentScriptUnavailable\(tab\);/g) ?? [];
+  assert.ok(negativeCacheWrites.length > 0, "the probe should still record rejections for the hot path");
   assert.equal(
     gatedNegativeCacheWrites.length,
     negativeCacheWrites.length,
-    "every negative-cache write in ensurePageGestureAvailable must be gated on recordFailure",
+    "every negative-cache write in resolvePageGestureReadiness must be gated on recordFailure",
   );
   assert.match(
     warmSource,
     /await ensurePageGestureAvailable\(neighborTab, \{ recordFailure: false \}\)/,
   );
   assert.doesNotMatch(warmSource, /markContentScriptUnavailable/);
-  // The hot path keeps recording: that cache is exactly what lets the next
-  // gesture skip a genuinely dead tab cheaply instead of re-paying 320ms.
+  // The hot path keeps recording rejections: that cache is exactly what lets
+  // the next gesture skip a genuinely refused tab cheaply instead of
+  // re-paying a probe. But only "unavailable" removes a stop from the strip —
+  // "slow" lands, so the strip the user sees is the strip the wheel walks.
   assert.match(
     domain,
-    /if \(!settings\.skipRestrictedPages \|\| await ensurePageGestureAvailable\(targetTab\)\) return targetTab;/,
+    /if \(!settings\.skipRestrictedPages\) return targetTab;\s*\n\s*if \(await resolvePageGestureReadiness\(targetTab\) !== "unavailable"\) return targetTab;/,
   );
 
   // Dropping the negative marking must not buy the invariant with a re-probe

@@ -22,6 +22,9 @@ npm run release:package
 - Injected with `injectImmediately` on Chrome so restored documents that never reach the idle phase still connect.
 - Left discarded (sleeping) tabs asleep at startup; they gain gestures when they wake normally, and waking preserves their saved page position.
 - Let wheel and popup cycling land on sleeping (discarded) tabs again: landing wakes the tab by activating it. Previously the readiness probe silently skipped sleeping tabs and briefly blacklisted them from cycling, so after a browser restart the wheel could not reach restored tabs that had never been clicked.
+- Made cycling land on slow pages instead of skipping them. Only pages that provably refuse content scripts (restricted URLs, refused injection) are skipped now; readiness that merely lags the probe budget lands, so the strip you see is always the strip the wheel walks. The per-candidate probe budget dropped from 320ms to 150ms because expiry no longer costs reachability.
+- Kept the scroll-preservation hold on a waking tab until its load actually completes instead of a fixed 700ms grace, so cycling away from a still-loading woken tab can no longer overwrite the page position you left it at with top-of-page.
+- A sleeping tab that wakes into a page that refuses content scripts (for example a PDF viewer on a normal-looking URL) costs one landing, then is skipped by later cycles exactly like any other restricted page; the popup fallback remains the exit while on it.
 - Isolated startup housekeeping, the initial activation pass, and the delayed retry from each other, so one failure or stall cannot cancel the rest.
 - Aligned onboarding copy and store assets with the middle-click drag default.
 
