@@ -136,6 +136,10 @@ function migrateTabWheelSettings(storage: StorageSnapshot): boolean {
 
 // Keep historical migration values local to this file. Importing live contracts
 // would let future edits change how old profiles are upgraded.
+// The union of every click action that has ever been valid — intentionally
+// wider than any single step's set (v18 excludes "search"). Steps that
+// preserve against it keep any historically valid mapping; values retired
+// later are remapped by the frozen step that retired them.
 const TABWHEEL_CLICK_ACTION_VALUES = [
   "search",
   "nativeNewTab",
