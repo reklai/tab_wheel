@@ -15,7 +15,7 @@ npm run ci
 npm run release:package
 ```
 
-## 4.0.1
+## 4.0.2
 
 - Made Drag current tab the default middle-click action for fresh installs and resets. Upgrades preserve every valid saved middle-click mapping, including through the historical v14 migration step that previously narrowed them.
 - Activated restored tabs on browser cold start: `runtime.onStartup` now reinjects the content script into eligible restored tabs (immediate pass plus an independent two-second retry), so gestures work after a browser restart without reloading any tab.

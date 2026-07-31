@@ -79,9 +79,9 @@ PRIVATE BY DESIGN
 
 No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, ads, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, recent page positions, and page geometry are stored locally. URLs used to verify page-position restoration remain local. TabWheel does not request browser-history or bookmarks permissions.
 
-WHAT'S NEW IN 4.0.0
+WHAT'S NEW IN 4.0.2
 
-Modifier + left, middle, and right mouse actions are back. Browser New Tab is the default left-click action and opens actively beside the current tab. Drag current tab is the default middle-click mapping and remains remappable. It reorders the active tab live when you drag horizontally. Recently-used wheel cycling was removed; the wheel always follows tab-strip order. Onboarding now runs in the intended order: wheel demo, separate live mouse-action setup, shared wheel-and-click settings, then the wheel-ready screen.
+Drag current tab is the default middle-click mapping and remains remappable. TabWheel now works immediately after a browser restart: restored tabs accept gestures without a reload, and sleeping tabs wake when the wheel lands on them instead of being silently skipped. Slow-loading pages are never skipped either — the wheel always walks the visible tab strip. Leaving a still-loading tab keeps your saved page position, and the first switch after a cold start begins sooner because the background worker wakes the moment you press the gesture modifier. Existing customized mappings and settings are unchanged.
 
 ## Privacy
 

@@ -48,7 +48,7 @@ test("store and package metadata use the approved mouse-first summary", () => {
 
 test("store release copy identifies Drag current tab as the remappable middle-click default", () => {
   const store = readText("STORE.md");
-  const whatsNew = store.match(/WHAT'S NEW IN 4\.0\.0\s+([^\n]+)/)?.[1] || "";
+  const whatsNew = store.match(/WHAT'S NEW IN 4\.0\.2\s+([^\n]+)/)?.[1] || "";
 
   assert.match(
     whatsNew,
