@@ -3,6 +3,7 @@ AGENTS.md
 .codex
 node_modules/
 dist/
+.worktrees/
 
 # Generated release packages (historical tracked packages remain unaffected)
 /release/tabwheel-chrome-v*.zip
