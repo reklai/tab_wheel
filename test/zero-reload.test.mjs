@@ -2,91 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { build } from "esbuild";
+import {
+  createDeferred,
+  createListenerEvent,
+  flushAsyncWork,
+  loadTabWheelDomain,
+} from "./helpers/domainHarness.mjs";
 
 const ROOT = process.cwd();
 const readText = (path) => readFileSync(resolve(ROOT, path), "utf8");
-let domainBundlePromise;
-let domainImportSerial = 0;
-
-function createDeferred() {
-  let resolveDeferred = () => {};
-  const promise = new Promise((resolvePromise) => {
-    resolveDeferred = resolvePromise;
-  });
-  return { promise, resolve: resolveDeferred };
-}
-
-function createListenerEvent() {
-  let listener;
-  return {
-    addListener(nextListener) {
-      listener = nextListener;
-    },
-    get listener() {
-      return listener;
-    },
-  };
-}
-
-async function flushAsyncWork() {
-  for (let index = 0; index < 8; index += 1) await Promise.resolve();
-}
-
-async function loadTabWheelDomain(browserMock, sleepMock) {
-  domainBundlePromise ??= build({
-    entryPoints: [resolve(ROOT, "src/lib/backgroundRuntime/domains/tabWheelDomain.ts")],
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    target: "es2022",
-    write: false,
-    plugins: [{
-      name: "startup-browser-boundary",
-      setup(builder) {
-        builder.onResolve(
-          { filter: /^webextension-polyfill$/ },
-          () => ({ path: "browser-polyfill", namespace: "startup-test" }),
-        );
-        builder.onLoad(
-          { filter: /^browser-polyfill$/, namespace: "startup-test" },
-          () => ({
-            contents: "export default globalThis.__tabWheelStartupBrowserMock;",
-            loader: "js",
-          }),
-        );
-        builder.onResolve(
-          { filter: /^\.\.\/\.\.\/common\/utils\/asyncFlow$/ },
-          (args) => args.importer.endsWith("tabWheelDomain.ts")
-            ? { path: "async-flow", namespace: "startup-test" }
-            : null,
-        );
-        builder.onLoad(
-          { filter: /^async-flow$/, namespace: "startup-test" },
-          () => ({
-            contents: `
-              export {
-                createInFlightMemo,
-                createKeyedTaskQueue,
-                createWriteChain,
-              } from ${JSON.stringify(resolve(ROOT, "src/lib/common/utils/asyncFlow.ts"))};
-              export const sleep = globalThis.__tabWheelStartupSleepMock;
-            `,
-            loader: "js",
-            resolveDir: ROOT,
-          }),
-        );
-      },
-    }],
-  }).then((result) => result.outputFiles[0].text);
-
-  globalThis.__tabWheelStartupBrowserMock = browserMock;
-  globalThis.__tabWheelStartupSleepMock = sleepMock;
-  const bundledCode = await domainBundlePromise;
-  const encoded = Buffer.from(bundledCode, "utf8").toString("base64");
-  domainImportSerial += 1;
-  return import(`data:text/javascript;base64,${encoded}#startup-${domainImportSerial}`);
-}
 
 async function createStartupHarness({ tabsQuery, executeScript, sleep }) {
   const onStartup = createListenerEvent();
