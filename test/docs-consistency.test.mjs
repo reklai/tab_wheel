@@ -42,6 +42,10 @@ test("public docs describe the same mouse-first product and defaults", () => {
     combined,
     /Close current\s*→\s*recent|close-to-previous|close to the previous tab/i,
   );
+  // Current-product first-run docs must not claim a removed wheel-ready screen.
+  // Historical RELEASE.md notes may still mention it; pin only live product docs.
+  assert.doesNotMatch(readText("README.md"), /wheel-ready/i);
+  assert.doesNotMatch(readText("STORE.md"), /wheel-ready/i);
 });
 
 test("public docs do not revive retired search or page-scroll modification", () => {

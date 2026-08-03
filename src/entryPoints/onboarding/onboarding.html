@@ -13,13 +13,13 @@
       <span>Scroll Wheel Tab Switcher</span>
     </header>
 
-    <section id="wheelFlow" class="flow-card">
-      <div class="progress wheel-progress" id="wheelProgress" aria-label="Wheel setup progress">
-        <span class="active" data-progress="1"></span>
-        <span data-progress="2"></span>
-        <span data-progress="3"></span>
-      </div>
+    <div class="progress setup-progress" id="setupProgress" aria-label="Setup progress">
+      <span class="active" data-progress="1"></span>
+      <span data-progress="2"></span>
+      <span data-progress="3"></span>
+    </div>
 
+    <section id="wheelFlow" class="flow-card">
       <section class="step-panel" data-wheel-step="1">
         <p class="eyebrow">Wheel setup · Step 1 of 3</p>
         <h1>Switch tabs from anywhere on the page.</h1>
@@ -47,7 +47,7 @@
       </section>
 
       <section class="step-panel" data-wheel-step="2" hidden>
-        <p class="eyebrow">Shared gesture setup · Step 2 of 3</p>
+        <p class="eyebrow">Shared gesture setup · Step 3 of 3</p>
         <h1>One modifier for the wheel and mouse clicks.</h1>
         <p class="lead">Choose the key combination that activates both tab scrolling and the left, middle, and right click actions you just configured.</p>
 
@@ -91,38 +91,14 @@
 
         <div class="step-actions">
           <button class="text-button" id="wheelBackBtn" type="button">Back</button>
-          <button class="primary-button" id="saveWheelChoicesBtn" type="button">Save shared setup</button>
-        </div>
-      </section>
-
-      <section class="step-panel" data-wheel-step="3" hidden>
-        <p class="eyebrow">Wheel setup · Step 3 of 3</p>
-        <h1>Your wheel gesture is ready.</h1>
-        <p class="lead">Use <strong id="wheelReadyCombo">Alt / Option + wheel</strong> <span class="highlight">anywhere on any normal web page</span>. Your pointer never needs to visit the tab strip.</p>
-
-        <div class="ready-grid">
-          <div><span>↔</span><strong>Predictable order</strong><small>Follows your visible tab strip.</small></div>
-          <div><span>⌖</span><strong>Keeps your place</strong><small>Restores the page position you left.</small></div>
-          <div><span>◇</span><strong>Private by design</strong><small>Settings and positions stay in your browser.</small></div>
-        </div>
-        <div class="constraint warning">
-          <span class="constraint-title">Heads-up</span>
-          <ul>
-            <li><strong>Some pages block gestures</strong> — browser settings, extension stores, PDF viewers, and other protected pages.</li>
-            <li><strong>The toolbar popup covers you there</strong> — it has Previous / Next fallback buttons.</li>
-          </ul>
-        </div>
-
-        <div class="step-actions">
-          <button class="text-button" id="openSettingsBtn" type="button">Review settings</button>
-          <button class="primary-button" id="finishBtn" type="button">Start browsing</button>
+          <button class="primary-button" id="saveWheelChoicesBtn" type="button">Start browsing</button>
         </div>
       </section>
     </section>
 
     <section id="mouseFlow" class="flow-card" hidden>
       <section class="step-panel" data-mouse-step="1">
-        <p class="eyebrow" id="clickStepEyebrow">Mouse-action onboarding</p>
+        <p class="eyebrow" id="clickStepEyebrow">Mouse-action onboarding · Step 2 of 3</p>
         <h1 id="clickStepTitle">One modifier. Three mouse actions.</h1>
         <p class="lead" id="clickStepLead">Choose what each mouse button does, then click or drag with the exact combination in the practice area.</p>
 

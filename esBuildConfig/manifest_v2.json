@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Scroll Wheel Tab Switcher",
-  "version": "4.0.2",
+  "version": "4.0.3",
   "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, private, mouse-first tab control.",
   "browser_specific_settings": {
     "gecko": {

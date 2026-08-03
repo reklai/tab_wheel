@@ -46,15 +46,15 @@ test("store and package metadata use the approved mouse-first summary", () => {
   assert.match(store, /Fresh installs and updates from pre-V4 releases/);
 });
 
-test("store release copy identifies Drag current tab as the remappable middle-click default", () => {
+test("store release copy describes the current patch release", () => {
   const store = readText("STORE.md");
-  const whatsNew = store.match(/WHAT'S NEW IN 4\.0\.2\s+([^\n]+)/)?.[1] || "";
+  const whatsNew = store.match(/WHAT'S NEW IN 4\.0\.3\s+([^\n]+)/)?.[1] || "";
 
-  assert.match(
-    whatsNew,
-    /Drag current tab is the default middle-click mapping and remains remappable\./,
-  );
-  assert.doesNotMatch(whatsNew, /Drag current tab is an optional mapping/);
+  assert.match(whatsNew, /First-run onboarding is shorter and clearer/);
+  assert.match(whatsNew, /progress bar shows the real three steps/);
+  assert.doesNotMatch(whatsNew, /wheel-ready/i);
+  // Middle-click default remains documented in CURRENT DEFAULTS, not only Whats New.
+  assert.match(store, /Modifier \+ middle click:\s*Drag current tab/i);
 });
 
 test("source releases preflight before output and exclude previous release artifacts", () => {

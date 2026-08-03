@@ -30,8 +30,7 @@ Fresh installs and updates from pre-V4 releases follow this sequence:
 
 1. Practice the real modifier-wheel gesture.
 2. Enter the separate mouse-action onboarding to change and immediately preview left/middle/right click.
-3. Return to shared gesture settings to choose the modifier and directly change all three mouse-click actions.
-4. Finish on the wheel-ready screen.
+3. Finish on shared gesture settings: choose the modifier, revise all three mouse-click actions, then Start browsing.
 
 The popup keeps a small first-use hint visible until the first successful real gesture. This state is local and is not analytics.
 
@@ -96,9 +95,9 @@ npm run release:package
 
 This creates:
 
-- `release/tabwheel-chrome-v4.0.2.zip`
-- `release/tabwheel-firefox-v4.0.2.xpi`
-- `release/tabwheel-source-v4.0.2.zip`
+- `release/tabwheel-chrome-v4.0.3.zip`
+- `release/tabwheel-firefox-v4.0.3.xpi`
+- `release/tabwheel-source-v4.0.3.zip`
 
 ## Project structure
 

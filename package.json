@@ -1,6 +1,6 @@
 {
   "name": "tabwheel",
-  "version": "4.0.2",
+  "version": "4.0.3",
   "private": true,
   "description": "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, private, mouse-first tab control.",
   "license": "MIT",

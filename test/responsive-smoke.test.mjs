@@ -22,5 +22,6 @@ test("settings and onboarding collapse cleanly on narrow screens", () => {
   assert.match(options, /@media \(max-width:\s*620px\)/);
   assert.match(options, /\.setting-row,\s*\.range-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.match(onboarding, /@media \(max-width:\s*680px\)/);
-  assert.match(onboarding, /\.ready-grid,\s*\.update-columns,\s*\.click-system,\s*\.action-grid,\s*\.choice-list\.compact-choices,\s*\.mouse-intro-actions\s*\{\s*grid-template-columns:\s*1fr/);
+  assert.match(onboarding, /\.update-columns,\s*\.click-system,\s*\.action-grid,\s*\.choice-list\.compact-choices,\s*\.mouse-intro-actions\s*\{\s*grid-template-columns:\s*1fr/);
+  assert.match(onboarding, /\.setup-progress\s*\{\s*grid-template-columns:\s*repeat\(3,\s*1fr\)/);
 });

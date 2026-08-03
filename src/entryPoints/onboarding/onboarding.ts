@@ -36,7 +36,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     else window.close();
   }
 
-  const openSettings = () => void browser.runtime.openOptionsPage();
   const demo = byId<HTMLElement>("gestureDemo");
   const demoCombo = byId<HTMLElement>("demoCombo");
   const demoPrompt = byId<HTMLElement>("demoPrompt");
@@ -99,7 +98,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     clickPracticePrompt.textContent = `Hold ${combo}, then click or drag with a mouse button here`;
     byId<HTMLElement>("clickCombo").textContent = `${combo} + mouse`;
     byId<HTMLElement>("settingsWheelCombo").textContent = `${combo} + wheel`;
-    byId<HTMLElement>("wheelReadyCombo").textContent = `${combo} + wheel`;
   }
 
   function renderActionSummaries(): void {
@@ -118,12 +116,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  function setSetupProgress(step: 1 | 2 | 3): void {
+    for (const marker of document.querySelectorAll<HTMLElement>("#setupProgress [data-progress]")) {
+      marker.classList.toggle("active", Number(marker.dataset.progress) <= step);
+    }
+  }
+
   function showWheelStep(step: number): void {
     for (const panel of wheelFlow.querySelectorAll<HTMLElement>("[data-wheel-step]")) {
       panel.hidden = Number(panel.dataset.wheelStep) !== step;
-    }
-    for (const marker of wheelFlow.querySelectorAll<HTMLElement>("[data-progress]")) {
-      marker.classList.toggle("active", Number(marker.dataset.progress) <= step);
     }
   }
 
@@ -131,15 +132,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     for (const panel of mouseFlow.querySelectorAll<HTMLElement>("[data-mouse-step]")) {
       panel.hidden = Number(panel.dataset.mouseStep) !== step;
     }
-    for (const marker of mouseFlow.querySelectorAll<HTMLElement>("[data-mouse-progress]")) {
-      marker.classList.toggle("active", Number(marker.dataset.mouseProgress) <= step);
-    }
   }
 
   function openMouseFlow(): void {
     wheelFlow.hidden = true;
     mouseFlow.hidden = false;
     showMouseStep(1);
+    setSetupProgress(2);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -147,6 +146,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     mouseFlow.hidden = true;
     wheelFlow.hidden = false;
     showWheelStep(1);
+    setSetupProgress(1);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -154,6 +154,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     mouseFlow.hidden = true;
     wheelFlow.hidden = false;
     showWheelStep(2);
+    setSetupProgress(3);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -426,6 +427,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   byId<HTMLButtonElement>("skipDemoBtn").addEventListener("click", openMouseFlow);
   byId<HTMLButtonElement>("wheelBackBtn").addEventListener("click", openMouseFlow);
   byId<HTMLButtonElement>("saveWheelChoicesBtn").addEventListener("click", async () => {
+    const finishBtn = byId<HTMLButtonElement>("saveWheelChoicesBtn");
+    if (finishBtn.disabled) return;
+    finishBtn.disabled = true;
     settings = {
       ...settings,
       gestureModifier: selectedModifier(),
@@ -434,18 +438,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       middleClickAction: middleClickAction.value as TabWheelClickAction,
       rightClickAction: rightClickAction.value as TabWheelClickAction,
     };
-    await saveTabWheelSettings(settings);
-    renderCombo();
-    showWheelStep(3);
+    try {
+      await saveTabWheelSettings(settings);
+      onboarding = { ...onboarding, version: 2, clickActionsReleaseSeen: true };
+      await saveTabWheelOnboardingState(onboarding);
+      await closeCurrentTab();
+    } catch (error) {
+      finishBtn.disabled = false;
+      throw error;
+    }
   });
   byId<HTMLButtonElement>("clickBackBtn").addEventListener("click", returnToWheelDemo);
   byId<HTMLButtonElement>("saveChoicesBtn").addEventListener("click", () => {
     continueToWheelSettings();
-  });
-  byId<HTMLButtonElement>("openSettingsBtn").addEventListener("click", openSettings);
-  byId<HTMLButtonElement>("finishBtn").addEventListener("click", async () => {
-    onboarding = { ...onboarding, version: 2, clickActionsReleaseSeen: true };
-    await saveTabWheelOnboardingState(onboarding);
-    await closeCurrentTab();
   });
 });

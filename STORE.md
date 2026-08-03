@@ -60,7 +60,7 @@ Page-position restore, editable-field gestures, horizontal wheel input, protecte
 
 EASY FIRST RUN
 
-Fresh installs and updates from pre-V4 releases start with the original wheel demo. Next, a separate mouse-action onboarding experience lets users change each button and immediately test it in the safe simulator. The setup then returns to shared gesture settings, where users can choose the modifier, optional Shift, and revise every mouse-click action before finishing on the wheel-ready screen. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
+Fresh installs and updates from pre-V4 releases start with the original wheel demo. Next, a separate mouse-action onboarding experience lets users change each button and immediately test it in the safe simulator. The setup then returns to shared gesture settings, where users choose the modifier, optional Shift, and revise every mouse-click action, then finish with Start browsing. The popup keeps a short reminder until your first successful gesture. This progress stays in local browser storage and is not telemetry.
 
 LIMITATIONS AND FALLBACK
 
@@ -79,9 +79,9 @@ PRIVATE BY DESIGN
 
 No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, ads, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, recent page positions, and page geometry are stored locally. URLs used to verify page-position restoration remain local. TabWheel does not request browser-history or bookmarks permissions.
 
-WHAT'S NEW IN 4.0.2
+WHAT'S NEW IN 4.0.3
 
-Drag current tab is the default middle-click mapping and remains remappable. TabWheel now works immediately after a browser restart: restored tabs accept gestures without a reload, and sleeping tabs wake when the wheel lands on them instead of being silently skipped. Slow-loading pages are never skipped either — the wheel always walks the visible tab strip. Leaving a still-loading tab keeps your saved page position, and the first switch after a cold start begins sooner because the background worker wakes the moment you press the gesture modifier. Existing customized mappings and settings are unchanged.
+First-run onboarding is shorter and clearer: the final summary screen is gone, setup finishes on shared gesture settings with Start browsing, and the progress bar shows the real three steps (wheel demo, mouse practice, shared settings) for the whole journey. Existing customized mappings and settings are unchanged.
 
 ## Privacy
 

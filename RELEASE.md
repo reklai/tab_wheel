@@ -15,6 +15,11 @@ npm run ci
 npm run release:package
 ```
 
+## 4.0.3
+
+- Shortened first-run onboarding: removed the final summary screen so setup ends on shared gesture settings with Start browsing.
+- Made the setup progress bar a shared three-step indicator (wheel demo → mouse practice → shared settings) that stays visible across the whole journey.
+
 ## 4.0.2
 
 - Made Drag current tab the default middle-click action for fresh installs and resets. Upgrades preserve every valid saved middle-click mapping, including through the historical v14 migration step that previously narrowed them.

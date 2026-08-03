@@ -728,37 +728,58 @@ test("wheel and mouse actions use separate onboarding flows", () => {
 
   // The device classifier and calibration panel are gone. Mouse onboarding
   // remains a separate container inserted between the demo and wheel settings.
+  // Journey progress is a shared 3-segment bar (demo → mouse → settings).
+  assert.match(html, /id="setupProgress"/);
   assert.match(html, /id="wheelFlow"/);
   assert.match(html, /id="mouseFlow"[\s\S]*hidden/);
-  assert.match(html, /<span class="active" data-progress="1">/);
   assertOrdered(html, [
+    'id="setupProgress"',
+    'data-progress="1"',
+    'data-progress="2"',
+    'data-progress="3"',
     'id="wheelFlow"',
     'data-wheel-step="1"',
     'data-wheel-step="2"',
     'id="gestureModifier"',
-    'data-wheel-step="3"',
     'id="mouseFlow"',
     'data-mouse-step="1"',
     'id="clickGestureDemo"',
   ]);
+  assert.doesNotMatch(html, /data-wheel-step="3"/);
+  assert.doesNotMatch(html, /id="finishBtn"|id="openSettingsBtn"|id="wheelReadyCombo"/);
+  assert.doesNotMatch(html, /id="wheelProgress"/);
+  assert.doesNotMatch(source, /showWheelStep\(3\)/);
   assert.doesNotMatch(source, /classifyWheelDevice|resolveSuggestedPreset|addWheelSample|SampleWindow/);
   assert.doesNotMatch(
     `${html}\n${source}`,
     /calibrat|skipCalibrationBtn|useSuggestedFeelBtn|calibrationResult|calibrationSampleRegion/i,
   );
+  assert.match(source, /function setSetupProgress/);
   assert.match(source, /function showWheelStep/);
   assert.match(source, /function showMouseStep/);
   assert.match(source, /function openMouseFlow/);
+  assert.match(source, /setSetupProgress\(1\)/);
+  assert.match(source, /setSetupProgress\(2\)/);
+  assert.match(source, /setSetupProgress\(3\)/);
   assert.match(source, /continueDemoBtn\.addEventListener\("click", openMouseFlow\)/);
+  assert.match(source, /wheelBackBtn"\)\.addEventListener\("click", openMouseFlow\)/);
+  assert.match(source, /clickBackBtn"\)\.addEventListener\("click", returnToWheelDemo\)/);
   assert.match(source, /function continueToWheelSettings/);
   assert.match(source, /createTabDragState/);
   assert.match(source, /advanceTabDragState/);
   assert.match(source, /function clickDemoDragMoveHandler/);
   assert.match(source, /moveSimulatedCurrentTab/);
   assert.match(source, /saveChoicesBtn"\)\.addEventListener\("click", \(\) => \{\s*continueToWheelSettings\(\)/);
-  assert.match(source, /renderCombo\(\);\s*showWheelStep\(3\)/);
+  // Shared-settings save is the final step: persist settings, persist onboarding completion, close tab.
+  assert.match(
+    source,
+    /saveWheelChoicesBtn"\)\.addEventListener\("click", async \(\) => \{[\s\S]*saveTabWheelSettings\(settings\)[\s\S]*clickActionsReleaseSeen:\s*true[\s\S]*saveTabWheelOnboardingState\(onboarding\)[\s\S]*closeCurrentTab\(\)/,
+  );
   assert.match(source, /wheelFlow\.hidden = true[\s\S]*mouseFlow\.hidden = false/);
   assert.match(html, /One modifier for the wheel and mouse clicks\./);
+  assert.match(html, /Step 1 of 3/);
+  assert.match(html, /Step 2 of 3/);
+  assert.match(html, /Step 3 of 3/);
   assert.match(html, /id="settingsWheelCombo"/);
   assert.match(html, /Mouse click actions[\s\S]*id="leftClickAction"/);
   assert.match(html, /id="middleClickAction"/);
