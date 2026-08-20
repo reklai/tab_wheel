@@ -36,6 +36,7 @@ WHEEL EXPERIENCE
 - Page-position restore takes you back to where you stopped reading.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
 - A momentum guard stops trackpad momentum-tail scrolling from firing extra unintended tab switches, including right after you land on a newly focused tab.
+- Cycling lands reliably on sleeping (unloaded) tabs and waits for them to wake before restoring your place.
 - Works immediately after install or update, even on tabs you already had open — no reload needed.
 - Optional filters can skip pinned or hidden/collapsed tabs.
 
