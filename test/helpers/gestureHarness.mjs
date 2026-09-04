@@ -221,6 +221,9 @@ export async function createGestureWorld(settings = {}) {
     runtime: {
       sendMessage: async (message) => {
         sentMessages.push(message);
+        // A tab move reports it actually moved so the drain advances like the
+        // real background does; everything else is a plain ok.
+        if (message.type === "TABWHEEL_MOVE_CURRENT_TAB") return { ok: true, moved: true };
         return { ok: true };
       },
       onMessage: { addListener() {}, removeListener() {} },
