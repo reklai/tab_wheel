@@ -17,10 +17,11 @@ if (!["firefox", "chrome"].includes(target)) {
 
 const manifestFile = target === "chrome" ? "manifest_v3.json" : "manifest_v2.json";
 const targetBrand = "Scroll Wheel Tab Switcher";
-// A passive rating link on the popup and settings page. Chrome only until a
-// Firefox listing exists; the Firefox build renders an empty, hidden line.
-const storeRateLine = target === "chrome"
-  ? '<a href="https://chromewebstore.google.com/detail/scroll-wheel-tab-switcher/hibbakmdkclijigadchcinbbodmdmhcg/reviews" target="_blank" rel="noopener noreferrer">Rate TabWheel on the Chrome Web Store</a>'
+// A passive rating star in the popup and settings page headers, styled like
+// the existing icon buttons. Chrome only until a Firefox listing exists; the
+// Firefox build renders nothing in its place.
+const storeRateLink = target === "chrome"
+  ? '<a class="icon-button store-rate" href="https://chromewebstore.google.com/detail/scroll-wheel-tab-switcher/hibbakmdkclijigadchcinbbodmdmhcg/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">☆</a>'
   : "";
 console.log(`[build] Target: ${target} (${manifestFile}, ${targetBrand})`);
 
@@ -69,7 +70,7 @@ function copyStatic() {
         dest,
         source
           .replaceAll("__EXTENSION_NAME__", targetBrand)
-          .replaceAll("__STORE_RATE_LINE__", storeRateLine),
+          .replaceAll("__STORE_RATE_LINK__", storeRateLink),
       );
       continue;
     }

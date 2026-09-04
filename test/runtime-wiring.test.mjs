@@ -936,27 +936,37 @@ test("action status is not shown on a document that has already been hidden", ()
   );
 });
 
-test("a quiet store rating link is a build-time line on the popup and settings page, Chrome only", () => {
+test("a quiet store rating star sits in the header of the popup and settings page, Chrome only", () => {
   const build = readText("esBuildConfig/build.mjs");
   const popup = readText("src/entryPoints/toolbarPopup/toolbarPopup.html");
   const options = readText("src/entryPoints/optionsPage/optionsPage.html");
   const popupCss = readText("src/entryPoints/toolbarPopup/toolbarPopup.css");
   const optionsCss = readText("src/entryPoints/optionsPage/optionsPage.css");
 
-  // Passive by design: a plain anchor with no script, storage, or dismiss
-  // logic. The line is substituted per target so the Firefox build, which
-  // has no store listing yet, renders nothing and hides the empty element.
+  // Passive by design: an icon-button anchor with no script, storage, or
+  // dismiss logic, placed left of the header's existing icon button. The
+  // markup is substituted per target so the Firefox build, which has no
+  // store listing yet, renders only the existing button.
+  assert.match(
+    popup,
+    /<div class="header-actions">\s*__STORE_RATE_LINK__\s*<button id="settingsBtn" class="icon-button"/,
+  );
+  assert.match(
+    options,
+    /<div class="header-actions">\s*__STORE_RATE_LINK__\s*<button class="icon-button" id="closeOptionsBtn"/,
+  );
   for (const html of [popup, options]) {
-    assert.match(html, /<p class="store-note">__STORE_RATE_LINE__<\/p>/);
-    assert.doesNotMatch(html, /chromewebstore\.google\.com/);
+    assert.doesNotMatch(html, /chromewebstore\.google\.com|store-note/);
   }
   assert.match(
     build,
-    /const storeRateLine = target === "chrome"\s*\n?\s*\? '<a href="https:\/\/chromewebstore\.google\.com\/detail\/[^"]*hibbakmdkclijigadchcinbbodmdmhcg\/reviews" target="_blank" rel="noopener noreferrer">Rate TabWheel on the Chrome Web Store<\/a>'\s*\n?\s*: "";/,
+    /const storeRateLink = target === "chrome"\s*\n?\s*\? '<a class="icon-button store-rate" href="https:\/\/chromewebstore\.google\.com\/detail\/[^"]*hibbakmdkclijigadchcinbbodmdmhcg\/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">☆<\/a>'\s*\n?\s*: "";/,
   );
-  assert.match(build, /\.replaceAll\("__STORE_RATE_LINE__", storeRateLine\)/);
+  assert.match(build, /\.replaceAll\("__STORE_RATE_LINK__", storeRateLink\)/);
   for (const css of [popupCss, optionsCss]) {
-    assert.match(css, /\.store-note:empty\s*\{\s*display:\s*none;?\s*\}/);
+    assert.match(css, /\.header-actions\s*\{[^}]*display:\s*flex/);
+    assert.match(css, /a\.icon-button\s*\{[^}]*text-decoration:\s*none/);
+    assert.doesNotMatch(css, /store-note/);
   }
   // No pleading copy anywhere near it.
   assert.doesNotMatch(`${popup}\n${options}\n${build}`, /Enjoying|five stars|5 stars|★/i);

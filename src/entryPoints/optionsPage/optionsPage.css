@@ -45,6 +45,7 @@ h1 { max-width: 680px; margin-bottom: 0; font-size: clamp(28px, 5vw, 44px); line
 h2 { margin-bottom: 2px; font-size: 18px; letter-spacing: -0.01em; }
 .section-heading p, .constraint-note li { color: var(--muted); }
 
+.header-actions { display: flex; gap: 8px; align-items: center; }
 .icon-button {
   width: 38px;
   height: 38px;
@@ -55,6 +56,7 @@ h2 { margin-bottom: 2px; font-size: 18px; letter-spacing: -0.01em; }
   cursor: pointer;
   font-size: 24px;
 }
+a.icon-button { display: grid; box-sizing: border-box; place-items: center; text-decoration: none; font-size: 19px; line-height: 1; }
 
 .settings-card {
   overflow: hidden;
@@ -146,9 +148,6 @@ input[type="range"] { width: 220px; accent-color: var(--accent); }
 .constraint-note ul { margin: 8px 0 0; padding-left: 20px; }
 .constraint-note li { font-size: 13px; }
 .constraint-note li + li { margin-top: 6px; }
-.store-note { margin: 0 2px 24px; text-align: center; color: var(--muted); font-size: 12px; }
-.store-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.store-note:empty { display: none; }
 
 .page-actions { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; }
 .page-actions button {
