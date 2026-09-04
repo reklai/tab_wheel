@@ -819,7 +819,7 @@ test("popup mirrors the full settings order with protected-page fallbacks", () =
   assert.match(source, /browser\.tabs\.query\(\{\s*active:\s*true,\s*currentWindow:\s*true\s*\}\)/);
   assert.match(source, /cycleTabWheel\("prev",\s*"popup",\s*activeTab\?\.windowId\)/);
   assert.match(source, /cycleTabWheel\("next",\s*"popup",\s*activeTab\?\.windowId\)/);
-  assert.match(source, /refreshCurrentTabWheel/);
+  assert.match(source, /activateTabWheelContentScripts/);
   assert.match(source, /resetTabWheelState/);
   assert.match(source, /invertScroll:\s*wheelDirection\.value === "previous"/);
   assert.doesNotMatch(`${html}\n${source}`, /Retry on this page|openOptionsBtn|cycleScope|pageScroll/i);
@@ -1006,3 +1006,15 @@ test("drag speed is a user setting wired from both surfaces into the drag step",
   // The setting is normalized like the other numeric settings.
   assert.match(contract, /tabDragSensitivity: normalizeNumberInRange\(/);
 })
+
+test("both Refresh buttons reconnect every viable tab, not just the current one", () => {
+  const popup = readText("src/entryPoints/toolbarPopup/toolbarPopup.ts");
+  const options = readText("src/entryPoints/optionsPage/optionsPage.ts");
+  for (const [name, source] of [["popup", popup], ["options", options]]) {
+    assert.match(
+      source,
+      /refreshTabWheelBtn"\)\.addEventListener\("click",[\s\S]{0,200}activateTabWheelContentScripts\(\)/,
+      `${name} Refresh must reinject all viable tabs`,
+    );
+  }
+});

@@ -16,9 +16,9 @@ import {
   TABWHEEL_STORAGE_KEYS,
 } from "../../lib/common/contracts/tabWheel";
 import {
+  activateTabWheelContentScripts,
   cycleTabWheel,
   getTabWheelOverviewWithRetry,
-  refreshCurrentTabWheel,
   resetTabWheelState,
 } from "../../lib/adapters/runtime/tabWheelApi";
 import {
@@ -197,9 +197,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     showToast(result?.ok ? "Next tab" : result?.reason || "Couldn't switch tabs");
   });
   byId<HTMLButtonElement>("refreshTabWheelBtn").addEventListener("click", async () => {
-    const result = await refreshCurrentTabWheel().catch(() => null);
-    showToast(result?.ok ? "TabWheel is ready" : result?.reason || "TabWheel still can't run on this page");
+    const result = await activateTabWheelContentScripts().catch(() => null);
     await refreshOverview();
+    if (!result) {
+      showToast("Couldn't refresh TabWheel");
+      return;
+    }
+    const tabWord = result.injected === 1 ? "tab" : "tabs";
+    showToast(`Reconnected TabWheel on ${result.injected} open ${tabWord}`);
   });
   byId<HTMLButtonElement>("resetDefaults").addEventListener("click", async () => {
     const result = await resetTabWheelState().catch(() => null);
