@@ -47,6 +47,9 @@ function installDom() {
     remove() {}
     closest() { return null; }
     matches() { return false; }
+    setPointerCapture() {}
+    hasPointerCapture() { return false; }
+    releasePointerCapture() {}
   }
   // An editable target: an Element whose closest() matches the editable
   // selector, so isEditableTarget() returns true for it.
@@ -66,6 +69,10 @@ function installDom() {
       this.isTrusted = opts.isTrusted !== false;
       this.target = opts.target ?? null;
       this.pointerType = opts.pointerType ?? "mouse";
+      this.pointerId = opts.pointerId ?? 1;
+      this.clientX = opts.clientX ?? 0;
+      this.clientY = opts.clientY ?? 0;
+      this.movementX = opts.movementX ?? 0;
       this.defaultPrevented = false;
       this.propagationStopped = false;
     }
@@ -113,8 +120,13 @@ function installDom() {
     return child;
   };
 
+  const clock = { now: 1_000_000 };
+  const realDateNow = Date.now;
+  Date.now = () => clock.now;
+
   const windowMock = {
     innerWidth: 1280,
+    innerHeight: 800,
     scrollX: 0,
     scrollY: 0,
     top: null,
@@ -123,6 +135,8 @@ function installDom() {
     cancelAnimationFrame: (id) => clearTimeout(id),
     setTimeout: (...args) => setTimeout(...args),
     clearTimeout: (...args) => clearTimeout(...args),
+    setInterval: (...args) => setInterval(...args),
+    clearInterval: (...args) => clearInterval(...args),
     scrollTo: () => {},
     addEventListener: (type, fn) => addTo(listeners.window, type, fn),
     removeEventListener: (type, fn) => removeFrom(listeners.window, type, fn),
@@ -161,13 +175,14 @@ function installDom() {
   }
 
   function restore() {
+    Date.now = realDateNow;
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globalThis[key];
       else globalThis[key] = value;
     }
   }
 
-  return { dispatch, dispatchDocument, restore, MockEditable, listeners };
+  return { dispatch, dispatchDocument, restore, MockEditable, listeners, clock };
 }
 
 async function loadBundle() {
@@ -228,14 +243,63 @@ export async function createGestureWorld(settings = {}) {
   module.initApp();
   await flushAsyncWork();
 
-  function drainActions() {
-    const types = sentMessages
-      .map((message) => message.type)
-      .filter((type) => type !== "TABWHEEL_CONTENT_READY" && type !== "TABWHEEL_PING");
+  const IGNORED = new Set(["TABWHEEL_CONTENT_READY", "TABWHEEL_PING"]);
+  function drainMessages() {
+    const kept = sentMessages.filter((message) => !IGNORED.has(message.type));
     sentMessages.length = 0;
-    return types;
+    return kept;
   }
-  drainActions(); // discard the content-ready ping from init
+  function drainActions() {
+    return drainMessages().map((message) => message.type);
+  }
+  drainMessages(); // discard the content-ready ping from init
+
+  const bump = (ms) => { dom.clock.now += ms; };
+
+  // One modifier + wheel notch. Returns whether the page event was suppressed
+  // and the cycle directions that fired (drained since the previous call).
+  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, alt = true, advanceMs = 0 } = {}) {
+    if (advanceMs) bump(advanceMs);
+    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, alt });
+    await flushAsyncWork();
+    const cycles = drainMessages()
+      .filter((message) => message.type === "TABWHEEL_CYCLE")
+      .map((message) => message.direction);
+    return { suppressed: event.defaultPrevented, cycles };
+  }
+
+  // Count the notches a preset needs to fire its first cycle: feed equal notches
+  // until a cycle fires or the ceiling is hit.
+  async function notchesToFirstCycle(perNotch, { max = 30 } = {}) {
+    for (let count = 1; count <= max; count += 1) {
+      const { cycles } = await wheel(perNotch);
+      if (cycles.length > 0) return { notches: count, direction: cycles[0] };
+    }
+    return { notches: Infinity, direction: null };
+  }
+
+  const BUTTONS_BITMASK = { 0: 1, 1: 4, 2: 2 };
+  // Drive a full tab-drag: press, move past `slots` boundaries, release.
+  async function drag(button, { slots = 1, pxPerSlot = 56 } = {}) {
+    const target = new dom.MockEditable("div"); // any Element carries pointer capture
+    const held = BUTTONS_BITMASK[button];
+    const suppressed = [];
+    const down = dom.dispatch("pointerdown", { button, alt: true, buttons: held, clientX: 0, target, pointerId: 7 });
+    if (!down.defaultPrevented) suppressed.push("pointerdown-leaked");
+    await flushAsyncWork();
+    for (let slot = 1; slot <= slots; slot += 1) {
+      const move = dom.dispatch("pointermove", { button, buttons: held, clientX: slot * pxPerSlot, target, pointerId: 7 });
+      if (!move.defaultPrevented) suppressed.push(`pointermove-${slot}-leaked`);
+      await flushAsyncWork();
+    }
+    dom.dispatch("pointerup", { button, buttons: 0, clientX: slots * pxPerSlot, target, pointerId: 7 });
+    const terminal = button === 0 ? "click" : button === 1 ? "auxclick" : "contextmenu";
+    dom.dispatch(terminal, { button, buttons: 0, target, pointerId: 7 });
+    await flushAsyncWork();
+    bump(1000); // let the finish timer path settle deterministically
+    await flushAsyncWork();
+    return { actions: drainActions(), leaked: suppressed };
+  }
 
   // Replay a full button interaction and report what the page would have seen.
   async function performClick(button, { alt = true, double = false, contextOn = "press", target = null } = {}) {
@@ -252,7 +316,12 @@ export async function createGestureWorld(settings = {}) {
   return {
     dispatch: dom.dispatch,
     dispatchDocument: dom.dispatchDocument,
+    wheel,
+    notchesToFirstCycle,
+    drag,
+    advance: bump,
     drainActions,
+    drainMessages,
     performClick,
     MockEditable: dom.MockEditable,
     cleanup: () => {
