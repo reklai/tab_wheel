@@ -7,9 +7,6 @@ export type TabDragDirection = "left" | "right";
 export interface TabDragState {
   anchorX: number;
   blockedDirection: TabDragDirection | null;
-  // The direction of the last committed step, so a reversal can be made
-  // "sticky" (require extra travel) without affecting continued travel.
-  lastDirection: TabDragDirection | null;
 }
 
 export interface TabDragAdvance {
@@ -28,18 +25,12 @@ export interface MovedTabResult {
   index: number;
 }
 
-export const TAB_DRAG_STEP_PX = 100;
-// A reversal must clear the step plus this margin before the tab steps back,
-// so a settled slot "sticks" and a small over-travel or hand jitter does not
-// bounce the tab past where the user meant to drop it. Continuing in the same
-// direction still costs one plain step, so forward travel stays 56px per slot.
-export const TAB_DRAG_REVERSE_HYSTERESIS_PX = 24;
+export const TAB_DRAG_STEP_PX = 56;
 
 export function createTabDragState(anchorX: number): TabDragState {
   return {
     anchorX,
     blockedDirection: null,
-    lastDirection: null,
   };
 }
 
@@ -47,37 +38,21 @@ export function advanceTabDragState(
   state: TabDragState,
   clientX: number,
   stepPx = TAB_DRAG_STEP_PX,
-  reverseHysteresisPx = TAB_DRAG_REVERSE_HYSTERESIS_PX,
 ): TabDragAdvance {
   const safeStepPx = Number.isFinite(stepPx) && stepPx > 0
     ? stepPx
     : TAB_DRAG_STEP_PX;
-  const safeHysteresisPx = Number.isFinite(reverseHysteresisPx) && reverseHysteresisPx >= 0
-    ? reverseHysteresisPx
-    : TAB_DRAG_REVERSE_HYSTERESIS_PX;
   const deltaX = clientX - state.anchorX;
-  if (deltaX === 0) return { state, directions: [] };
+  const stepCount = Math.floor(Math.abs(deltaX) / safeStepPx);
+  if (stepCount === 0) return { state, directions: [] };
 
   const direction: TabDragDirection = deltaX > 0 ? "right" : "left";
   const directionSign = direction === "right" ? 1 : -1;
-  const absDeltaX = Math.abs(deltaX);
-
-  // A free reversal (changing direction, not pulling back off a blocked edge)
-  // must clear one step plus the hysteresis before the first step back. Pulling
-  // away from a blocked edge stays responsive so the tab is easy to recover.
-  const isReversal = state.lastDirection != null && direction !== state.lastDirection;
-  const isBoundaryRecovery = state.blockedDirection != null && direction !== state.blockedDirection;
-  const firstStepPx = isReversal && !isBoundaryRecovery
-    ? safeStepPx + safeHysteresisPx
-    : safeStepPx;
-  if (absDeltaX < firstStepPx) return { state, directions: [] };
-
-  const stepCount = 1 + Math.floor((absDeltaX - firstStepPx) / safeStepPx);
-  const consumedPx = firstStepPx + (stepCount - 1) * safeStepPx;
   const nextState: TabDragState = {
-    anchorX: state.anchorX + directionSign * consumedPx,
-    blockedDirection: state.blockedDirection === direction ? direction : null,
-    lastDirection: direction,
+    anchorX: state.anchorX + directionSign * stepCount * safeStepPx,
+    blockedDirection: state.blockedDirection === direction
+      ? direction
+      : null,
   };
   return {
     state: nextState,

@@ -20,75 +20,48 @@ async function loadCore() {
   return import(`data:text/javascript;base64,${encoded}`);
 }
 
-test("horizontal drag emits one move per crossed step", async () => {
+test("horizontal drag emits one move per crossed 56px step", async () => {
   const core = await loadCore();
-  const step = core.TAB_DRAG_STEP_PX;
   let state = core.createTabDragState(0);
 
-  let advanced = core.advanceTabDragState(state, step - 1);
+  let advanced = core.advanceTabDragState(state, 55);
   assert.deepEqual(advanced.directions, []);
   assert.equal(advanced.state.anchorX, 0);
 
-  advanced = core.advanceTabDragState(advanced.state, step);
+  advanced = core.advanceTabDragState(advanced.state, 56);
   assert.deepEqual(advanced.directions, ["right"]);
-  assert.equal(advanced.state.anchorX, step);
+  assert.equal(advanced.state.anchorX, 56);
 
-  advanced = core.advanceTabDragState(advanced.state, step * 3);
+  advanced = core.advanceTabDragState(advanced.state, 168);
   assert.deepEqual(advanced.directions, ["right", "right"]);
-  assert.equal(advanced.state.anchorX, step * 3);
+  assert.equal(advanced.state.anchorX, 168);
 });
 
-test("a committed slot sticks: a small reversal is ignored until it clears the hysteresis", async () => {
+test("drag preserves sub-step remainder and reverses from its committed anchor", async () => {
   const core = await loadCore();
-  const step = core.TAB_DRAG_STEP_PX;
-  const hysteresis = core.TAB_DRAG_REVERSE_HYSTERESIS_PX;
-  assert.ok(hysteresis > 0, "there is a reverse hysteresis so the tab does not bounce");
+  const movedRight = core.advanceTabDragState(core.createTabDragState(100), 160);
 
-  const movedRight = core.advanceTabDragState(core.createTabDragState(0), step);
   assert.deepEqual(movedRight.directions, ["right"]);
-  assert.equal(movedRight.state.anchorX, step);
-  assert.equal(movedRight.state.lastDirection, "right");
+  assert.equal(movedRight.state.anchorX, 156);
 
-  // A reversal just short of step + hysteresis must not move the tab back.
-  const nudge = core.advanceTabDragState(movedRight.state, step - (step + hysteresis - 1));
-  assert.deepEqual(nudge.directions, [], "a small correction should not bounce the tab");
-  assert.equal(nudge.state.anchorX, step, "an ignored reversal leaves the anchor put");
-
-  // A deliberate reversal past step + hysteresis does step back.
-  const reversed = core.advanceTabDragState(movedRight.state, step - (step + hysteresis));
-  assert.deepEqual(reversed.directions, ["left"]);
-  assert.equal(reversed.state.lastDirection, "left");
-});
-
-test("forward travel keeps the plain 56px step even when it follows a reversal", async () => {
-  const core = await loadCore();
-  const step = core.TAB_DRAG_STEP_PX;
-  // Establish a leftward last direction, then continue left one plain step.
-  const left = core.advanceTabDragState(
-    { anchorX: 200, blockedDirection: null, lastDirection: "left" },
-    200 - step,
-  );
-  assert.deepEqual(left.directions, ["left"]);
-  // Continuing the same direction never pays hysteresis.
-  const more = core.advanceTabDragState(left.state, left.state.anchorX - step);
-  assert.deepEqual(more.directions, ["left"]);
+  const movedLeft = core.advanceTabDragState(movedRight.state, 90);
+  assert.deepEqual(movedLeft.directions, ["left"]);
+  assert.equal(movedLeft.state.anchorX, 100);
 });
 
 test("a blocked direction stays silent until the pointer reverses a full step", async () => {
   const core = await loadCore();
-  const step = core.TAB_DRAG_STEP_PX;
   const atRightEdge = core.markTabDragBoundary(
-    core.advanceTabDragState(core.createTabDragState(0), step).state,
+    core.advanceTabDragState(core.createTabDragState(0), 56).state,
     "right",
   );
 
-  const stillBlocked = core.advanceTabDragState(atRightEdge, step * 2);
+  const stillBlocked = core.advanceTabDragState(atRightEdge, 112);
   assert.deepEqual(stillBlocked.directions, []);
-  assert.equal(stillBlocked.state.anchorX, step * 2);
+  assert.equal(stillBlocked.state.anchorX, 112);
   assert.equal(stillBlocked.state.blockedDirection, "right");
 
-  // Pulling back off a blocked edge stays responsive (no hysteresis there).
-  const reversed = core.advanceTabDragState(stillBlocked.state, step);
+  const reversed = core.advanceTabDragState(stillBlocked.state, 56);
   assert.deepEqual(reversed.directions, ["left"]);
   assert.equal(reversed.state.blockedDirection, null);
 });

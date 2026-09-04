@@ -283,7 +283,7 @@ export async function createGestureWorld(settings = {}) {
 
   const BUTTONS_BITMASK = { 0: 1, 1: 4, 2: 2 };
   // Drive a full tab-drag: press, move past `slots` boundaries, release.
-  async function drag(button, { slots = 1, pxPerSlot = 120 } = {}) {
+  async function drag(button, { slots = 1, pxPerSlot = 56 } = {}) {
     const target = new dom.MockEditable("div"); // any Element carries pointer capture
     const held = BUTTONS_BITMASK[button];
     const suppressed = [];
