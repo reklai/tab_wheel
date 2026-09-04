@@ -19,16 +19,10 @@ import {
   resolveWheelTriggerDistance,
 } from "../core/tabWheel/tabWheelCore";
 import {
-  advanceTabDragState,
-  clearTabDragBoundary,
-  coalesceTabDragDirections,
-  createTabDragState,
-  resolveTabDragStepPx,
   isTabDragButtonPressed,
-  markTabDragBoundary,
-  reconcileTabDragBoundaryDirections,
+  resolveTabDragStepPx,
+  resolveTabDragTargetOffset,
   TabDragDirection,
-  TabDragState,
 } from "../core/tabWheel/tabDragCore";
 import {
   buildMouseGesturePolicies,
@@ -114,9 +108,11 @@ interface ActiveTabDragGesture {
   pointerId: number;
   button: number;
   gestureId: string;
-  state: TabDragState;
   captureTarget: Element | null;
-  pendingDirections: TabDragDirection[];
+  startX: number;
+  latestClientX: number;
+  appliedOffset: number;
+  blockedDirection: TabDragDirection | null;
   moveInFlight: boolean;
   released: boolean;
   completionReceived: boolean;
@@ -550,11 +546,24 @@ export function initApp(): void {
     if (tabDragGesture === session) tabDragGesture = null;
   }
 
+  // The next slot to move toward the live pointer, or null when the tab is
+  // already where the pointer is (or can't advance because it hit a boundary
+  // in that direction). This is what makes the drag target-seeking: it is
+  // recomputed from the current pointer, never replayed from a queue.
+  function nextTabDragMove(session: ActiveTabDragGesture): TabDragDirection | null {
+    const stepPx = resolveTabDragStepPx(settings.tabDragSensitivity);
+    const desiredOffset = resolveTabDragTargetOffset(session.startX, session.latestClientX, stepPx);
+    const delta = desiredOffset - session.appliedOffset;
+    if (delta === 0) return null;
+    const direction: TabDragDirection = delta > 0 ? "right" : "left";
+    return session.blockedDirection === direction ? null : direction;
+  }
+
   function finishTabDragGestureWhenIdle(session: ActiveTabDragGesture): void {
     if (
       session.cancelled
       || session.moveInFlight
-      || session.pendingDirections.length > 0
+      || nextTabDragMove(session) !== null
       || !session.released
       || !session.completionReceived
     ) return;
@@ -566,7 +575,6 @@ export function initApp(): void {
     if (!session) return;
     if (preserveCompletionClaim) rememberTabDragMouseClaim(session);
     session.cancelled = true;
-    session.pendingDirections = [];
     resetTabDragGesture(session);
   }
 
@@ -575,15 +583,15 @@ export function initApp(): void {
   }
 
   function drainTabDragMoves(session: ActiveTabDragGesture): void {
-    if (
-      session.cancelled
-      || session.moveInFlight
-      || session.pendingDirections.length === 0
-    ) {
+    if (session.cancelled || session.moveInFlight) {
       finishTabDragGestureWhenIdle(session);
       return;
     }
-    const direction = session.pendingDirections.shift() as TabDragDirection;
+    const direction = nextTabDragMove(session);
+    if (!direction) {
+      finishTabDragGestureWhenIdle(session);
+      return;
+    }
     session.moveInFlight = true;
     void session.waitForPreviousDrag
       .then(() => {
@@ -598,13 +606,12 @@ export function initApp(): void {
           return;
         }
         if (!result.moved) {
-          session.state = markTabDragBoundary(session.state, direction);
-          session.pendingDirections = reconcileTabDragBoundaryDirections(
-            session.pendingDirections,
-            direction,
-          );
+          // Hit a pinned or tab-group boundary; stop advancing this way until
+          // the pointer asks for the other direction.
+          session.blockedDirection = direction;
         } else {
-          session.state = clearTabDragBoundary(session.state);
+          session.appliedOffset += direction === "right" ? 1 : -1;
+          session.blockedDirection = null;
         }
       })
       .catch(() => {
@@ -628,9 +635,11 @@ export function initApp(): void {
     const session: ActiveTabDragGesture = {
       pointerId: event.pointerId,
       button: policy.button,
-      state: createTabDragState(event.clientX),
       captureTarget,
-      pendingDirections: [],
+      startX: event.clientX,
+      latestClientX: event.clientX,
+      appliedOffset: 0,
+      blockedDirection: null,
       moveInFlight: false,
       released: false,
       completionReceived: false,
@@ -685,17 +694,9 @@ export function initApp(): void {
       return;
     }
     suppressPageEvent(event);
-    const advanced = advanceTabDragState(
-      session.state,
-      event.clientX,
-      resolveTabDragStepPx(settings.tabDragSensitivity),
-    );
-    session.state = advanced.state;
-    if (advanced.directions.length === 0) return;
-    session.pendingDirections = coalesceTabDragDirections(
-      session.pendingDirections,
-      advanced.directions,
-    );
+    // Just record where the pointer is now; the drain reads this live and moves
+    // toward it, so nothing is queued and the tab cannot overshoot.
+    session.latestClientX = event.clientX;
     drainTabDragMoves(session);
   }
 
@@ -831,7 +832,7 @@ export function initApp(): void {
     };
     if (
       tabDragGesture?.released
-      && (tabDragGesture.moveInFlight || tabDragGesture.pendingDirections.length > 0)
+      && (tabDragGesture.moveInFlight || nextTabDragMove(tabDragGesture) !== null)
     ) {
       return;
     }
@@ -855,7 +856,7 @@ export function initApp(): void {
     ) {
       const existingDrag = tabDragGesture;
       if (existingDrag?.released) {
-        if (existingDrag.moveInFlight || existingDrag.pendingDirections.length > 0) {
+        if (existingDrag.moveInFlight || nextTabDragMove(existingDrag) !== null) {
           const drainingPolicy = resolveMousePolicy(event);
           if (drainingPolicy?.interaction === "drag") {
             claimTabDragPressWhileDraining(existingDrag, event);
@@ -867,7 +868,7 @@ export function initApp(): void {
             existingDrag.finishTimer = 0;
           }
         }
-        if (!existingDrag.moveInFlight && existingDrag.pendingDirections.length === 0) {
+        if (!existingDrag.moveInFlight && nextTabDragMove(existingDrag) === null) {
           resetTabDragGesture(existingDrag);
         }
       } else if (existingDrag) {

@@ -83,10 +83,10 @@ test("content script claims configured click actions and leaves Off unclaimed", 
   assert.match(app, /runActionWithStatus\(openTabWheelOptions\)/);
   assert.match(app, /case "nativeNewTab":/);
   assert.match(app, /policy\.interaction === "drag"/);
-  assert.match(app, /advanceTabDragState\(/);
-  assert.match(app, /coalesceTabDragDirections\(/);
-  assert.match(app, /reconcileTabDragBoundaryDirections\(/);
-  assert.match(app, /clearTabDragBoundary\(/);
+  assert.match(app, /resolveTabDragTargetOffset\(/);
+  assert.match(app, /session\.latestClientX = event\.clientX/);
+  assert.match(app, /session\.appliedOffset \+=/);
+  assert.match(app, /session\.blockedDirection = direction/);
   assert.match(app, /claimTabDragPressWhileDraining\(/);
   assert.match(
     app,
@@ -114,7 +114,8 @@ test("content script claims configured click actions and leaves Off unclaimed", 
   assert.match(app, /reserveTabDragQueue\(\)/);
   assert.match(app, /waitForPreviousDrag/);
   assert.match(app, /moveCurrentTabWheelTab\(direction,\s*session\.gestureId\)/);
-  assert.match(app, /markTabDragBoundary\(/);
+  // Hitting a pinned/tab-group edge blocks that direction until the pointer reverses.
+  assert.match(app, /session\.blockedDirection = direction/);
   assert.match(mouseCore, /if \(action === "none"\) continue/);
   assert.match(
     app,
@@ -993,11 +994,10 @@ test("drag speed is a user setting wired from both surfaces into the drag step",
   const options = readText("src/entryPoints/optionsPage/optionsPage.html");
   const contract = readText("src/lib/common/contracts/tabWheel.ts");
 
-  // The content script derives the per-slot travel from the user's sensitivity.
-  assert.match(
-    app,
-    /advanceTabDragState\(\s*\n?\s*session\.state,\s*\n?\s*event\.clientX,\s*\n?\s*resolveTabDragStepPx\(settings\.tabDragSensitivity\)/,
-  );
+  // The content script derives the per-slot travel from the user's sensitivity,
+  // then seeks the target offset from the live pointer.
+  assert.match(app, /const stepPx = resolveTabDragStepPx\(settings\.tabDragSensitivity\)/);
+  assert.match(app, /resolveTabDragTargetOffset\(session\.startX, session\.latestClientX, stepPx\)/);
   // Both the popup and the settings page expose the slider.
   for (const html of [popup, options]) {
     assert.match(html, /id="tabDragSensitivity"[^>]*type="range"/);

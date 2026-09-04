@@ -32,6 +32,19 @@ export const MAX_TAB_DRAG_STEP_PX = 200;
 // The user-facing "Drag speed" is a sensitivity multiplier: higher means a
 // faster drag, i.e. fewer pixels of travel per slot. Mirrors the wheel's
 // sensitivity model (distance = base / sensitivity), clamped to a sane range.
+// The signed number of slots the tab should sit from where the drag began,
+// read from the pointer's LIVE position. The drain re-reads this each step and
+// moves toward it, so a stopped or reversed pointer settles the tab exactly
+// where it is now — it can never run past the pointer (no queued backlog).
+export function resolveTabDragTargetOffset(
+  startX: number,
+  clientX: number,
+  stepPx = TAB_DRAG_STEP_PX,
+): number {
+  const safeStepPx = Number.isFinite(stepPx) && stepPx > 0 ? stepPx : TAB_DRAG_STEP_PX;
+  return Math.trunc((clientX - startX) / safeStepPx);
+}
+
 export function resolveTabDragStepPx(
   sensitivity: number,
   basePx = TAB_DRAG_STEP_PX,

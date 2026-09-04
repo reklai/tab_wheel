@@ -53,3 +53,30 @@ test("a drag with no movement still opens and closes cleanly without moving the 
     world.cleanup();
   }
 });
+
+import { flushAsyncWork } from "./helpers/gestureHarness.mjs";
+
+test("a fast out-and-back drag settles at the final pointer without replaying the excursion", async () => {
+  const world = await createGestureWorld({ ...BASE, middleClickAction: "dragCurrentTab" });
+  try {
+    const target = new world.MockEditable("div");
+    world.dispatch("pointerdown", { button: 1, alt: true, buttons: 4, clientX: 0, target, pointerId: 7 });
+    await flushAsyncWork();
+    world.drainActions();
+    // Flick far right, then back to the start, before draining settles.
+    world.dispatch("pointermove", { button: 1, buttons: 4, clientX: 320, target, pointerId: 7 });
+    world.dispatch("pointermove", { button: 1, buttons: 4, clientX: 4, target, pointerId: 7 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+    world.dispatch("pointerup", { button: 1, buttons: 0, clientX: 4, target, pointerId: 7 });
+    world.dispatch("auxclick", { button: 1, buttons: 0, target, pointerId: 7 });
+    await flushAsyncWork();
+    const moves = world.drainMessages().filter((m) => m.type === "TABWHEEL_MOVE_CURRENT_TAB").length;
+    // The pointer ended where it began, so the tab must too. Target-seeking
+    // means at most one move was already in flight when the reversal arrived;
+    // it never replays the whole 3-slot excursion out and back.
+    assert.ok(moves <= 2, `expected no excursion replay, got ${moves} moves`);
+  } finally {
+    world.cleanup();
+  }
+});

@@ -197,3 +197,14 @@ test("drag speed maps sensitivity to pixels per slot (higher = fewer px = faster
   assert.ok(core.resolveTabDragStepPx(0.6) > core.resolveTabDragStepPx(1), "slower means more px");
   assert.equal(core.resolveTabDragStepPx(0), core.TAB_DRAG_STEP_PX, "a bad value falls back to the base");
 });
+
+test("drag target offset is the signed slot count from the start, read from the live pointer", async () => {
+  const core = await loadCore();
+  const step = core.TAB_DRAG_STEP_PX;
+  assert.equal(core.resolveTabDragTargetOffset(100, 100, step), 0);
+  assert.equal(core.resolveTabDragTargetOffset(100, 100 + step, step), 1);
+  assert.equal(core.resolveTabDragTargetOffset(100, 100 + step * 3 - 1, step), 2);
+  assert.equal(core.resolveTabDragTargetOffset(100, 100 - step * 2, step), -2);
+  // Position-based: only where the pointer is now matters, not how it got there.
+  assert.equal(core.resolveTabDragTargetOffset(0, step - 1, step), 0);
+});
