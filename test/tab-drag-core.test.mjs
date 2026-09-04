@@ -20,48 +20,53 @@ async function loadCore() {
   return import(`data:text/javascript;base64,${encoded}`);
 }
 
-test("horizontal drag emits one move per crossed 56px step", async () => {
+test("horizontal drag emits one move per crossed step", async () => {
   const core = await loadCore();
+  const step = core.TAB_DRAG_STEP_PX;
   let state = core.createTabDragState(0);
 
-  let advanced = core.advanceTabDragState(state, 55);
+  let advanced = core.advanceTabDragState(state, step - 1);
   assert.deepEqual(advanced.directions, []);
   assert.equal(advanced.state.anchorX, 0);
 
-  advanced = core.advanceTabDragState(advanced.state, 56);
+  advanced = core.advanceTabDragState(advanced.state, step);
   assert.deepEqual(advanced.directions, ["right"]);
-  assert.equal(advanced.state.anchorX, 56);
+  assert.equal(advanced.state.anchorX, step);
 
-  advanced = core.advanceTabDragState(advanced.state, 168);
+  advanced = core.advanceTabDragState(advanced.state, step * 3);
   assert.deepEqual(advanced.directions, ["right", "right"]);
-  assert.equal(advanced.state.anchorX, 168);
+  assert.equal(advanced.state.anchorX, step * 3);
 });
 
 test("drag preserves sub-step remainder and reverses from its committed anchor", async () => {
   const core = await loadCore();
-  const movedRight = core.advanceTabDragState(core.createTabDragState(100), 160);
-
+  const step = core.TAB_DRAG_STEP_PX;
+  // Move one step plus a 20px remainder: the anchor advances by a full step,
+  // not all the way to the pointer, so the remainder carries forward.
+  const movedRight = core.advanceTabDragState(core.createTabDragState(0), step + 20);
   assert.deepEqual(movedRight.directions, ["right"]);
-  assert.equal(movedRight.state.anchorX, 156);
+  assert.equal(movedRight.state.anchorX, step);
 
-  const movedLeft = core.advanceTabDragState(movedRight.state, 90);
+  // Reversing a full step from the committed anchor steps back once.
+  const movedLeft = core.advanceTabDragState(movedRight.state, 0);
   assert.deepEqual(movedLeft.directions, ["left"]);
-  assert.equal(movedLeft.state.anchorX, 100);
+  assert.equal(movedLeft.state.anchorX, 0);
 });
 
 test("a blocked direction stays silent until the pointer reverses a full step", async () => {
   const core = await loadCore();
+  const step = core.TAB_DRAG_STEP_PX;
   const atRightEdge = core.markTabDragBoundary(
-    core.advanceTabDragState(core.createTabDragState(0), 56).state,
+    core.advanceTabDragState(core.createTabDragState(0), step).state,
     "right",
   );
 
-  const stillBlocked = core.advanceTabDragState(atRightEdge, 112);
+  const stillBlocked = core.advanceTabDragState(atRightEdge, step * 2);
   assert.deepEqual(stillBlocked.directions, []);
-  assert.equal(stillBlocked.state.anchorX, 112);
+  assert.equal(stillBlocked.state.anchorX, step * 2);
   assert.equal(stillBlocked.state.blockedDirection, "right");
 
-  const reversed = core.advanceTabDragState(stillBlocked.state, 56);
+  const reversed = core.advanceTabDragState(stillBlocked.state, step);
   assert.deepEqual(reversed.directions, ["left"]);
   assert.equal(reversed.state.blockedDirection, null);
 });

@@ -25,7 +25,7 @@ export interface MovedTabResult {
   index: number;
 }
 
-export const TAB_DRAG_STEP_PX = 56;
+export const TAB_DRAG_STEP_PX = 80;
 
 export function createTabDragState(anchorX: number): TabDragState {
   return {
