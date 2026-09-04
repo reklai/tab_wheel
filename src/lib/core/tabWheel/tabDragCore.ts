@@ -28,7 +28,7 @@ export interface MovedTabResult {
   index: number;
 }
 
-export const TAB_DRAG_STEP_PX = 56;
+export const TAB_DRAG_STEP_PX = 100;
 // A reversal must clear the step plus this margin before the tab steps back,
 // so a settled slot "sticks" and a small over-travel or hand jitter does not
 // bounce the tab past where the user meant to drop it. Continuing in the same
