@@ -26,7 +26,7 @@ Alt / Option is the default modifier. You can change it to Ctrl / Control or Met
 - Modifier + left click opens the browser's New Tab page beside the current tab.
 - Modifier + middle click drags the current tab (hold and drag horizontally).
 - Modifier + right click uses Close current tab and returns to the most recent tab.
-- Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, or Off.
+- Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, or Off.
 - Drag current tab moves the active tab live as you drag horizontally, one slot per 56 px, while preserving pinned and tab-group boundaries.
 - Open the extension popup and select the settings icon to review or change every action.
 
@@ -80,9 +80,9 @@ PRIVATE BY DESIGN
 
 No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, ads, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, recent page positions, and page geometry are stored locally. URLs used to verify page-position restoration remain local. TabWheel does not request browser-history or bookmarks permissions.
 
-WHAT'S NEW IN 4.0.3
+WHAT'S NEW IN 4.1.0
 
-First-run onboarding is shorter and clearer: the final summary screen is gone, setup finishes on shared gesture settings with Start browsing, and the progress bar shows the real three steps (wheel demo, mouse practice, shared settings) for the whole journey. Existing customized mappings and settings are unchanged.
+Three new mouse actions for any button: Mute / unmute tab, Go back, and Go forward. Defaults are unchanged; remap any button in the popup or settings.
 
 ## Privacy
 
@@ -90,7 +90,7 @@ No data is sent to TabWheel or developer-owned services. TabWheel stores only th
 
 ## Permissions
 
-- `tabs`: Create, duplicate, move, close, read, and activate tabs for configured actions and tab-strip cycling.
+- `tabs`: Create, duplicate, move, close, mute, read, activate, and navigate the history of tabs for configured actions and tab-strip cycling.
 - `storage`: Store settings, onboarding progress, recent-tab order, page positions, and the migration version locally.
 - `scripting` (Chrome): Reconnect the content script to already-open normal web tabs after install, update, or manual refresh.
 - `tabGroups` (Chrome): Detect collapsed groups so hidden-tab skipping can exclude their tabs.

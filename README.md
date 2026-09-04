@@ -16,7 +16,7 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Opens the browser's New Tab page beside the current tab with modifier + left click.
 - Drags the current tab with modifier + middle click (hold and drag horizontally).
 - Closes the current tab and returns to the previous tab with modifier + right click.
-- Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, or Off.
+- Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, or Off.
 - Drag current tab lets you hold the configured button and drag horizontally; every 56 px moves the active tab one slot without changing its pinned or group membership.
 - Provides popup Previous/Next buttons when a protected browser page blocks content scripts.
 - Shows a toolbar badge on recognized browser-restricted URLs, such as `chrome://`, `about:`, and extension stores.
@@ -95,9 +95,9 @@ npm run release:package
 
 This creates:
 
-- `release/tabwheel-chrome-v4.0.3.zip`
-- `release/tabwheel-firefox-v4.0.3.xpi`
-- `release/tabwheel-source-v4.0.3.zip`
+- `release/tabwheel-chrome-v4.1.0.zip`
+- `release/tabwheel-firefox-v4.1.0.xpi`
+- `release/tabwheel-source-v4.1.0.zip`
 
 ## Project structure
 

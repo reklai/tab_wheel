@@ -19,7 +19,7 @@ test("manifests ship the same V4 product", () => {
   const chrome = readJson("esBuildConfig/manifest_v3.json");
   const pkg = readJson("package.json");
 
-  assert.equal(pkg.version, "4.0.3");
+  assert.equal(pkg.version, "4.1.0");
   assert.equal(firefox.version, pkg.version);
   assert.equal(chrome.version, pkg.version);
   assert.equal(firefox.name, "Scroll Wheel Tab Switcher");

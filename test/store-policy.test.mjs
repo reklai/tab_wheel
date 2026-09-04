@@ -46,12 +46,12 @@ test("store and package metadata use the approved mouse-first summary", () => {
   assert.match(store, /Fresh installs and updates from pre-V4 releases/);
 });
 
-test("store release copy describes the current patch release", () => {
+test("store release copy describes the current release", () => {
   const store = readText("STORE.md");
-  const whatsNew = store.match(/WHAT'S NEW IN 4\.0\.3\s+([^\n]+)/)?.[1] || "";
+  const whatsNew = store.match(/WHAT'S NEW IN 4\.1\.0\s+([^\n]+)/)?.[1] || "";
 
-  assert.match(whatsNew, /First-run onboarding is shorter and clearer/);
-  assert.match(whatsNew, /progress bar shows the real three steps/);
+  assert.match(whatsNew, /Mute \/ unmute tab, Go back, and Go forward/);
+  assert.match(whatsNew, /Defaults are unchanged/);
   assert.doesNotMatch(whatsNew, /wheel-ready/i);
   // Middle-click default remains documented in CURRENT DEFAULTS, not only Whats New.
   assert.match(store, /Modifier \+ middle click:\s*Drag current tab/i);

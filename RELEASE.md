@@ -15,6 +15,12 @@ npm run ci
 npm run release:package
 ```
 
+## 4.1.0
+
+- Added three remappable modifier + mouse-button actions: Mute / unmute tab (toggles the active tab's audio), Go back, and Go forward (navigate the active tab's history). Back and forward show a short status instead of failing silently when the history has no entry in that direction.
+- Left every default and every saved mapping unchanged; the new actions are extra dropdown options listed before Off, and no storage migration runs.
+- Added a GitHub Actions workflow that runs the full `npm run ci` gate on every push and pull request.
+
 ## 4.0.3
 
 - Shortened first-run onboarding: removed the final summary screen so setup ends on shared gesture settings with Start browsing.

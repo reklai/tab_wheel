@@ -18,7 +18,7 @@ TabWheel does not read host-page text, host-page form values, browsing history, 
 
 | Permission | Purpose |
 | --- | --- |
-| `tabs` | Create, duplicate, move, close, read, and activate browser tabs for configured actions and tab-strip cycling |
+| `tabs` | Create, duplicate, move, close, mute, read, activate, and navigate the history of browser tabs for configured actions and tab-strip cycling |
 | `storage` | Save settings, onboarding state, recent-tab order, scroll positions, and schema version locally |
 | `scripting` | Chrome-only: activate or retry the content script on already-open supported tabs |
 | `tabGroups` | Chrome-only: detect collapsed groups when hidden-tab skipping is enabled |
