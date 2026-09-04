@@ -27,7 +27,7 @@ Alt / Option is the default modifier. You can change it to Ctrl / Control or Met
 - Modifier + middle click drags the current tab (hold and drag horizontally).
 - Modifier + right click uses Close current tab and returns to the most recent tab.
 - Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, or Off.
-- Drag current tab moves the active tab live as you drag horizontally, one slot per 96 px, while preserving pinned and tab-group boundaries.
+- Drag current tab moves the active tab live as you drag horizontally, one slot at a time, while preserving pinned and tab-group boundaries. A Drag speed control sets how far you drag per slot (about 96 px by default).
 - Open the extension popup and select the settings icon to review or change every action.
 
 WHEEL EXPERIENCE

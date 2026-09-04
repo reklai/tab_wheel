@@ -57,6 +57,7 @@ interface TabWheelSettings {
   leftClickAction: TabWheelClickAction;
   middleClickAction: TabWheelClickAction;
   rightClickAction: TabWheelClickAction;
+  tabDragSensitivity: number;
   restorePagePosition: boolean;
   skipPinnedTabs: boolean;
   skipRestrictedPages: boolean;

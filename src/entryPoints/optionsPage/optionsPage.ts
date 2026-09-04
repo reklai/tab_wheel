@@ -6,8 +6,10 @@ import {
   formatTabWheelModifierCombo,
   loadTabWheelSettings,
   MAX_WHEEL_COOLDOWN_MS,
+  MAX_TAB_DRAG_SENSITIVITY,
   MAX_WHEEL_SENSITIVITY,
   MIN_WHEEL_COOLDOWN_MS,
+  MIN_TAB_DRAG_SENSITIVITY,
   MIN_WHEEL_SENSITIVITY,
   normalizeTabWheelSettings,
   saveTabWheelSettings,
@@ -24,6 +26,12 @@ import {
 } from "../../lib/ui/settings/settingsControls";
 import { noticeDisplayMs } from "../../lib/common/utils/notice";
 
+function dragSpeedLabel(sensitivity: number): string {
+  if (sensitivity < 0.9) return "Slower";
+  if (sensitivity > 1.2) return "Faster";
+  return "Balanced";
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const settingsTitle = byId<HTMLElement>("settingsTitle");
@@ -32,6 +40,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const leftClickAction = byId<HTMLSelectElement>("leftClickAction");
   const middleClickAction = byId<HTMLSelectElement>("middleClickAction");
   const rightClickAction = byId<HTMLSelectElement>("rightClickAction");
+  const tabDragSensitivity = byId<HTMLInputElement>("tabDragSensitivity");
+  const tabDragSensitivityValue = byId<HTMLElement>("tabDragSensitivityValue");
   const wheelDirection = byId<HTMLSelectElement>("wheelDirection");
   const wheelPreset = byId<HTMLSelectElement>("wheelPreset");
   const wheelSensitivity = byId<HTMLInputElement>("wheelSensitivity");
@@ -62,6 +72,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       leftClickAction: leftClickAction.value as TabWheelClickAction,
       middleClickAction: middleClickAction.value as TabWheelClickAction,
       rightClickAction: rightClickAction.value as TabWheelClickAction,
+      tabDragSensitivity: Number(tabDragSensitivity.value),
       invertScroll: wheelDirection.value === "previous",
       wheelPreset: wheelPreset.value as TabWheelPreset,
       wheelSensitivity: Number(wheelSensitivity.value),
@@ -82,6 +93,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     leftClickAction.value = next.leftClickAction;
     middleClickAction.value = next.middleClickAction;
     rightClickAction.value = next.rightClickAction;
+    tabDragSensitivity.value = String(next.tabDragSensitivity);
+    tabDragSensitivityValue.textContent = dragSpeedLabel(next.tabDragSensitivity);
     wheelDirection.value = next.invertScroll ? "previous" : "next";
     wheelPreset.value = next.wheelPreset;
     wheelSensitivity.value = String(next.wheelSensitivity);
@@ -116,6 +129,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   populatePresetSelect(wheelPreset, settings.wheelPreset);
   wheelSensitivity.min = String(MIN_WHEEL_SENSITIVITY);
   wheelSensitivity.max = String(MAX_WHEEL_SENSITIVITY);
+  tabDragSensitivity.min = String(MIN_TAB_DRAG_SENSITIVITY);
+  tabDragSensitivity.max = String(MAX_TAB_DRAG_SENSITIVITY);
   wheelCooldownMs.min = String(MIN_WHEEL_COOLDOWN_MS);
   wheelCooldownMs.max = String(MAX_WHEEL_COOLDOWN_MS);
   render(settings);
@@ -150,6 +165,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     wheelPreset.value = "custom";
   });
   wheelSensitivity.addEventListener("change", () => void saveCurrent());
+  tabDragSensitivity.addEventListener("input", () => {
+    tabDragSensitivityValue.textContent = dragSpeedLabel(Number(tabDragSensitivity.value));
+  });
+  tabDragSensitivity.addEventListener("change", () => void saveCurrent());
   wheelCooldownMs.addEventListener("input", () => {
     wheelCooldownValue.textContent = `${Math.round(Number(wheelCooldownMs.value))}ms`;
     wheelPreset.value = "custom";

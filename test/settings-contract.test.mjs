@@ -68,3 +68,10 @@ test("the mouse-action list is alphabetical by label, with Off pinned last", asy
   const sorted = [...realLabels].sort((a, b) => a.localeCompare(b));
   assert.deepEqual(realLabels, sorted, `the actions above Off should be alphabetical, got ${JSON.stringify(realLabels)}`);
 });
+
+test("drag sensitivity is clamped to its range and defaults to 1", async () => {
+  const contract = await loadSettingsContract();
+  assert.equal(contract.normalizeTabWheelSettings({}).tabDragSensitivity, 1);
+  assert.equal(contract.normalizeTabWheelSettings({ tabDragSensitivity: 9 }).tabDragSensitivity, contract.MAX_TAB_DRAG_SENSITIVITY);
+  assert.equal(contract.normalizeTabWheelSettings({ tabDragSensitivity: 0 }).tabDragSensitivity, contract.MIN_TAB_DRAG_SENSITIVITY);
+});

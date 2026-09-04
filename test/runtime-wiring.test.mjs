@@ -986,3 +986,23 @@ test("a claimed button also swallows the browser's synthesized double-click", ()
     /if \(event\.type === "dblclick"\) \{\s*\n\s*if \(resolveMousePolicy\(event\)\) suppressPageEvent\(event\);\s*\n\s*return;\s*\n\s*\}/,
   );
 });
+
+test("drag speed is a user setting wired from both surfaces into the drag step", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+  const popup = readText("src/entryPoints/toolbarPopup/toolbarPopup.html");
+  const options = readText("src/entryPoints/optionsPage/optionsPage.html");
+  const contract = readText("src/lib/common/contracts/tabWheel.ts");
+
+  // The content script derives the per-slot travel from the user's sensitivity.
+  assert.match(
+    app,
+    /advanceTabDragState\(\s*\n?\s*session\.state,\s*\n?\s*event\.clientX,\s*\n?\s*resolveTabDragStepPx\(settings\.tabDragSensitivity\)/,
+  );
+  // Both the popup and the settings page expose the slider.
+  for (const html of [popup, options]) {
+    assert.match(html, /id="tabDragSensitivity"[^>]*type="range"/);
+    assert.match(html, /id="tabDragSensitivityValue"/);
+  }
+  // The setting is normalized like the other numeric settings.
+  assert.match(contract, /tabDragSensitivity: normalizeNumberInRange\(/);
+})

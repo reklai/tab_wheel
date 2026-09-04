@@ -23,6 +23,7 @@ import {
   clearTabDragBoundary,
   coalesceTabDragDirections,
   createTabDragState,
+  resolveTabDragStepPx,
   isTabDragButtonPressed,
   markTabDragBoundary,
   reconcileTabDragBoundaryDirections,
@@ -684,7 +685,11 @@ export function initApp(): void {
       return;
     }
     suppressPageEvent(event);
-    const advanced = advanceTabDragState(session.state, event.clientX);
+    const advanced = advanceTabDragState(
+      session.state,
+      event.clientX,
+      resolveTabDragStepPx(settings.tabDragSensitivity),
+    );
     session.state = advanced.state;
     if (advanced.directions.length === 0) return;
     session.pendingDirections = coalesceTabDragDirections(

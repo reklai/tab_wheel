@@ -26,6 +26,22 @@ export interface MovedTabResult {
 }
 
 export const TAB_DRAG_STEP_PX = 96;
+export const MIN_TAB_DRAG_STEP_PX = 40;
+export const MAX_TAB_DRAG_STEP_PX = 200;
+
+// The user-facing "Drag speed" is a sensitivity multiplier: higher means a
+// faster drag, i.e. fewer pixels of travel per slot. Mirrors the wheel's
+// sensitivity model (distance = base / sensitivity), clamped to a sane range.
+export function resolveTabDragStepPx(
+  sensitivity: number,
+  basePx = TAB_DRAG_STEP_PX,
+): number {
+  const safeSensitivity = Number.isFinite(sensitivity) && sensitivity > 0 ? sensitivity : 1;
+  return Math.max(
+    MIN_TAB_DRAG_STEP_PX,
+    Math.min(MAX_TAB_DRAG_STEP_PX, Math.round(basePx / safeSensitivity)),
+  );
+}
 
 export function createTabDragState(anchorX: number): TabDragState {
   return {

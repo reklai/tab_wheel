@@ -189,3 +189,11 @@ test("matching-id malformed tabs are skipped without throwing", async () => {
   assert.deepEqual(core.resolveMovedTabResult([throwingTab, movedTab], 42), movedTab);
   assert.equal(core.resolveMovedTabResult([throwingTab], 42), null);
 });
+
+test("drag speed maps sensitivity to pixels per slot (higher = fewer px = faster)", async () => {
+  const core = await loadCore();
+  assert.equal(core.resolveTabDragStepPx(1), core.TAB_DRAG_STEP_PX);
+  assert.ok(core.resolveTabDragStepPx(2) < core.resolveTabDragStepPx(1), "faster means fewer px");
+  assert.ok(core.resolveTabDragStepPx(0.6) > core.resolveTabDragStepPx(1), "slower means more px");
+  assert.equal(core.resolveTabDragStepPx(0), core.TAB_DRAG_STEP_PX, "a bad value falls back to the base");
+});

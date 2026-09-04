@@ -17,7 +17,7 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Drags the current tab with modifier + middle click (hold and drag horizontally).
 - Closes the current tab and returns to the previous tab with modifier + right click.
 - Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, or Off.
-- Drag current tab lets you hold the configured button and drag horizontally; every 96 px moves the active tab one slot without changing its pinned or group membership.
+- Drag current tab lets you hold the configured button and drag horizontally to move the active tab one slot at a time, without changing its pinned or group membership. The Drag speed setting controls how far you drag per slot (about 96 px by default).
 - Provides popup Previous/Next buttons when a protected browser page blocks content scripts.
 - Shows a toolbar badge on recognized browser-restricted URLs, such as `chrome://`, `about:`, and extension stores.
 - Stores settings, onboarding state, recent-tab order, and scroll positions locally.

@@ -21,6 +21,8 @@ export const TABWHEEL_STORAGE_KEYS = {
 export const TABWHEEL_MODIFIER_KEYS: readonly TabWheelModifierKey[] = ["alt", "ctrl", "meta"];
 export const TABWHEEL_PRESETS: readonly TabWheelPreset[] = ["precise", "balanced", "fast", "custom"];
 export const MIN_WHEEL_SENSITIVITY = 0.5;
+export const MIN_TAB_DRAG_SENSITIVITY = 0.6;
+export const MAX_TAB_DRAG_SENSITIVITY = 2;
 export const MAX_WHEEL_SENSITIVITY = 2;
 export const MIN_WHEEL_COOLDOWN_MS = 60;
 export const MAX_WHEEL_COOLDOWN_MS = 400;
@@ -55,6 +57,7 @@ export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   invertScroll: false,
   gestureModifier: "alt",
   gestureWithShift: false,
+  tabDragSensitivity: 1,
   allowGesturesInEditableFields: true,
   ...DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
   restorePagePosition: true,
@@ -147,6 +150,12 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
     invertScroll: settings.invertScroll === true,
     gestureModifier: normalizeModifierKey(settings.gestureModifier),
     gestureWithShift: settings.gestureWithShift === true,
+    tabDragSensitivity: normalizeNumberInRange(
+      settings.tabDragSensitivity,
+      DEFAULT_TABWHEEL_SETTINGS.tabDragSensitivity,
+      MIN_TAB_DRAG_SENSITIVITY,
+      MAX_TAB_DRAG_SENSITIVITY,
+    ),
     allowGesturesInEditableFields: true,
     leftClickAction: normalizeClickAction(
       settings.leftClickAction,
