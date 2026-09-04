@@ -98,7 +98,14 @@ const WORKER_PREWARM_INTERVAL_MS = 15000;
 // wind-up — can trigger the same pre-warm.
 const MODIFIER_PREWARM_KEYS = { alt: "Alt", ctrl: "Control", meta: "Meta" } as const;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
-const STATUS_TIMEOUT_MS = 1500;
+// A notice stays long enough to be read: a short phrase for well under two
+// seconds, the longest sentence for a little over three.
+const STATUS_MIN_MS = 1200;
+const STATUS_MS_PER_CHARACTER = 30;
+const STATUS_MAX_MS = 4000;
+const STATUS_FADE_MS = 160;
+const ACTION_UNREACHABLE_STATUS =
+  "TabWheel couldn't reach the browser. Use Refresh extension in the popup.";
 const TAB_DRAG_KEEPALIVE_MS = 15000;
 const STATUS_ID = "tw-status-indicator";
 const SCROLL_RESTORE_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600];
@@ -299,7 +306,15 @@ export function initApp(): void {
       areSettingsLoaded = true;
     });
 
+  function statusDisplayMs(message: string): number {
+    return Math.min(STATUS_MAX_MS, STATUS_MIN_MS + message.length * STATUS_MS_PER_CHARACTER);
+  }
+
+  // The only thing TabWheel ever draws on a page: a one-line notice at the
+  // bottom edge for a gesture that landed but could not do its job. It never
+  // takes the centre, never takes input, and fades out on its own.
   function showStatus(message: string): void {
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
     let status = document.getElementById(STATUS_ID);
     if (!status) {
       status = document.createElement("div");
@@ -308,32 +323,39 @@ export function initApp(): void {
       status.style.cssText = [
         "position:fixed",
         "left:50%",
-        "top:50%",
-        "transform:translate(-50%,-50%)",
+        "bottom:24px",
+        "transform:translateX(-50%)",
         "z-index:2147483646",
-        "width:min(360px,calc(100vw - 32px))",
-        "min-height:42px",
-        "display:flex",
-        "align-items:center",
-        "justify-content:center",
+        "box-sizing:border-box",
+        "max-width:min(440px,calc(100vw - 32px))",
+        "padding:9px 16px",
+        "border-radius:999px",
+        "background:#1b1d22",
+        "color:#f2f3f5",
+        "box-shadow:0 6px 24px rgba(0,0,0,0.28),0 0 0 1px rgba(255,255,255,0.08)",
+        "font:13px/1.35 system-ui,-apple-system,'Segoe UI',sans-serif",
+        "letter-spacing:0",
         "text-align:center",
-        "padding:10px 14px",
-        "border-radius:8px",
-        "border:1px solid rgba(255,255,255,0.14)",
-        "background:#1e1e1e",
-        "color:#e0e0e0",
-        "box-shadow:0 18px 54px rgba(0,0,0,0.44)",
-        "font:12px/1.35 system-ui,sans-serif",
+        "white-space:normal",
         "pointer-events:none",
+        "opacity:0",
+        reduceMotion ? "" : `transition:opacity ${STATUS_FADE_MS}ms ease`,
       ].join(";");
       document.documentElement.appendChild(status);
     }
     status.textContent = message;
+    const visible = status;
+    window.requestAnimationFrame(() => {
+      visible.style.opacity = "1";
+    });
     if (statusTimer) window.clearTimeout(statusTimer);
     statusTimer = window.setTimeout(() => {
-      status?.remove();
-      statusTimer = 0;
-    }, STATUS_TIMEOUT_MS);
+      visible.style.opacity = "0";
+      statusTimer = window.setTimeout(() => {
+        visible.remove();
+        statusTimer = 0;
+      }, reduceMotion ? 0 : STATUS_FADE_MS);
+    }, statusDisplayMs(message));
   }
 
   function sendScrollSnapshot(): void {
@@ -489,7 +511,7 @@ export function initApp(): void {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const waitForPreviousDrag = beginTabWheelDragGesture(gestureId).then((result) => {
-      if (!result.ok) throw new Error(result.reason || "Tab drag unavailable");
+      if (!result.ok) throw new Error(result.reason || "Couldn't start the drag");
     });
     let isReleased = false;
     let keepAliveTimer = 0;
@@ -566,7 +588,7 @@ export function initApp(): void {
       .then((result) => {
         if (!result || session.cancelled || tabDragGesture !== session) return;
         if (!result.ok) {
-          showStatus(result.reason || "Tab move failed");
+          showStatus(result.reason || "Couldn't move this tab");
           cancelTabDragGesture(true);
           return;
         }
@@ -582,7 +604,7 @@ export function initApp(): void {
       })
       .catch(() => {
         if (session.cancelled || tabDragGesture !== session) return;
-        showStatus("Tab move failed");
+        showStatus("Couldn't move this tab");
         cancelTabDragGesture(true);
       })
       .finally(() => {
@@ -736,14 +758,13 @@ export function initApp(): void {
 
   async function runActionWithStatus(
     task: () => Promise<TabWheelActionResult>,
-    failureStatus: string,
   ): Promise<void> {
     let status: string | null = null;
     try {
       const result = await task();
-      if (!result.ok) status = result.reason || failureStatus;
+      if (!result.ok) status = result.reason || ACTION_UNREACHABLE_STATUS;
     } catch (_) {
-      status = failureStatus;
+      status = ACTION_UNREACHABLE_STATUS;
     }
     // A successful back/forward unloads this document while the reply is in
     // flight; if it is later restored from bfcache the rejection must not
@@ -757,30 +778,30 @@ export function initApp(): void {
   ): Promise<void> {
     switch (session.policy.action) {
       case "nativeNewTab":
-        await runActionWithStatus(openNativeNewTabWheelTab, "New tab unavailable");
+        await runActionWithStatus(openNativeNewTabWheelTab);
         return;
       case "recentTab":
-        await runActionWithStatus(activateMostRecentTabWheelTab, "Recent tab unavailable");
+        await runActionWithStatus(activateMostRecentTabWheelTab);
         return;
       case "closeToRecent":
-        await runActionWithStatus(closeCurrentTabWheelTabAndActivateRecent, "Close tab failed");
+        await runActionWithStatus(closeCurrentTabWheelTabAndActivateRecent);
         return;
       case "duplicateTab":
-        await runActionWithStatus(duplicateCurrentTabWheelTab, "Duplicate unavailable");
+        await runActionWithStatus(duplicateCurrentTabWheelTab);
         return;
       case "dragCurrentTab":
         return;
       case "openSettings":
-        await runActionWithStatus(openTabWheelOptions, "Settings unavailable");
+        await runActionWithStatus(openTabWheelOptions);
         return;
       case "muteTab":
-        await runActionWithStatus(toggleMuteCurrentTabWheelTab, "Mute unavailable");
+        await runActionWithStatus(toggleMuteCurrentTabWheelTab);
         return;
       case "goBack":
-        await runActionWithStatus(goBackInCurrentTabWheelTab, "Back unavailable");
+        await runActionWithStatus(goBackInCurrentTabWheelTab);
         return;
       case "goForward":
-        await runActionWithStatus(goForwardInCurrentTabWheelTab, "Forward unavailable");
+        await runActionWithStatus(goForwardInCurrentTabWheelTab);
         return;
     }
   }

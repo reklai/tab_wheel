@@ -20,6 +20,8 @@ npm run release:package
 - Added three remappable modifier + mouse-button actions: Mute / unmute tab (toggles the active tab's audio), Go back, and Go forward (navigate the active tab's history). On Chrome, back and forward show a short status when the history has no entry in that direction; Firefox treats that case as a silent no-op.
 - Left every default and every saved mapping unchanged; the new actions are extra dropdown options listed before Off, and no storage migration runs.
 - Added a GitHub Actions workflow that runs the full `npm run ci` gate on every push and pull request.
+- Rebuilt the on-page failure notice as a one-line snackbar at the bottom edge of the page instead of a box in the centre. It fades in and out (instantly under reduced motion), stays on screen in proportion to its length, and remains the only thing TabWheel ever draws on a page.
+- Rewrote every failure message in plain language that says what did not happen and, where useful, what to do: for example "Couldn't close this tab", "No recent tab to return to", "Nothing to go back to", and one consistent "TabWheel couldn't reach the browser. Use Refresh extension in the popup." when the background is unreachable. The popup and settings page use the same vocabulary. A test now rejects developer wording in any user-visible string.
 - Added a quiet rating star beside the settings gear in the popup header and beside the close button in the settings page header, on the Chrome build only. It is a plain link to the store's reviews page with a tooltip, no prompt, timer, storage, or dismiss logic; the Firefox build renders nothing there until a Firefox listing exists.
 
 ## 4.0.3

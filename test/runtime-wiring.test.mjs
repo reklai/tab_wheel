@@ -29,7 +29,7 @@ test("runtime contract exposes wheel and focused click actions", () => {
   );
   assert.match(handler, /browser\.runtime\.openOptionsPage\(\)/);
   assert.match(handler, /return \{ ok: true \}/);
-  assert.match(handler, /return \{ ok: false,\s*reason: "Settings unavailable" \}/);
+  assert.match(handler, /return \{ ok: false,\s*reason: "Couldn't open settings" \}/);
   assert.match(api, /source:\s*TabWheelCycleSource/);
   assert.match(api, /openTabWheelOptions/);
   for (const action of [
@@ -80,7 +80,7 @@ test("content script claims configured click actions and leaves Off unclaimed", 
   assert.match(app, /window\.addEventListener\("click",\s*mouseGestureHandler,\s*true\)/);
   assert.match(app, /window\.addEventListener\("auxclick",\s*mouseGestureHandler,\s*true\)/);
   assert.match(app, /window\.addEventListener\("contextmenu",\s*mouseGestureHandler,\s*true\)/);
-  assert.match(app, /runActionWithStatus\(openTabWheelOptions,\s*"Settings unavailable"\)/);
+  assert.match(app, /runActionWithStatus\(openTabWheelOptions\)/);
   assert.match(app, /case "nativeNewTab":/);
   assert.match(app, /policy\.interaction === "drag"/);
   assert.match(app, /advanceTabDragState\(/);
@@ -896,11 +896,11 @@ test("mute, back, and forward are wired from the content script through to the d
   const handler = readText("src/lib/backgroundRuntime/handlers/tabWheelMessageHandler.ts");
 
   const wiring = [
-    ["muteTab", "TABWHEEL_TOGGLE_MUTE", "toggleMuteCurrentTabWheelTab", "toggleMuteCurrentTab", "Mute unavailable"],
-    ["goBack", "TABWHEEL_GO_BACK", "goBackInCurrentTabWheelTab", "goBackInCurrentTab", "Back unavailable"],
-    ["goForward", "TABWHEEL_GO_FORWARD", "goForwardInCurrentTabWheelTab", "goForwardInCurrentTab", "Forward unavailable"],
+    ["muteTab", "TABWHEEL_TOGGLE_MUTE", "toggleMuteCurrentTabWheelTab", "toggleMuteCurrentTab"],
+    ["goBack", "TABWHEEL_GO_BACK", "goBackInCurrentTabWheelTab", "goBackInCurrentTab"],
+    ["goForward", "TABWHEEL_GO_FORWARD", "goForwardInCurrentTabWheelTab", "goForwardInCurrentTab"],
   ];
-  for (const [action, messageType, apiFn, domainFn, failureStatus] of wiring) {
+  for (const [action, messageType, apiFn, domainFn] of wiring) {
     assert.match(contract, new RegExp(`type: "${messageType}"; windowId\\?: number`));
     assert.match(api, new RegExp(`export function ${apiFn}\\([\\s\\S]{0,160}type: "${messageType}"`));
     assert.match(
@@ -909,7 +909,7 @@ test("mute, back, and forward are wired from the content script through to the d
     );
     assert.match(
       app,
-      new RegExp(`case "${action}":\\s*\\n\\s*await runActionWithStatus\\(${apiFn}, "${failureStatus}"\\);`),
+      new RegExp(`case "${action}":\\s*\\n\\s*await runActionWithStatus\\(${apiFn}\\);`),
     );
   }
 });

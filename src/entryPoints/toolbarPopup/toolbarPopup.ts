@@ -169,22 +169,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   byId<HTMLButtonElement>("prevTabBtn").addEventListener("click", async () => {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
     const result = await cycleTabWheel("prev", "popup", activeTab?.windowId).catch(() => null);
-    showToast(result?.ok ? "Previous tab" : result?.reason || "Unable to switch");
+    showToast(result?.ok ? "Previous tab" : result?.reason || "Couldn't switch tabs");
   });
   byId<HTMLButtonElement>("nextTabBtn").addEventListener("click", async () => {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
     const result = await cycleTabWheel("next", "popup", activeTab?.windowId).catch(() => null);
-    showToast(result?.ok ? "Next tab" : result?.reason || "Unable to switch");
+    showToast(result?.ok ? "Next tab" : result?.reason || "Couldn't switch tabs");
   });
   byId<HTMLButtonElement>("refreshTabWheelBtn").addEventListener("click", async () => {
     const result = await refreshCurrentTabWheel().catch(() => null);
-    showToast(result?.ok ? "TabWheel is ready" : result?.reason || "Still unavailable");
+    showToast(result?.ok ? "TabWheel is ready" : result?.reason || "TabWheel still can't run on this page");
     await refreshOverview();
   });
   byId<HTMLButtonElement>("resetDefaults").addEventListener("click", async () => {
     const result = await resetTabWheelState().catch(() => null);
     if (!result?.ok) {
-      showToast(result?.reason || "Reset failed");
+      showToast(result?.reason || "Couldn't reset settings");
       return;
     }
     settings = await loadTabWheelSettings().catch(() => ({ ...DEFAULT_TABWHEEL_SETTINGS }));

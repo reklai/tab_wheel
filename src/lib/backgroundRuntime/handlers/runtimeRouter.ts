@@ -32,7 +32,7 @@ export function registerRuntimeMessageRouter(
         if (message.type === "TABWHEEL_GET_OVERVIEW") {
           throw error;
         }
-        return { ok: false, reason: "Internal error" };
+        return { ok: false, reason: "Something went wrong in TabWheel" };
       }
     }
     return null;

@@ -162,7 +162,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   byId<HTMLButtonElement>("refreshTabWheelBtn").addEventListener("click", async () => {
     const result = await activateTabWheelContentScripts().catch(() => null);
-    showStatus(result ? `Refreshed ${result.injected} open tabs` : "Refresh failed");
+    showStatus(result ? `Refreshed ${result.injected} open tabs` : "Couldn't refresh TabWheel");
   });
   byId<HTMLButtonElement>("closeOptionsBtn").addEventListener("click", async () => {
     const tab = await browser.tabs.getCurrent().catch(() => null);

@@ -10,7 +10,7 @@ async function openOptionsPage(): Promise<TabWheelActionResult> {
     await browser.runtime.openOptionsPage();
     return { ok: true };
   } catch (_) {
-    return { ok: false, reason: "Settings unavailable" };
+    return { ok: false, reason: "Couldn't open settings" };
   }
 }
 
@@ -64,7 +64,7 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_SAVE_SCROLL_POSITION": {
         const tabId = sender.tab?.id;
         const windowId = sender.tab?.windowId;
-        if (tabId == null || windowId == null) return { ok: false, reason: "No sender tab" };
+        if (tabId == null || windowId == null) return { ok: false, reason: "Couldn't find the current tab" };
         return await domain.saveScrollPosition(
           tabId,
           windowId,

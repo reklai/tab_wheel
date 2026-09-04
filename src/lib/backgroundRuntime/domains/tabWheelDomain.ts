@@ -845,10 +845,10 @@ export function createTabWheelDomain(options: {
   // below is deliberately detached and a no-op for an already-current tab —
   // or every gesture chord starts paying for whatever gets added here.
   function markContentScriptReady(tab?: Tabs.Tab): TabWheelActionResult {
-    if (!tab?.id) return { ok: false, reason: "No sender tab" };
-    if (isPageGestureRestrictedUrl(tab.url)) return { ok: false, reason: "Unsupported page" };
+    if (!tab?.id) return { ok: false, reason: "Couldn't find the current tab" };
+    if (isPageGestureRestrictedUrl(tab.url)) return { ok: false, reason: "TabWheel can't save your place on this page" };
     const url = normalizePageUrl(tab.url);
-    if (!url) return { ok: false, reason: "Unsupported page" };
+    if (!url) return { ok: false, reason: "TabWheel can't save your place on this page" };
     markContentScriptAvailable(tab, url);
     if (tab.active === true && tab.windowId != null) {
       activeTabIdsByWindowId.set(tab.windowId, tab.id);
@@ -1225,16 +1225,16 @@ export function createTabWheelDomain(options: {
     tab?: Tabs.Tab,
   ): Promise<TabWheelActionResult> {
     if (!gestureId || tab?.id == null || tab.windowId == null) {
-      return { ok: false, reason: "No active tab" };
+      return { ok: false, reason: "Couldn't find the current tab" };
     }
     const existing = tabDragSessionsById.get(gestureId);
     if (existing) {
       if (existing.tabId !== tab.id || existing.windowId !== tab.windowId) {
-        return { ok: false, reason: "Invalid drag session" };
+        return { ok: false, reason: "That drag is no longer active" };
       }
       await existing.ready;
       if (tabDragSessionsById.get(gestureId) !== existing) {
-        return { ok: false, reason: "Drag session expired" };
+        return { ok: false, reason: "The drag timed out" };
       }
       refreshTabDragSessionTimeout(existing);
       return { ok: true };
@@ -1275,7 +1275,7 @@ export function createTabWheelDomain(options: {
     tabDragSessionsById.set(gestureId, session);
     await ready;
     if (tabDragSessionsById.get(gestureId) !== session) {
-      return { ok: false, reason: "Drag session expired" };
+      return { ok: false, reason: "The drag timed out" };
     }
     refreshTabDragSessionTimeout(session);
     return { ok: true };
@@ -1288,7 +1288,7 @@ export function createTabWheelDomain(options: {
     const session = tabDragSessionsById.get(gestureId);
     if (!session) return { ok: true };
     if (tab?.id !== session.tabId) {
-      return { ok: false, reason: "Invalid drag session" };
+      return { ok: false, reason: "That drag is no longer active" };
     }
     releaseTabDragSession(gestureId);
     return { ok: true };
@@ -1312,24 +1312,24 @@ export function createTabWheelDomain(options: {
     await ensureLoaded();
     const activeTab = await resolveActiveTab(tab, windowId);
     if (!activeTab?.id || activeTab.windowId == null) {
-      return { ok: false, reason: "No active tab" };
+      return { ok: false, reason: "Couldn't find the current tab" };
     }
     const settings = await getSettings();
     const tabs = await getWindowTabs(activeTab.windowId);
     await reconcileRecentTabs(activeTab.windowId, tabs);
     const eligibleTabs = await getGestureEligibleTabs(tabs, settings, activeTab.windowId, activeTab);
-    if (eligibleTabs.length === 0) return { ok: false, reason: "No eligible tabs" };
+    if (eligibleTabs.length === 0) return { ok: false, reason: "No other tabs to switch to" };
 
     const candidateTabs = eligibleTabs;
     const targetTab = await resolveAvailableCycleTargetTab(activeTab, candidateTabs, direction, settings);
     if (!targetTab?.id) {
-      return { ok: false, reason: "Edge of tab list" };
+      return { ok: false, reason: "No more tabs in that direction" };
     }
 
     cancelScrollRestore(activeTab.id);
     captureTabScrollUnlessWaking(activeTab, settings);
     const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });
-    if (!didActivate) return { ok: false, reason: "Tab no longer exists" };
+    if (!didActivate) return { ok: false, reason: "That tab was just closed" };
     // Detached on purpose. `void` keeps these probes out of the promise this
     // function returns, and that promise is the one runSerializedWindowTask
     // chains the next queued gesture on — so a second gesture starts the
@@ -1378,7 +1378,7 @@ export function createTabWheelDomain(options: {
       await ensureLoaded();
       const activeTab = await resolveActiveTab(tab, windowId);
       if (!activeTab?.id || activeTab.windowId == null) {
-        return { ok: false, reason: "No active tab" };
+        return { ok: false, reason: "Couldn't find the current tab" };
       }
       const createdTab = await browser.tabs.create({
         active: true,
@@ -1386,7 +1386,7 @@ export function createTabWheelDomain(options: {
         index: getTabIndex(activeTab) + 1,
         openerTabId: activeTab.id,
       }).catch(() => null);
-      if (!createdTab) return { ok: false, reason: "New tab unavailable" };
+      if (!createdTab) return { ok: false, reason: "Couldn't open a new tab" };
       invalidateWindowTabsCache(activeTab.windowId);
       if (createdTab.id != null && createdTab.windowId != null) {
         await recordRecentTab(createdTab.id, createdTab.windowId);
@@ -1403,7 +1403,7 @@ export function createTabWheelDomain(options: {
       await ensureLoaded();
       const activeTab = await resolveActiveTab(tab, windowId);
       if (!activeTab?.id || activeTab.windowId == null) {
-        return { ok: false, reason: "No active tab" };
+        return { ok: false, reason: "Couldn't find the current tab" };
       }
       const tabs = await getWindowTabs(activeTab.windowId);
       await reconcileRecentTabs(activeTab.windowId, tabs);
@@ -1415,7 +1415,7 @@ export function createTabWheelDomain(options: {
           return { ok: true, tabId: targetTab.id };
         }
       }
-      return { ok: false, reason: "No recent tab" };
+      return { ok: false, reason: "No recent tab to return to" };
     });
   }
 
@@ -1427,7 +1427,7 @@ export function createTabWheelDomain(options: {
       await ensureLoaded();
       const activeTab = await resolveActiveTab(tab, windowId);
       if (!activeTab?.id || activeTab.windowId == null) {
-        return { ok: false, reason: "No active tab" };
+        return { ok: false, reason: "Couldn't find the current tab" };
       }
       const tabs = await getWindowTabs(activeTab.windowId);
       await reconcileRecentTabs(activeTab.windowId, tabs);
@@ -1443,7 +1443,7 @@ export function createTabWheelDomain(options: {
         .then(() => true)
         .catch(() => false);
       invalidateWindowTabsCache(activeTab.windowId);
-      if (!didClose) return { ok: false, reason: "Close tab failed" };
+      if (!didClose) return { ok: false, reason: "Couldn't close this tab" };
       return { ok: true, tabId: activatedTabId };
     });
   }
@@ -1456,12 +1456,12 @@ export function createTabWheelDomain(options: {
       await ensureLoaded();
       const activeTab = await resolveActiveTab(tab, windowId);
       if (!activeTab?.id || activeTab.windowId == null) {
-        return { ok: false, reason: "No active tab" };
+        return { ok: false, reason: "Couldn't find the current tab" };
       }
       const duplicatedTab = await browser.tabs.duplicate(activeTab.id).catch(() => null);
-      if (!duplicatedTab?.id) return { ok: false, reason: "Duplicate unavailable" };
+      if (!duplicatedTab?.id) return { ok: false, reason: "Couldn't duplicate this tab" };
       const activatedTab = await browser.tabs.update(duplicatedTab.id, { active: true }).catch(() => null);
-      if (!activatedTab) return { ok: false, reason: "Duplicate unavailable" };
+      if (!activatedTab) return { ok: false, reason: "Couldn't duplicate this tab" };
       invalidateWindowTabsCache(activeTab.windowId);
       await recordRecentTab(duplicatedTab.id, duplicatedTab.windowId ?? activeTab.windowId);
       return { ok: true, tabId: duplicatedTab.id };
@@ -1474,11 +1474,11 @@ export function createTabWheelDomain(options: {
   ): Promise<TabWheelMoveResult> {
     await ensureLoaded();
     if (tab?.id == null) {
-      return { ok: false, moved: false, reason: "No active tab" };
+      return { ok: false, moved: false, reason: "Couldn't find the current tab" };
     }
     const activeTab = await browser.tabs.get(tab.id).catch(() => null);
     if (!activeTab?.id || activeTab.windowId == null || activeTab.active !== true) {
-      return { ok: false, moved: false, reason: "Tab changed" };
+      return { ok: false, moved: false, reason: "The current tab changed during the drag" };
     }
     const tabs = await getWindowTabs(activeTab.windowId);
     const targetIndex = resolveTabDragTargetIndex(activeTab, tabs, direction);
@@ -1490,7 +1490,7 @@ export function createTabWheelDomain(options: {
       .catch(() => null);
     const movedTab = resolveMovedTabResult(movedResult, activeTab.id);
     if (!movedTab) {
-      return { ok: false, moved: false, reason: "Tab move failed" };
+      return { ok: false, moved: false, reason: "Couldn't move this tab" };
     }
     invalidateWindowTabsCache(activeTab.windowId);
     return {
@@ -1513,7 +1513,7 @@ export function createTabWheelDomain(options: {
       || tab.windowId !== session.windowId
     ) {
       if (session && tab?.id === session.tabId) releaseTabDragSession(session.gestureId);
-      return { ok: false, moved: false, reason: "Drag session expired" };
+      return { ok: false, moved: false, reason: "The drag timed out" };
     }
     refreshTabDragSessionTimeout(session);
     await session.ready;
@@ -1530,7 +1530,7 @@ export function createTabWheelDomain(options: {
     if (!activeTab?.id || activeTab.windowId == null) {
       return {
         ok: false,
-        reason: "No active tab",
+        reason: "Couldn't find the current tab",
         contentScriptStatus: "unavailable",
       };
     }
@@ -1574,7 +1574,7 @@ export function createTabWheelDomain(options: {
       markContentScriptUnavailable(currentTab);
       return {
         ok: false,
-        reason: "TabWheel refresh failed",
+        reason: "Couldn't refresh TabWheel on this page",
         overview,
         contentScriptStatus: overview.contentScriptStatus,
         injected: true,
@@ -1598,10 +1598,10 @@ export function createTabWheelDomain(options: {
     return await runSerializedWindowTask(tab, windowId, async () => {
       await ensureLoaded();
       const activeTab = await resolveActiveTab(tab, windowId);
-      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
+      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "Couldn't find the current tab" };
       const muted = activeTab.mutedInfo?.muted === true;
       const updatedTab = await browser.tabs.update(activeTab.id, { muted: !muted }).catch(() => null);
-      if (!updatedTab) return { ok: false, reason: "Mute unavailable" };
+      if (!updatedTab) return { ok: false, reason: "This tab can't be muted" };
       return { ok: true, tabId: activeTab.id };
     });
   }
@@ -1614,7 +1614,7 @@ export function createTabWheelDomain(options: {
     return await runSerializedWindowTask(tab, windowId, async () => {
       await ensureLoaded();
       const activeTab = await resolveActiveTab(tab, windowId);
-      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
+      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "Couldn't find the current tab" };
       // The browser rejects when the history has no entry in that direction.
       const navigation = direction === "back"
         ? browser.tabs.goBack(activeTab.id)
@@ -1643,7 +1643,7 @@ export function createTabWheelDomain(options: {
     const settings = await getSettings();
     if (!settings.restorePagePosition) return { ok: true };
     const url = normalizePageUrl(rawUrl);
-    if (!url) return { ok: false, reason: "Unsupported page" };
+    if (!url) return { ok: false, reason: "TabWheel can't save your place on this page" };
     const scroll = normalizeScrollData(scrollData);
     const key = tabKey(tabId);
     const existing = scrollMemoryByTabId[key];

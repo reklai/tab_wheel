@@ -145,7 +145,7 @@ test("the actions refuse to run without an active tab", async () => {
   const forward = await world.domain.goForwardInCurrentTab(undefined, 5);
 
   for (const result of [mute, back, forward]) {
-    assert.deepEqual(result, { ok: false, reason: "No active tab" });
+    assert.deepEqual(result, { ok: false, reason: "Couldn't find the current tab" });
   }
   assert.deepEqual(world.updates, []);
   assert.deepEqual(world.navigations, []);
@@ -157,5 +157,5 @@ test("mute reports a soft failure when the browser refuses the update", async ()
 
   const result = await world.domain.toggleMuteCurrentTab(world.tabsById.get(1));
 
-  assert.deepEqual(result, { ok: false, reason: "Mute unavailable" });
+  assert.deepEqual(result, { ok: false, reason: "This tab can't be muted" });
 });
