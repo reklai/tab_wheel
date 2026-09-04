@@ -971,3 +971,18 @@ test("a quiet store rating star sits in the header of the popup and settings pag
   // No pleading copy anywhere near it.
   assert.doesNotMatch(`${popup}\n${options}\n${build}`, /Enjoying|five stars|5 stars|★/i);
 });
+
+test("a claimed button also swallows the browser's synthesized double-click", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+
+  // The browser dispatches dblclick after two clicks on the same element even
+  // when both clicks were suppressed. Toggle actions such as mute are used as
+  // two quick clicks, so without this the page still sees a double-click
+  // (YouTube fullscreens, editors select a word, maps zoom).
+  assert.match(app, /window\.addEventListener\("dblclick",\s*mouseGestureHandler,\s*true\)/);
+  assert.match(app, /window\.removeEventListener\("dblclick",\s*mouseGestureHandler,\s*true\)/);
+  assert.match(
+    app,
+    /if \(event\.type === "dblclick"\) \{\s*\n\s*if \(resolveMousePolicy\(event\)\) suppressPageEvent\(event\);\s*\n\s*return;\s*\n\s*\}/,
+  );
+});

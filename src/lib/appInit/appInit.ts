@@ -824,6 +824,13 @@ export function initApp(): void {
 
   function mouseGestureHandler(event: MouseEvent): void {
     if (handleCarriedMouseClaim(event)) return;
+    // The browser synthesizes dblclick after two clicks on the same element
+    // even when both clicks were swallowed. A claimed button never hands the
+    // page a double-click, or two quick toggles would fullscreen a video.
+    if (event.type === "dblclick") {
+      if (resolveMousePolicy(event)) suppressPageEvent(event);
+      return;
+    }
     if (
       event.type === "pointerdown"
       && typeof PointerEvent !== "undefined"
@@ -1127,6 +1134,7 @@ export function initApp(): void {
   window.addEventListener("click", mouseGestureHandler, true);
   window.addEventListener("auxclick", mouseGestureHandler, true);
   window.addEventListener("contextmenu", mouseGestureHandler, true);
+  window.addEventListener("dblclick", mouseGestureHandler, true);
   window.addEventListener("blur", cancelUnreleasedTabDragGesture);
   window.addEventListener("keydown", modifierKeydownPrewarmHandler, true);
   window.addEventListener("wheel", wheelHandler, { passive: false, capture: true });
@@ -1153,6 +1161,7 @@ export function initApp(): void {
     window.removeEventListener("click", mouseGestureHandler, true);
     window.removeEventListener("auxclick", mouseGestureHandler, true);
     window.removeEventListener("contextmenu", mouseGestureHandler, true);
+    window.removeEventListener("dblclick", mouseGestureHandler, true);
     window.removeEventListener("blur", cancelUnreleasedTabDragGesture);
     window.removeEventListener("keydown", modifierKeydownPrewarmHandler, true);
     window.removeEventListener("wheel", wheelHandler, true);

@@ -18,6 +18,7 @@ npm run release:package
 ## 4.1.0
 
 - Added three remappable modifier + mouse-button actions: Mute / unmute tab (toggles the active tab's audio), Go back, and Go forward (navigate the active tab's history). On Chrome, back and forward show a short status when the history has no entry in that direction; Firefox treats that case as a silent no-op.
+- Fixed a claimed mouse button still handing the page a double-click: the browser synthesizes dblclick after two clicks even when both were swallowed, so two quick modifier-clicks (the natural way to use Mute / unmute tab) could fullscreen a video or select a word. dblclick is now intercepted whenever the modifier is held and the button is mapped.
 - Left every default and every saved mapping unchanged; the new actions are extra dropdown options listed before Off, and no storage migration runs.
 - Added a GitHub Actions workflow that runs the full `npm run ci` gate on every push and pull request.
 - Unified every notice into one pill: the on-page failure notice, the popup toast, and the settings page status now share the same bottom-centre capsule with a translucent blurred surface, a hairline inset, and a short rise-and-settle that reduced motion turns off. Display time scales with message length on all three. The page notice was previously a box in the centre of the viewport and remains the only thing TabWheel ever draws on a page.
