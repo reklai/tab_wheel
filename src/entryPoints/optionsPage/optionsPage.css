@@ -74,6 +74,8 @@ h2 { margin-bottom: 3px; font-size: 17px; font-weight: 600; letter-spacing: -0.0
 .icon-button:hover { filter: brightness(1.12); }
 .icon-button:active { filter: brightness(0.94); }
 a.icon-button { box-sizing: border-box; text-decoration: none; font-size: 18px; line-height: 1; }
+.store-rate { color: #fbbc04; border-color: rgba(251, 188, 4, 0.28); font-size: 19px; }
+.store-rate:hover { filter: brightness(1.12); border-color: rgba(251, 188, 4, 0.5); }
 
 .settings-card {
   overflow: hidden;

@@ -74,6 +74,10 @@ button, select, input { font: inherit; }
 .icon-button:hover { filter: brightness(1.12); }
 .icon-button:active { filter: brightness(0.94); }
 a.icon-button { display: grid; box-sizing: border-box; place-items: center; text-decoration: none; font-size: 14px; line-height: 1; }
+/* The rate link reads as a rating star, not a bookmark: the store's amber,
+   warmed slightly to sit on the dark header. Still a passive header icon. */
+.store-rate { color: #fbbc04; border-color: rgba(251, 188, 4, 0.28); font-size: 15px; }
+.store-rate:hover { filter: brightness(1.12); border-color: rgba(251, 188, 4, 0.5); }
 
 .popup-scroll {
   min-height: 0;

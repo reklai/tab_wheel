@@ -961,7 +961,7 @@ test("a quiet store rating star sits in the header of the popup and settings pag
   }
   assert.match(
     build,
-    /const storeRateLink = target === "chrome"\s*\n?\s*\? '<a class="icon-button store-rate" href="https:\/\/chromewebstore\.google\.com\/detail\/[^"]*hibbakmdkclijigadchcinbbodmdmhcg\/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">☆<\/a>'\s*\n?\s*: "";/,
+    /const storeRateLink = target === "chrome"\s*\n?\s*\? '<a class="icon-button store-rate" href="https:\/\/chromewebstore\.google\.com\/detail\/[^"]*hibbakmdkclijigadchcinbbodmdmhcg\/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">★<\/a>'\s*\n?\s*: "";/,
   );
   assert.match(build, /\.replaceAll\("__STORE_RATE_LINK__", storeRateLink\)/);
   for (const css of [popupCss, optionsCss]) {
@@ -970,7 +970,7 @@ test("a quiet store rating star sits in the header of the popup and settings pag
     assert.doesNotMatch(css, /store-note/);
   }
   // No pleading copy anywhere near it.
-  assert.doesNotMatch(`${popup}\n${options}\n${build}`, /Enjoying|five stars|5 stars|★/i);
+  assert.doesNotMatch(`${popup}\n${options}\n${build}`, /Enjoying|five stars|5 stars|★★/i);
 });
 
 test("a claimed button also swallows the browser's synthesized double-click", () => {
