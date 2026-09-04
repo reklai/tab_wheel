@@ -31,9 +31,10 @@ export interface TabWheelMouseGestureEvent {
 
 export const MOUSE_GESTURE_CLAIM_MS = 900;
 
-// Listed alphabetically by the user-facing label from formatTabWheelClickAction
-// (the dropdown order); membership, defaults, and normalization do not depend
-// on this order, so reordering never changes any saved or default mapping.
+// The actions are listed alphabetically by their user-facing label (the
+// dropdown order), with Off ("none") pinned last as the disable option.
+// Membership, defaults, and normalization do not depend on this order, so
+// reordering never changes any saved or default mapping.
 export const TABWHEEL_CLICK_ACTIONS: readonly TabWheelClickAction[] = [
   "nativeNewTab",   // Browser new tab
   "closeToRecent",  // Close current tab
@@ -43,8 +44,8 @@ export const TABWHEEL_CLICK_ACTIONS: readonly TabWheelClickAction[] = [
   "goForward",      // Go forward
   "recentTab",      // Most recent tab
   "muteTab",        // Mute / unmute tab
-  "none",           // Off
   "openSettings",   // Open settings
+  "none",           // Off (always last)
 ];
 
 export const DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS: TabWheelClickActionSettings = {

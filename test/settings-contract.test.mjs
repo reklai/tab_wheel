@@ -59,9 +59,12 @@ test("saved mute, back, and forward mappings survive normalization", async () =>
   assert.equal(settings.rightClickAction, "goForward");
 });
 
-test("the mouse-action list is ordered alphabetically by its visible label", async () => {
+test("the mouse-action list is alphabetical by label, with Off pinned last", async () => {
   const contract = await loadSettingsContract();
-  const labels = contract.TABWHEEL_CLICK_ACTIONS.map(contract.formatTabWheelClickAction);
-  const sorted = [...labels].sort((a, b) => a.localeCompare(b));
-  assert.deepEqual(labels, sorted, `dropdown order should be alphabetical by label, got ${JSON.stringify(labels)}`);
+  const actions = contract.TABWHEEL_CLICK_ACTIONS;
+  assert.equal(actions.at(-1), "none", "Off must stay at the bottom as the disable option");
+
+  const realLabels = actions.slice(0, -1).map(contract.formatTabWheelClickAction);
+  const sorted = [...realLabels].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(realLabels, sorted, `the actions above Off should be alphabetical, got ${JSON.stringify(realLabels)}`);
 });
