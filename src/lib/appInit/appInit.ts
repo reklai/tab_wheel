@@ -104,21 +104,62 @@ const LAYOUT_STABILITY_REQUIRED_FRAMES = 3;
 const LAYOUT_DIMENSION_TOLERANCE_PX = 4;
 const LAYOUT_DIMENSION_MATCH_RATIO = 0.08;
 
+// A live "Drag current tab" gesture. The tab lives in the browser's tab strip,
+// which a page extension cannot see or draw in, so the drag is a closed loop:
+// we track where the pointer is and, on each background round-trip, move the
+// tab one slot toward that live position. Because nothing is queued, a stopped
+// or reversed pointer settles the tab exactly where it is, instead of replaying
+// a backlog and overshooting.
 interface ActiveTabDragGesture {
+  // The pointer this drag is bound to; events from any other pointer id are
+  // ignored so a second finger or stylus cannot hijack the drag.
   pointerId: number;
+  // The physical button held down (0 left, 1 middle, 2 right), used to
+  // recognise this drag's own release and completion events.
   button: number;
+  // Correlates this drag's begin/move/end messages in the background, which
+  // serialises drags per window so two windows cannot fight over one tab.
   gestureId: string;
+  // The element pointer capture was taken on, so movement keeps reaching us
+  // when the cursor leaves it. Null when the event target was not an Element.
   captureTarget: Element | null;
+
+  // Closed-loop position model:
+  // Page X where the drag began. The target slot is measured from here, so the
+  // mapping is anchored to the gesture's start, not to the previous move.
   startX: number;
+  // The pointer's most recent X. The drain reads this live each step and moves
+  // toward it; this is what makes the drag target-seeking rather than a queue.
   latestClientX: number;
+  // How many slots the tab has actually moved. The next move is one step toward
+  // (target - appliedOffset); when they are equal the tab is under the pointer
+  // and the drain rests.
   appliedOffset: number;
+  // The direction that last hit a pinned or tab-group edge. Moving that way is
+  // suppressed until the pointer asks for the other way, so pushing against an
+  // edge does not spin.
   blockedDirection: TabDragDirection | null;
+
+  // Lifecycle:
+  // True while a move is awaiting the background, so only one move is ever in
+  // flight. That single in-flight move is the one step a reversal cannot undo.
   moveInFlight: boolean;
+  // True once the button is up. The gesture then finishes as soon as the tab
+  // reaches the pointer instead of cancelling mid-drag.
   released: boolean;
+  // True once the terminal click/auxclick/contextmenu for this button arrived,
+  // confirming the browser considers the interaction complete.
   completionReceived: boolean;
+  // Set when the drag is abandoned (button released early, pointer lost). The
+  // drain and finish paths bail as soon as they see it.
   cancelled: boolean;
+  // Timer id for the grace period that waits for a late completion event after
+  // release, so a drag that never gets one still tears down. 0 when unset.
   finishTimer: number;
+  // Resolves after any previous drag on this window finishes; every move awaits
+  // it so drags on the same window run in order.
   waitForPreviousDrag: Promise<void>;
+  // Tears down this drag's slot in the per-window queue and stops its keepalive.
   releaseDragQueue: () => void;
 }
 

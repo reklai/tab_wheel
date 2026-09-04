@@ -16,3 +16,15 @@ dist/
 /background.js
 /content-script.js
 /lib/
+
+# Local Claude Code state (also covered by a global ignore; keep it explicit
+# so it stays ignored on any clone or CI checkout).
+.claude/
+
+# OS metadata and tool logs
+.DS_Store
+*.log
+npm-debug.log*
+
+# TypeScript incremental build info
+*.tsbuildinfo
