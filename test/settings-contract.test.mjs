@@ -58,3 +58,10 @@ test("saved mute, back, and forward mappings survive normalization", async () =>
   assert.equal(settings.middleClickAction, "muteTab");
   assert.equal(settings.rightClickAction, "goForward");
 });
+
+test("the mouse-action list is ordered alphabetically by its visible label", async () => {
+  const contract = await loadSettingsContract();
+  const labels = contract.TABWHEEL_CLICK_ACTIONS.map(contract.formatTabWheelClickAction);
+  const sorted = [...labels].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(labels, sorted, `dropdown order should be alphabetical by label, got ${JSON.stringify(labels)}`);
+});

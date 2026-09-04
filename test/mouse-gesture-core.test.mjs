@@ -128,13 +128,15 @@ test("mute, back, and forward are plain click policies on every button", async (
   ]);
 });
 
-test("the click action list offers the new actions before Off", async () => {
+test("the click action list still offers every action, including the newer ones", async () => {
   const core = await loadCore();
   const actions = core.TABWHEEL_CLICK_ACTIONS;
 
-  for (const action of ["muteTab", "goBack", "goForward"]) {
+  for (const action of [
+    "nativeNewTab", "recentTab", "closeToRecent", "duplicateTab", "dragCurrentTab",
+    "openSettings", "muteTab", "goBack", "goForward", "none",
+  ]) {
     assert.ok(actions.includes(action), `${action} is offered`);
-    assert.ok(actions.indexOf(action) < actions.indexOf("none"), `${action} is listed before Off`);
   }
-  assert.equal(actions.at(-1), "none");
+  assert.equal(actions.length, 10);
 });
