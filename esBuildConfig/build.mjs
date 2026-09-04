@@ -17,6 +17,11 @@ if (!["firefox", "chrome"].includes(target)) {
 
 const manifestFile = target === "chrome" ? "manifest_v3.json" : "manifest_v2.json";
 const targetBrand = "Scroll Wheel Tab Switcher";
+// A passive rating link on the popup and settings page. Chrome only until a
+// Firefox listing exists; the Firefox build renders an empty, hidden line.
+const storeRateLine = target === "chrome"
+  ? '<a href="https://chromewebstore.google.com/detail/scroll-wheel-tab-switcher/hibbakmdkclijigadchcinbbodmdmhcg/reviews" target="_blank" rel="noopener noreferrer">Rate TabWheel on the Chrome Web Store</a>'
+  : "";
 console.log(`[build] Target: ${target} (${manifestFile}, ${targetBrand})`);
 
 // Extension entry points run as standalone scripts, so keep bundles as IIFEs
@@ -60,7 +65,12 @@ function copyStatic() {
     mkdirSync(dirname(dest), { recursive: true });
     if (branded) {
       const source = readFileSync(from, "utf8");
-      writeFileSync(dest, source.replaceAll("__EXTENSION_NAME__", targetBrand));
+      writeFileSync(
+        dest,
+        source
+          .replaceAll("__EXTENSION_NAME__", targetBrand)
+          .replaceAll("__STORE_RATE_LINE__", storeRateLine),
+      );
       continue;
     }
     cpSync(from, dest);

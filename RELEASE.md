@@ -20,6 +20,7 @@ npm run release:package
 - Added three remappable modifier + mouse-button actions: Mute / unmute tab (toggles the active tab's audio), Go back, and Go forward (navigate the active tab's history). On Chrome, back and forward show a short status when the history has no entry in that direction; Firefox treats that case as a silent no-op.
 - Left every default and every saved mapping unchanged; the new actions are extra dropdown options listed before Off, and no storage migration runs.
 - Added a GitHub Actions workflow that runs the full `npm run ci` gate on every push and pull request.
+- Added a quiet "Rate TabWheel on the Chrome Web Store" line at the bottom of the popup and settings page on the Chrome build only. It is a plain link with no prompt, timer, storage, or dismiss logic; the Firefox build renders nothing there until a Firefox listing exists.
 
 ## 4.0.3
 

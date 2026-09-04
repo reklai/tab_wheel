@@ -185,6 +185,9 @@ input[type="range"] { width: 142px; accent-color: var(--accent); }
   cursor: pointer;
 }
 .popup-actions .danger-button { border-color: rgba(255, 102, 102, 0.24); background: rgba(255, 102, 102, 0.08); }
+.store-note { grid-column: 1 / -1; margin: 2px 0 0; text-align: center; color: var(--muted); font-size: 10px; }
+.store-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.store-note:empty { display: none; }
 .toast {
   position: absolute;
   right: 12px;
