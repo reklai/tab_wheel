@@ -813,6 +813,17 @@ export function initApp(): void {
   function runMouseGestureSession(session: TabWheelMouseGestureSession): void {
     if (session.hasRun) return;
     session.hasRun = true;
+    // A right-click action runs on contextmenu, which is not the last event of
+    // the interaction: pointerup, mouseup, and auxclick still follow. Claim the
+    // button so those trailing events are swallowed like the rest of the
+    // interaction instead of reaching the page. Left and middle actions run on
+    // their terminal event, so the claim they set simply lapses on the next
+    // pointerdown. The claim never crosses into the next interaction because
+    // handleCarriedMouseClaim clears it the moment a fresh pointerdown arrives.
+    window.__tabWheelMouseClaim = {
+      button: session.policy.button,
+      expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
+    };
     if (
       tabDragGesture?.released
       && (tabDragGesture.moveInFlight || tabDragGesture.pendingDirections.length > 0)

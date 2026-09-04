@@ -18,6 +18,7 @@ npm run release:package
 ## 4.1.0
 
 - Added three remappable modifier + mouse-button actions: Mute / unmute tab (toggles the active tab's audio), Go back, and Go forward (navigate the active tab's history). On Chrome, back and forward show a short status when the history has no entry in that direction; Firefox treats that case as a silent no-op.
+- Fixed a right-click action leaking the trailing pointerup, mouseup, and auxclick to the page. A right-click action runs on the context-menu event, which is not the last event of the interaction, so the events after it used to reach the page (a right-click mapped to a tab action could still trigger page behaviour bound to those events). The whole interaction is now claimed until it ends, matching left and middle clicks.
 - Fixed a claimed mouse button still handing the page a double-click: the browser synthesizes dblclick after two clicks even when both were swallowed, so two quick modifier-clicks (the natural way to use Mute / unmute tab) could fullscreen a video or select a word. dblclick is now intercepted whenever the modifier is held and the button is mapped.
 - Left every default and every saved mapping unchanged; the new actions are extra dropdown options listed before Off, and no storage migration runs.
 - Added a GitHub Actions workflow that runs the full `npm run ci` gate on every push and pull request.
