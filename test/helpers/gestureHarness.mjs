@@ -258,9 +258,9 @@ export async function createGestureWorld(settings = {}) {
 
   // One modifier + wheel notch. Returns whether the page event was suppressed
   // and the cycle directions that fired (drained since the previous call).
-  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, alt = true, advanceMs = 0 } = {}) {
+  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, alt = true, ctrl = false, meta = false, shift = false, advanceMs = 0 } = {}) {
     if (advanceMs) bump(advanceMs);
-    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, alt });
+    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, alt, ctrl, meta, shift });
     await flushAsyncWork();
     const cycles = drainMessages()
       .filter((message) => message.type === "TABWHEEL_CYCLE")
@@ -302,11 +302,11 @@ export async function createGestureWorld(settings = {}) {
   }
 
   // Replay a full button interaction and report what the page would have seen.
-  async function performClick(button, { alt = true, double = false, contextOn = "press", target = null } = {}) {
+  async function performClick(button, { alt = true, ctrl = false, meta = false, shift = false, double = false, contextOn = "press", target = null } = {}) {
     const events = browserEventSequence(button, { double, contextOn });
     const leaked = [];
     for (const { type } of events) {
-      const event = dom.dispatch(type, { button: buttonForType(type, button), alt, target });
+      const event = dom.dispatch(type, { button: buttonForType(type, button), alt, ctrl, meta, shift, target });
       if (!event.defaultPrevented) leaked.push(type);
     }
     await flushAsyncWork();
