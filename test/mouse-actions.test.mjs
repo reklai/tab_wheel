@@ -41,6 +41,7 @@ async function createActionWorld({ tabs, goBack, goForward }) {
       sendMessage: async () => ({ scrollX: 0, scrollY: 0 }),
       update: async (tabId, props) => {
         const tab = tabsById.get(tabId);
+        if (tab?.refuseUpdate) throw new Error("Tab cannot be updated");
         updates.push({ tabId, ...props });
         if ("muted" in props) tab.mutedInfo = { muted: props.muted };
         return tab;
@@ -148,4 +149,13 @@ test("the actions refuse to run without an active tab", async () => {
   }
   assert.deepEqual(world.updates, []);
   assert.deepEqual(world.navigations, []);
+});
+
+test("mute reports a soft failure when the browser refuses the update", async () => {
+  const world = await createActionWorld({ tabs: [activeTab()], goBack: async () => {}, goForward: async () => {} });
+  world.tabsById.get(1).refuseUpdate = true;
+
+  const result = await world.domain.toggleMuteCurrentTab(world.tabsById.get(1));
+
+  assert.deepEqual(result, { ok: false, reason: "Mute unavailable" });
 });

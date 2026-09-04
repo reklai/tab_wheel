@@ -913,3 +913,25 @@ test("mute, back, and forward are wired from the content script through to the d
     );
   }
 });
+
+test("action status is not shown on a document that has already been hidden", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+
+  // Back and forward are the first actions whose success unloads the sender
+  // without closing the tab. If the document is restored from bfcache after
+  // the runtime port was torn down, the pending action promise rejects on a
+  // page that navigated fine; the status overlay must stay quiet for it.
+  // beforeunload shares this handler and can be cancelled by the user, so
+  // only a real pagehide may mark the document as gone.
+  assert.match(
+    app,
+    /function pageHideHandler\(event: Event\)[\s\S]{0,60}if \(event\.type === "pagehide"\) pageHidden = true;/,
+  );
+  assert.match(app, /function pageShowHandler\(\)[\s\S]{0,80}pageHidden = false;/);
+  assert.match(app, /window\.addEventListener\("pageshow",\s*pageShowHandler\)/);
+  assert.match(app, /window\.removeEventListener\("pageshow",\s*pageShowHandler\)/);
+  assert.match(
+    app,
+    /async function runActionWithStatus\([\s\S]{0,700}if \(pageHidden\) return;\s*\n\s*if \(status\) showStatus\(status\);/,
+  );
+});

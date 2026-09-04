@@ -269,6 +269,7 @@ export function initApp(): void {
   let settings: TabWheelSettings = { ...DEFAULT_TABWHEEL_SETTINGS };
   let areSettingsLoaded = false;
   let statusTimer = 0;
+  let pageHidden = false;
   let scrollSaveTimer = 0;
   let lastScrollSaveX = Number.NaN;
   let lastScrollSaveY = Number.NaN;
@@ -737,12 +738,18 @@ export function initApp(): void {
     task: () => Promise<TabWheelActionResult>,
     failureStatus: string,
   ): Promise<void> {
+    let status: string | null = null;
     try {
       const result = await task();
-      if (!result.ok) showStatus(result.reason || failureStatus);
+      if (!result.ok) status = result.reason || failureStatus;
     } catch (_) {
-      showStatus(failureStatus);
+      status = failureStatus;
     }
+    // A successful back/forward unloads this document while the reply is in
+    // flight; if it is later restored from bfcache the rejection must not
+    // surface as a failure on a page that navigated fine.
+    if (pageHidden) return;
+    if (status) showStatus(status);
   }
 
   async function executeMouseGestureSession(
@@ -1075,9 +1082,14 @@ export function initApp(): void {
     if (isTopFrameContext) flushScrollSnapshot();
   }
 
-  function pageHideHandler(): void {
+  function pageHideHandler(event: Event): void {
+    if (event.type === "pagehide") pageHidden = true;
     cancelScrollRestore();
     flushScrollSnapshot();
+  }
+
+  function pageShowHandler(): void {
+    pageHidden = false;
   }
 
   window.addEventListener("pointerdown", mouseGestureHandler, true);
@@ -1099,6 +1111,7 @@ export function initApp(): void {
   if (isTopFrameContext) {
     window.addEventListener("scroll", scheduleScrollSnapshot, { passive: true, capture: true });
     window.addEventListener("pagehide", pageHideHandler);
+    window.addEventListener("pageshow", pageShowHandler);
     window.addEventListener("beforeunload", pageHideHandler);
     browser.runtime.onMessage.addListener(messageHandler);
   }
@@ -1123,6 +1136,7 @@ export function initApp(): void {
     if (isTopFrameContext) {
       window.removeEventListener("scroll", scheduleScrollSnapshot, true);
       window.removeEventListener("pagehide", pageHideHandler);
+      window.removeEventListener("pageshow", pageShowHandler);
       window.removeEventListener("beforeunload", pageHideHandler);
       browser.runtime.onMessage.removeListener(messageHandler);
     }

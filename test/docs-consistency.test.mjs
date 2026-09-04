@@ -33,9 +33,7 @@ test("public docs describe the same mouse-first product and defaults", () => {
   assert.match(combined, /Browser new tab/i);
   assert.match(combined, /Close current tab/i);
   assert.match(combined, /Drag current tab/i);
-  assert.match(combined, /Mute \/ unmute tab/i);
-  assert.match(combined, /Go back/i);
-  assert.match(combined, /Go forward/i);
+  assert.match(combined, /Open settings, Mute \/ unmute tab, Go back, Go forward, or Off/);
   assert.match(combined, /drag horizontally/i);
   assert.match(combined, /4\.1\.0/);
   assert.match(combined, /4\.0\.0/);

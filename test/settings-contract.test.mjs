@@ -44,3 +44,17 @@ test("mute, back, and forward use their canonical user-facing names", async () =
   assert.equal(contract.formatTabWheelClickAction("goBack"), "Go back");
   assert.equal(contract.formatTabWheelClickAction("goForward"), "Go forward");
 });
+
+test("saved mute, back, and forward mappings survive normalization", async () => {
+  const contract = await loadSettingsContract();
+
+  const settings = contract.normalizeTabWheelSettings({
+    leftClickAction: "goBack",
+    middleClickAction: "muteTab",
+    rightClickAction: "goForward",
+  });
+
+  assert.equal(settings.leftClickAction, "goBack");
+  assert.equal(settings.middleClickAction, "muteTab");
+  assert.equal(settings.rightClickAction, "goForward");
+});
