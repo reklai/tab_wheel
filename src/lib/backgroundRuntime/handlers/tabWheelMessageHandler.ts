@@ -43,6 +43,15 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_DUPLICATE_TAB":
         return await domain.duplicateTab(sender.tab, message.windowId);
 
+      case "TABWHEEL_TOGGLE_MUTE":
+        return await domain.toggleMuteCurrentTab(sender.tab, message.windowId);
+
+      case "TABWHEEL_GO_BACK":
+        return await domain.goBackInCurrentTab(sender.tab, message.windowId);
+
+      case "TABWHEEL_GO_FORWARD":
+        return await domain.goForwardInCurrentTab(sender.tab, message.windowId);
+
       case "TABWHEEL_BEGIN_TAB_DRAG":
         return await domain.beginTabDrag(message.gestureId, sender.tab);
 

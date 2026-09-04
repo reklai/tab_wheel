@@ -110,6 +110,9 @@ export interface TabWheelDomain {
   activateMostRecentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   closeCurrentTabAndActivateRecent(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   duplicateTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
+  toggleMuteCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
+  goBackInCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
+  goForwardInCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   beginTabDrag(gestureId: string, tab?: Tabs.Tab): Promise<TabWheelActionResult>;
   moveCurrentTab(direction: TabWheelMoveDirection, tab?: Tabs.Tab, gestureId?: string): Promise<TabWheelMoveResult>;
   endTabDrag(gestureId: string, tab?: Tabs.Tab): Promise<TabWheelActionResult>;
@@ -1586,6 +1589,50 @@ export function createTabWheelDomain(options: {
     };
   }
 
+  // One-shot actions on the active tab that leave the tab strip untouched, so
+  // they neither invalidate the window-tabs cache nor touch recent-tab order.
+  async function toggleMuteCurrentTab(
+    tab?: Tabs.Tab,
+    windowId?: number,
+  ): Promise<TabWheelActionResult> {
+    return await runSerializedWindowTask(tab, windowId, async () => {
+      await ensureLoaded();
+      const activeTab = await resolveActiveTab(tab, windowId);
+      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
+      const muted = activeTab.mutedInfo?.muted === true;
+      const updatedTab = await browser.tabs.update(activeTab.id, { muted: !muted }).catch(() => null);
+      if (!updatedTab) return { ok: false, reason: "Mute unavailable" };
+      return { ok: true, tabId: activeTab.id };
+    });
+  }
+
+  async function navigateCurrentTabHistory(
+    direction: "back" | "forward",
+    tab?: Tabs.Tab,
+    windowId?: number,
+  ): Promise<TabWheelActionResult> {
+    return await runSerializedWindowTask(tab, windowId, async () => {
+      await ensureLoaded();
+      const activeTab = await resolveActiveTab(tab, windowId);
+      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "No active tab" };
+      // The browser rejects when the history has no entry in that direction.
+      const navigation = direction === "back"
+        ? browser.tabs.goBack(activeTab.id)
+        : browser.tabs.goForward(activeTab.id);
+      const didNavigate = await navigation.then(() => true).catch(() => false);
+      if (!didNavigate) return { ok: false, reason: `Nothing to go ${direction} to` };
+      return { ok: true, tabId: activeTab.id };
+    });
+  }
+
+  async function goBackInCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
+    return await navigateCurrentTabHistory("back", tab, windowId);
+  }
+
+  async function goForwardInCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult> {
+    return await navigateCurrentTabHistory("forward", tab, windowId);
+  }
+
   async function saveScrollPosition(
     tabId: number,
     windowId: number,
@@ -1825,6 +1872,9 @@ export function createTabWheelDomain(options: {
     activateMostRecentTab,
     closeCurrentTabAndActivateRecent,
     duplicateTab,
+    toggleMuteCurrentTab,
+    goBackInCurrentTab,
+    goForwardInCurrentTab,
     beginTabDrag,
     moveCurrentTab,
     endTabDrag,

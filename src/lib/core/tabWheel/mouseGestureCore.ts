@@ -38,6 +38,9 @@ export const TABWHEEL_CLICK_ACTIONS: readonly TabWheelClickAction[] = [
   "duplicateTab",
   "dragCurrentTab",
   "openSettings",
+  "muteTab",
+  "goBack",
+  "goForward",
   "none",
 ];
 

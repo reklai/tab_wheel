@@ -20,6 +20,9 @@ export type BackgroundRuntimeMessage =
   | { type: "TABWHEEL_ACTIVATE_MOST_RECENT_TAB"; windowId?: number }
   | { type: "TABWHEEL_CLOSE_CURRENT_TAB_AND_ACTIVATE_RECENT"; windowId?: number }
   | { type: "TABWHEEL_DUPLICATE_TAB"; windowId?: number }
+  | { type: "TABWHEEL_TOGGLE_MUTE"; windowId?: number }
+  | { type: "TABWHEEL_GO_BACK"; windowId?: number }
+  | { type: "TABWHEEL_GO_FORWARD"; windowId?: number }
   | { type: "TABWHEEL_BEGIN_TAB_DRAG"; gestureId: string }
   | { type: "TABWHEEL_MOVE_CURRENT_TAB"; direction: TabWheelMoveDirection; gestureId: string }
   | { type: "TABWHEEL_END_TAB_DRAG"; gestureId: string }

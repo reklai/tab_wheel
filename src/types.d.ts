@@ -35,6 +35,9 @@ type TabWheelClickAction =
   | "duplicateTab"
   | "dragCurrentTab"
   | "openSettings"
+  | "muteTab"
+  | "goBack"
+  | "goForward"
   | "none";
 type TabWheelContentScriptStatus = "ready" | "unavailable";
 type TabWheelRecentTabState = Record<string, number[]>;

@@ -36,3 +36,11 @@ test("the close action uses the canonical user-facing name", async () => {
 
   assert.equal(contract.formatTabWheelClickAction("closeToRecent"), "Close current tab");
 });
+
+test("mute, back, and forward use their canonical user-facing names", async () => {
+  const contract = await loadSettingsContract();
+
+  assert.equal(contract.formatTabWheelClickAction("muteTab"), "Mute / unmute tab");
+  assert.equal(contract.formatTabWheelClickAction("goBack"), "Go back");
+  assert.equal(contract.formatTabWheelClickAction("goForward"), "Go forward");
+});

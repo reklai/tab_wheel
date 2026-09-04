@@ -148,6 +148,9 @@ const TABWHEEL_CLICK_ACTION_VALUES = [
   "duplicateTab",
   "dragCurrentTab",
   "openSettings",
+  "muteTab",
+  "goBack",
+  "goForward",
   "none",
 ];
 

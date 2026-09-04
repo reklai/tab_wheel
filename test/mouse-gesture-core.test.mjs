@@ -112,3 +112,29 @@ test("gesture claims expire", async () => {
   assert.equal(core.isMouseGestureSessionExpired(session, 1000), false);
   assert.equal(core.isMouseGestureSessionExpired(session, 1001), true);
 });
+
+test("mute, back, and forward are plain click policies on every button", async () => {
+  const core = await loadCore();
+  const policies = core.buildMouseGesturePolicies({
+    leftClickAction: "goBack",
+    middleClickAction: "muteTab",
+    rightClickAction: "goForward",
+  });
+
+  assert.deepEqual(policies, [
+    { action: "goBack", button: 0, interaction: "click", runPhase: "click" },
+    { action: "muteTab", button: 1, interaction: "click", runPhase: "auxclick" },
+    { action: "goForward", button: 2, interaction: "click", runPhase: "contextmenu" },
+  ]);
+});
+
+test("the click action list offers the new actions before Off", async () => {
+  const core = await loadCore();
+  const actions = core.TABWHEEL_CLICK_ACTIONS;
+
+  for (const action of ["muteTab", "goBack", "goForward"]) {
+    assert.ok(actions.includes(action), `${action} is offered`);
+    assert.ok(actions.indexOf(action) < actions.indexOf("none"), `${action} is listed before Off`);
+  }
+  assert.equal(actions.at(-1), "none");
+});

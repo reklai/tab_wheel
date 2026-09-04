@@ -72,6 +72,27 @@ export function duplicateCurrentTabWheelTab(windowId?: number): Promise<TabWheel
   });
 }
 
+export function toggleMuteCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_TOGGLE_MUTE",
+    windowId,
+  });
+}
+
+export function goBackInCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_GO_BACK",
+    windowId,
+  });
+}
+
+export function goForwardInCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_GO_FORWARD",
+    windowId,
+  });
+}
+
 export function moveCurrentTabWheelTab(
   direction: TabWheelMoveDirection,
   gestureId: string,

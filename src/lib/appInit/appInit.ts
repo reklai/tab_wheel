@@ -54,11 +54,14 @@ import {
   cycleTabWheel,
   duplicateCurrentTabWheelTab,
   endTabWheelDragGesture,
+  goBackInCurrentTabWheelTab,
+  goForwardInCurrentTabWheelTab,
   moveCurrentTabWheelTab,
   notifyTabWheelContentReady,
   openNativeNewTabWheelTab,
   openTabWheelOptions,
   saveTabWheelScrollPosition,
+  toggleMuteCurrentTabWheelTab,
 } from "../adapters/runtime/tabWheelApi";
 
 declare global {
@@ -762,6 +765,15 @@ export function initApp(): void {
         return;
       case "openSettings":
         await runActionWithStatus(openTabWheelOptions, "Settings unavailable");
+        return;
+      case "muteTab":
+        await runActionWithStatus(toggleMuteCurrentTabWheelTab, "Mute unavailable");
+        return;
+      case "goBack":
+        await runActionWithStatus(goBackInCurrentTabWheelTab, "Back unavailable");
+        return;
+      case "goForward":
+        await runActionWithStatus(goForwardInCurrentTabWheelTab, "Forward unavailable");
         return;
     }
   }

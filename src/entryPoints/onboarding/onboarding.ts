@@ -108,6 +108,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       duplicateTab: "Copy this tab beside it and select the copy.",
       dragCurrentTab: "Hold and drag horizontally to move this tab in the strip.",
       openSettings: "Open TabWheel settings in a tab.",
+      muteTab: "Mute or unmute this tab's audio.",
+      goBack: "Go back one page in this tab.",
+      goForward: "Go forward one page in this tab.",
       none: "Off leaves this mouse combination browser-native.",
     };
     actionSelects.forEach((select, index) => {
@@ -194,6 +197,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       duplicateTab: ["⧉", "Current tab duplicated", "The copy opens beside the original and becomes active."],
       dragCurrentTab: ["↔", "Drag current tab", "Drag horizontally to move this tab through its strip section."],
       openSettings: ["⚙", "Settings opened", "TabWheel opens its full settings page."],
+      muteTab: ["♪", "Tab muted", "Click again to unmute."],
+      goBack: ["←", "Went back", "This tab shows the previous page."],
+      goForward: ["→", "Went forward", "This tab shows the next page."],
       none: ["○", "Browser-native behavior", "TabWheel does not claim this mouse combination."],
     };
     const [icon, title, description] = descriptions[action];
@@ -219,6 +225,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       simResultTab.textContent = "Other tab";
     } else if (action === "openSettings") {
       simAddress.textContent = "TabWheel settings";
+    } else if (action === "muteTab") {
+      simAddress.textContent = "Current page · muted";
+    } else if (action === "goBack" || action === "goForward") {
+      simAddress.textContent = action === "goBack" ? "Previous page" : "Next page";
     }
 
     clickDemoStatus.textContent = `${formatTabWheelClickAction(action)} — ${description}`;

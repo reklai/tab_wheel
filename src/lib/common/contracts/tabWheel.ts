@@ -240,6 +240,9 @@ export function formatTabWheelClickAction(action: TabWheelClickAction): string {
     case "duplicateTab": return "Duplicate tab";
     case "dragCurrentTab": return "Drag current tab";
     case "openSettings": return "Open settings";
+    case "muteTab": return "Mute / unmute tab";
+    case "goBack": return "Go back";
+    case "goForward": return "Go forward";
     case "none": return "Off";
   }
 }

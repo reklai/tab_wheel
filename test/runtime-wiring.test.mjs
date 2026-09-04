@@ -888,3 +888,28 @@ test("build includes onboarding in both browser targets", () => {
   assert.match(build, /onboarding\/onboarding\.html/);
   assert.match(build, /onboarding\/onboarding\.css/);
 });
+
+test("mute, back, and forward are wired from the content script through to the domain", () => {
+  const app = readText("src/lib/appInit/appInit.ts");
+  const api = readText("src/lib/adapters/runtime/tabWheelApi.ts");
+  const contract = readText("src/lib/common/contracts/runtimeMessages.ts");
+  const handler = readText("src/lib/backgroundRuntime/handlers/tabWheelMessageHandler.ts");
+
+  const wiring = [
+    ["muteTab", "TABWHEEL_TOGGLE_MUTE", "toggleMuteCurrentTabWheelTab", "toggleMuteCurrentTab", "Mute unavailable"],
+    ["goBack", "TABWHEEL_GO_BACK", "goBackInCurrentTabWheelTab", "goBackInCurrentTab", "Back unavailable"],
+    ["goForward", "TABWHEEL_GO_FORWARD", "goForwardInCurrentTabWheelTab", "goForwardInCurrentTab", "Forward unavailable"],
+  ];
+  for (const [action, messageType, apiFn, domainFn, failureStatus] of wiring) {
+    assert.match(contract, new RegExp(`type: "${messageType}"; windowId\\?: number`));
+    assert.match(api, new RegExp(`export function ${apiFn}\\([\\s\\S]{0,160}type: "${messageType}"`));
+    assert.match(
+      handler,
+      new RegExp(`case "${messageType}":\\s*\\n\\s*return await domain\\.${domainFn}\\(sender\\.tab, message\\.windowId\\);`),
+    );
+    assert.match(
+      app,
+      new RegExp(`case "${action}":\\s*\\n\\s*await runActionWithStatus\\(${apiFn}, "${failureStatus}"\\);`),
+    );
+  }
+});
