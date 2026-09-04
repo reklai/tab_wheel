@@ -8,6 +8,7 @@ import {
   normalizeTabWheelSettings,
   TABWHEEL_STORAGE_KEYS,
 } from "../common/contracts/tabWheel";
+import { NOTICE_ENTER_MS, NOTICE_EXIT_MS, noticeDisplayMs, prefersReducedMotion } from "../common/utils/notice";
 import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
 import { sleep } from "../common/utils/asyncFlow";
 import {
@@ -98,12 +99,6 @@ const WORKER_PREWARM_INTERVAL_MS = 15000;
 // wind-up — can trigger the same pre-warm.
 const MODIFIER_PREWARM_KEYS = { alt: "Alt", ctrl: "Control", meta: "Meta" } as const;
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
-// A notice stays long enough to be read: a short phrase for well under two
-// seconds, the longest sentence for a little over three.
-const STATUS_MIN_MS = 1200;
-const STATUS_MS_PER_CHARACTER = 30;
-const STATUS_MAX_MS = 4000;
-const STATUS_FADE_MS = 160;
 const ACTION_UNREACHABLE_STATUS =
   "TabWheel couldn't reach the browser. Use Refresh extension in the popup.";
 const TAB_DRAG_KEEPALIVE_MS = 15000;
@@ -306,15 +301,14 @@ export function initApp(): void {
       areSettingsLoaded = true;
     });
 
-  function statusDisplayMs(message: string): number {
-    return Math.min(STATUS_MAX_MS, STATUS_MIN_MS + message.length * STATUS_MS_PER_CHARACTER);
-  }
-
   // The only thing TabWheel ever draws on a page: a one-line notice at the
-  // bottom edge for a gesture that landed but could not do its job. It never
-  // takes the centre, never takes input, and fades out on its own.
+  // bottom edge for a gesture that landed but could not do its job. The same
+  // pill as the popup toast and the settings status; it never takes the
+  // centre, never takes input, and leaves on its own.
   function showStatus(message: string): void {
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    const reduceMotion = prefersReducedMotion();
+    const hidden = "translate(-50%,6px) scale(0.96)";
+    const shown = "translate(-50%,0) scale(1)";
     let status = document.getElementById(STATUS_ID);
     if (!status) {
       status = document.createElement("div");
@@ -324,22 +318,30 @@ export function initApp(): void {
         "position:fixed",
         "left:50%",
         "bottom:24px",
-        "transform:translateX(-50%)",
         "z-index:2147483646",
         "box-sizing:border-box",
+        "width:max-content",
         "max-width:min(440px,calc(100vw - 32px))",
-        "padding:9px 16px",
+        "min-height:34px",
+        "display:flex",
+        "align-items:center",
+        "padding:8px 14px",
         "border-radius:999px",
-        "background:#1b1d22",
-        "color:#f2f3f5",
-        "box-shadow:0 6px 24px rgba(0,0,0,0.28),0 0 0 1px rgba(255,255,255,0.08)",
-        "font:13px/1.35 system-ui,-apple-system,'Segoe UI',sans-serif",
-        "letter-spacing:0",
+        "background:rgba(28, 28, 30, 0.72)",
+        "backdrop-filter:blur(24px) saturate(160%)",
+        "-webkit-backdrop-filter:blur(24px) saturate(160%)",
+        "box-shadow:0 8px 24px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.12)",
+        "color:rgba(255, 255, 255, 0.92)",
+        "font:500 13px/1.3 -apple-system, BlinkMacSystemFont, system-ui, \"Segoe UI\", sans-serif",
+        "letter-spacing:-0.01em",
         "text-align:center",
         "white-space:normal",
         "pointer-events:none",
         "opacity:0",
-        reduceMotion ? "" : `transition:opacity ${STATUS_FADE_MS}ms ease`,
+        `transform:${hidden}`,
+        reduceMotion
+          ? ""
+          : `transition:opacity ${NOTICE_ENTER_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1), transform ${NOTICE_ENTER_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
       ].join(";");
       document.documentElement.appendChild(status);
     }
@@ -347,15 +349,17 @@ export function initApp(): void {
     const visible = status;
     window.requestAnimationFrame(() => {
       visible.style.opacity = "1";
+      visible.style.transform = shown;
     });
     if (statusTimer) window.clearTimeout(statusTimer);
     statusTimer = window.setTimeout(() => {
       visible.style.opacity = "0";
+      visible.style.transform = hidden;
       statusTimer = window.setTimeout(() => {
         visible.remove();
         statusTimer = 0;
-      }, reduceMotion ? 0 : STATUS_FADE_MS);
-    }, statusDisplayMs(message));
+      }, reduceMotion ? 0 : NOTICE_EXIT_MS);
+    }, noticeDisplayMs(message));
   }
 
   function sendScrollSnapshot(): void {

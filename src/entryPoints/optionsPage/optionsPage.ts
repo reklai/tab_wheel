@@ -22,6 +22,7 @@ import {
   populateModifierSelect,
   populatePresetSelect,
 } from "../../lib/ui/settings/settingsControls";
+import { noticeDisplayMs } from "../../lib/common/utils/notice";
 
 document.addEventListener("DOMContentLoaded", async () => {
   const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -50,7 +51,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (statusTimer) window.clearTimeout(statusTimer);
     statusBar.textContent = message;
     statusBar.classList.add("visible");
-    statusTimer = window.setTimeout(() => statusBar.classList.remove("visible"), 2200);
+    statusTimer = window.setTimeout(() => statusBar.classList.remove("visible"), noticeDisplayMs(message));
   }
 
   function readSettings(): TabWheelSettings {

@@ -62,11 +62,11 @@ test("the page notice is a bottom snackbar, not a centred box, and respects redu
 
   assert.ok(notice.length > 0, "showStatus should precede sendScrollSnapshot");
   assert.match(notice, /"bottom:24px"/);
-  assert.match(notice, /"transform:translateX\(-50%\)"/);
+  assert.match(notice, /translate\(-50%,0\) scale\(1\)/);
   assert.match(notice, /"border-radius:999px"/);
   assert.doesNotMatch(notice, /top:50%|translate\(-50%,-50%\)/);
-  assert.match(notice, /prefers-reduced-motion: reduce/);
+  assert.match(notice, /prefersReducedMotion\(\)/);
   assert.match(notice, /setAttribute\("role", "status"\)/);
   // Display time scales with reading length instead of one fixed number.
-  assert.match(notice, /statusDisplayMs\(message\)/);
+  assert.match(notice, /noticeDisplayMs\(message\)/);
 });
