@@ -10,7 +10,6 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Cycles in visible left-to-right tab-strip order.
 - Restores the root page position when you return to a tab and URL.
 - Offers Precise, Balanced, Fast, and Custom wheel feel.
-- Guards against extra tab switches from trackpad momentum, including right after you land on the newly focused tab.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
 - Opens the browser's New Tab page beside the current tab with modifier + left click.
