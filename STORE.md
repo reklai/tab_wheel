@@ -81,9 +81,9 @@ PRIVATE BY DESIGN
 
 No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, ads, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, recent page positions, and page geometry are stored locally. URLs used to verify page-position restoration remain local. TabWheel does not request browser-history or bookmarks permissions.
 
-WHAT'S NEW IN 4.1.0
+WHAT'S NEW IN 4.2.0
 
-Three new mouse actions for any button: Mute / unmute tab, Go back, and Go forward. Defaults are unchanged; remap any button in the popup or settings.
+One wheel notch now switches one tab on macOS too, however slowly or quickly you turn the wheel. Trackpad and Magic Mouse swipes switch by finger travel, so the same swipe gives the same result every time and the coasting after you lift your fingers never switches extra tabs. Defaults are unchanged.
 
 ## Privacy
 
