@@ -1,3 +1,14 @@
+// Onboarding page, opened by the background on install and on updates from
+// before v4. It walks through three steps, tracked by a shared progress bar:
+//   1. Wheel demo (#wheelFlow, step 1): hold the modifier and scroll a fake tab
+//      strip, measured like the real gesture.
+//   2. Mouse actions (#mouseFlow): pick an action per mouse button and try it
+//      on a simulated browser window, including a live "drag current tab".
+//   3. Shared settings (#wheelFlow, step 2): confirm the modifier and click
+//      actions, then save and close the tab.
+// Choices stay local to the page until step 3 saves them; only the demo's
+// completion flag is persisted earlier.
+
 import browser from "webextension-polyfill";
 import {
   formatTabWheelClickAction,
@@ -30,6 +41,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const wheelFlow = byId<HTMLElement>("wheelFlow");
   const mouseFlow = byId<HTMLElement>("mouseFlow");
 
+  /**
+   * Closes this onboarding tab. Pages cannot window.close() a tab they did not
+   * open, so remove it through the tabs API and fall back to window.close().
+   */
   async function closeCurrentTab(): Promise<void> {
     const tab = await browser.tabs.getCurrent().catch(() => null);
     if (tab?.id != null) await browser.tabs.remove(tab.id).catch(() => {});
@@ -72,6 +87,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   } | null = null;
   let lastDemoTabDragMoved = false;
 
+  // Indexed by MouseEvent.button: 0 left, 1 middle, 2 right. The step 2 "intro"
+  // selects and the step 3 selects are two views of the same three choices and
+  // are kept in sync below.
   const actionSelects = [leftClickAction, middleClickAction, rightClickAction] as const;
   const introActionSelects = [
     introLeftClickAction,
@@ -80,6 +98,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   ] as const;
   const actionHintIds = ["leftActionHint", "middleActionHint", "rightActionHint"] as const;
 
+  /** The action currently chosen for `button`; "none" for unmapped buttons. */
   function selectedAction(button: number): TabWheelClickAction {
     return (actionSelects[button]?.value || "none") as TabWheelClickAction;
   }
@@ -88,6 +107,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return modifierSelect.value as TabWheelModifierKey;
   }
 
+  /** Rewrites every prompt that names the modifier combo to match the controls. */
   function renderCombo(): void {
     const combo = formatTabWheelModifierCombo(
       selectedModifier(),
@@ -100,6 +120,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     byId<HTMLElement>("settingsWheelCombo").textContent = `${combo} + wheel`;
   }
 
+  /** Updates the one-line hint under each click-action select in step 3. */
   function renderActionSummaries(): void {
     const hints: Record<TabWheelClickAction, string> = {
       nativeNewTab: "Open the browser's New Tab page beside the current tab.",
@@ -119,6 +140,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  /** Fills the progress bar up to and including `step`. */
   function setSetupProgress(step: 1 | 2 | 3): void {
     for (const marker of document.querySelectorAll<HTMLElement>("#setupProgress [data-progress]")) {
       marker.classList.toggle("active", Number(marker.dataset.progress) <= step);
@@ -136,6 +158,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       panel.hidden = Number(panel.dataset.mouseStep) !== step;
     }
   }
+
+  // Step navigation. Each transition swaps the visible flow container, shows
+  // the right panel inside it, and scrolls back to the top of the page.
 
   function openMouseFlow(): void {
     wheelFlow.hidden = true;
@@ -161,12 +186,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  /** Persists that the wheel demo succeeded; a no-op after the first time. */
   async function markDemoComplete(): Promise<void> {
     if (onboarding.demoCompleted) return;
     onboarding = { ...onboarding, demoCompleted: true };
     await saveTabWheelOnboardingState(onboarding);
   }
 
+  /**
+   * Returns the simulated browser to its starting state. A drag reorders the
+   * simulated tab elements in the DOM, so this also restores their order.
+   */
   function resetBrowserSimulation(): void {
     const simTabs = simCurrentTab.parentElement;
     simTabs?.append(simRecentTab, simCurrentTab, simResultTab);
@@ -183,6 +213,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     lastDemoTabDragMoved = false;
   }
 
+  /** Shows in the simulated browser what `action` would do to a real window. */
   function renderSimulatedResult(action: TabWheelClickAction): void {
     resetBrowserSimulation();
     browserSimulator.dataset.state = action;
@@ -234,6 +265,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     clickDemoStatus.textContent = `${formatTabWheelClickAction(action)} — ${description}`;
   }
 
+  /** Briefly highlights `button` on the mouse illustration. */
   function highlightMouseButton(button: number): void {
     for (const part of document.querySelectorAll<HTMLElement>("[data-mouse-part]")) {
       part.classList.toggle("active", Number(part.dataset.mousePart) === button);
@@ -252,6 +284,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderSimulatedResult(action);
   }
 
+  /**
+   * Whether `event` carries the modifier combo currently selected on this page.
+   * Uses the content script's own check, against the unsaved selections.
+   */
   function isConfiguredDemoGesture(event: MouseEvent): boolean {
     return isTabWheelModifier(
       event,
@@ -260,12 +296,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   }
 
+  /**
+   * Claims an event inside the demo so the browser's own behavior for that
+   * button (context menu, middle-click autoscroll) does not also fire.
+   */
   function suppressDemoEvent(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
   }
 
+  /**
+   * Moves the simulated current tab one visible slot. Returns false at either
+   * end of the strip, where a real drag would also stop.
+   */
   function moveSimulatedCurrentTab(direction: "left" | "right"): boolean {
     const parent = simCurrentTab.parentElement;
     if (!parent) return false;
@@ -279,6 +323,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     return true;
   }
 
+  /**
+   * Press handler for pointerdown and mousedown. Claims the press whenever the
+   * combo maps to an action, and starts a simulated drag session only for a
+   * mouse pointerdown on "drag current tab". Other actions run on the click
+   * events in clickDemoActionHandler, like the real content script.
+   */
   function clickDemoPressHandler(event: MouseEvent): void {
     if (!isConfiguredDemoGesture(event)) return;
     const action = selectedAction(event.button);
@@ -298,6 +348,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       moved: false,
     };
     lastDemoTabDragMoved = false;
+    // Capture keeps the drag tracking when the pointer leaves the simulator.
     try {
       clickGestureDemo.setPointerCapture(event.pointerId);
     } catch (_) {
@@ -305,6 +356,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  /**
+   * Advances the simulated drag with the same step logic as the real one
+   * (tabDragCore), so one slot here is one slot in the browser.
+   */
   function clickDemoDragMoveHandler(event: PointerEvent): void {
     const session = demoTabDrag;
     if (!session || event.pointerId !== session.pointerId) return;
@@ -320,6 +375,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  /** Ends the simulated drag on pointerup or pointercancel. */
   function finishClickDemoDrag(event: PointerEvent): void {
     const session = demoTabDrag;
     if (!session || event.pointerId !== session.pointerId) return;
@@ -339,6 +395,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  /**
+   * Handles click, auxclick, and contextmenu in the demo: previews the mapped
+   * action, or explains what to do when the combo is missing. A drag already
+   * reported itself during the press, so its trailing click only adds a hint
+   * when the pointer never moved far enough.
+   */
   function clickDemoActionHandler(event: MouseEvent): void {
     if (!isConfiguredDemoGesture(event)) {
       clickDemoStatus.textContent =
@@ -364,6 +426,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     previewAction(action, event.button);
   }
 
+  // Seed every control from the stored settings.
   populateModifierSelect(modifierSelect, settings.gestureModifier);
   populateClickActionSelect(leftClickAction, settings.leftClickAction);
   populateClickActionSelect(middleClickAction, settings.middleClickAction);
@@ -375,6 +438,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderCombo();
   renderActionSummaries();
 
+  // Wheel demo. Must be non-passive so preventDefault can stop the page from
+  // scrolling while the combo is held.
   demo.addEventListener("wheel", (event) => {
     if (!isTabWheelModifier(event, selectedModifier(), gestureWithShift.checked)) {
       demoStatus.textContent =
@@ -383,7 +448,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     event.preventDefault();
     event.stopPropagation();
-    // Same measurement as the real gesture: trackpad inertia never counts and
+    // Same measurement as the real gesture: trackpad inertia never counts, and
     // one mouse notch is one notch on every OS.
     if ((event as WheelEvent & { momentum?: boolean }).momentum === true) return;
     demoAccumulator += measureWheelInput(
@@ -426,6 +491,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       resetBrowserSimulation();
     });
   }
+  // Mirror each step 3 select into its step 2 twin and back.
   actionSelects.forEach((select, index) => {
     select.addEventListener("change", () => {
       introActionSelects[index].value = select.value;
@@ -442,6 +508,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // Step buttons. Saving happens only on the final step.
   continueDemoBtn.addEventListener("click", openMouseFlow);
   byId<HTMLButtonElement>("skipDemoBtn").addEventListener("click", openMouseFlow);
   byId<HTMLButtonElement>("wheelBackBtn").addEventListener("click", openMouseFlow);
@@ -468,6 +535,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   byId<HTMLButtonElement>("clickBackBtn").addEventListener("click", returnToWheelDemo);
+  // Step 2's save button only advances; step 3's button does the writing.
   byId<HTMLButtonElement>("saveChoicesBtn").addEventListener("click", () => {
     continueToWheelSettings();
   });

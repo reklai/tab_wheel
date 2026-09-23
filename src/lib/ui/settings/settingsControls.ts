@@ -1,5 +1,6 @@
-// Popup and options use the same controls; edit labels and ordering here so the
-// two surfaces cannot drift.
+// Shared <select> builders for the popup, options page, and onboarding. Option
+// values, order, and labels come from the lists exported by contracts/tabWheel,
+// so edit them there and every surface stays in step.
 
 import {
   formatTabWheelClickAction,
@@ -10,6 +11,7 @@ import {
   TABWHEEL_PRESETS,
 } from "../../common/contracts/tabWheel";
 
+/** Fills `select` with every gesture modifier key and selects `selected`. */
 export function populateModifierSelect(
   select: HTMLSelectElement,
   selected: TabWheelModifierKey,
@@ -22,6 +24,7 @@ export function populateModifierSelect(
   );
 }
 
+/** Fills `select` with every wheel feel preset and selects `selected`. */
 export function populatePresetSelect(
   select: HTMLSelectElement,
   selected: TabWheelPreset,
@@ -34,6 +37,7 @@ export function populatePresetSelect(
   );
 }
 
+/** Fills `select` with every modifier+click action and selects `selected`. */
 export function populateClickActionSelect(
   select: HTMLSelectElement,
   selected: TabWheelClickAction,
@@ -46,6 +50,7 @@ export function populateClickActionSelect(
   );
 }
 
+/** Replaces all options in `select`; safe to call again to rebuild it. */
 function setSelectOptions(
   select: HTMLSelectElement,
   values: readonly string[],

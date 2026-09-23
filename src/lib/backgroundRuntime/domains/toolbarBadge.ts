@@ -1,9 +1,11 @@
-// Toolbar badge adapter. The decision of whether a tab should show the
-// restricted-page badge is pure (resolveToolbarBadge in restrictedPagesCore);
-// this module only knows how to talk to the toolbar-icon ("action") API and
-// how to keep it tab-scoped. The API is still feature-detected so a missing
-// namespace degrades to no badge instead of a thrown error (mirrors
-// getBrowserTabGroupsApi() in tabWheelDomain.ts).
+// Toolbar badge adapter: shows a "!" on the toolbar icon for tabs where
+// TabWheel cannot run. Whether a page gets the badge is decided purely by
+// resolveToolbarBadge in restrictedPagesCore; this module only talks to the
+// toolbar-icon ("action") API and keeps every badge scoped to one tab.
+//
+// The API is feature-detected so a missing namespace degrades to no badge
+// instead of a thrown error (same pattern as getBrowserTabGroupsApi() in
+// tabWheelDomain.ts).
 
 import browser from "webextension-polyfill";
 import { resolveToolbarBadge } from "../../core/tabWheel/restrictedPagesCore";
@@ -15,14 +17,14 @@ interface ToolbarBadgeApi {
   setBadgeBackgroundColor?(details: { color: string; tabId?: number }): Promise<void>;
 }
 
-// Module-level cache of tabIds currently showing the badge, so a settings
-// toggle-off knows which tabs to clear. This state is a best-effort cache, not
-// a source of truth: the service worker can be shut down and lose it, but the
-// badge text itself persists per-tab in the browser UI, and the next
-// activation/update re-applies it from scratch.
+// Tabs currently showing the badge, so clearAllToolbarBadges knows which tabs
+// to clear. Best-effort only: the service worker can shut down and lose
+// this Set, while the badge text persists per tab in the browser UI. The next
+// activation or update of a tab re-applies its badge from scratch.
 const badgedTabIds = new Set<number>();
 let badgeBackgroundColorApplied = false;
 
+/** Returns the toolbar-icon badge API, or null when the browser lacks it. */
 export function getToolbarBadgeApi(): ToolbarBadgeApi | null {
   const runtimeBrowser = browser as unknown as {
     action?: Partial<ToolbarBadgeApi>;
@@ -31,6 +33,11 @@ export function getToolbarBadgeApi(): ToolbarBadgeApi | null {
   return typeof api?.setBadgeText === "function" ? (api as ToolbarBadgeApi) : null;
 }
 
+/**
+ * Sets the badge color once per worker lifetime. The flag is set before the
+ * call so concurrent updates do not repeat it, and reset on failure so the
+ * next update retries.
+ */
 async function ensureBadgeBackgroundColor(api: ToolbarBadgeApi): Promise<void> {
   if (badgeBackgroundColorApplied || typeof api.setBadgeBackgroundColor !== "function") return;
   badgeBackgroundColorApplied = true;
@@ -41,8 +48,9 @@ async function ensureBadgeBackgroundColor(api: ToolbarBadgeApi): Promise<void> {
   }
 }
 
-// Always tab-scoped: every setBadgeText call below carries the tabId, and
-// this module never calls it without one.
+// Always tab-scoped: shows or clears the restricted-page badge on `tabId` for
+// `pageUrl`; `showBadge` false always clears it. Every setBadgeText call
+// in this module carries a tabId; a global call would badge every tab.
 export async function updateTabToolbarBadge(
   tabId: number,
   pageUrl: string | undefined,
@@ -63,11 +71,9 @@ export async function updateTabToolbarBadge(
     return;
   }
 
-  // Always issue the clear call, even if this tabId isn't in badgedTabIds:
-  // the Set is wiped on every MV3 service-worker idle restart, so a badge
-  // applied before a restart would otherwise
-  // be un-clearable — gating this on Set membership would leave a stale "!"
-  // on a backgrounded tab that navigates away after the worker restarts.
+  // Always issue the clear call, even for a tab missing from badgedTabIds. The
+  // Set is wiped on every idle restart of the service worker, so gating on
+  // membership would strand a stale "!" on a tab badged before the restart.
   try {
     await api.setBadgeText({ text: "", tabId });
   } catch (_) {
@@ -77,11 +83,12 @@ export async function updateTabToolbarBadge(
   }
 }
 
-// Tab removal cleanup: no browser call needed, the tab is already gone.
+/** Drops a closed tab from tracking. No browser call: the tab is already gone. */
 export function forgetToolbarBadgeTab(tabId: number): void {
   badgedTabIds.delete(tabId);
 }
 
+/** Clears the badge from every tracked tab and empties the tracking Set. */
 export async function clearAllToolbarBadges(): Promise<void> {
   const api = getToolbarBadgeApi();
   const tabIds = Array.from(badgedTabIds);

@@ -1,62 +1,74 @@
-// After a tab-switch commit, trackpad hardware keeps delivering wheel events
-// for the physical fling that triggered it (momentum). Left unguarded, that
-// tail re-triggers extra switches the user never intended. This module is a
-// pure, browser-free decision + session-state tracker: it does not know
-// about wheel events, tab indices, or timers — only signed pixel deltas and
-// timestamps supplied by the caller.
+// Momentum guard: decides whether a continuous wheel delta that arrives after a
+// tab switch is the momentum tail of the swipe that caused it. Trackpads keep
+// delivering deltas for the fling after the fingers lift, and left unguarded
+// that tail re-accumulates into switches the user never asked for.
 //
-// Chrome 151+ flags momentum events directly (WheelEvent.momentum) and the
-// content script drops those before they get here; this guard is what judges
-// every stream that carries no such flag (Chrome before 151, and any platform
-// that does not report the flag).
+// Browser-free: it knows nothing of wheel events, tabs, or timers, only signed
+// pixel deltas and caller-supplied timestamps, so it runs under node:test and
+// the content script (appInit.ts) owns the wiring. On Chrome 151+ the content
+// script drops events flagged WheelEvent.momentum before they get here; this
+// guard judges every stream that carries no such flag.
 //
 // Three properties make the judgment hold on real hardware:
 //
-// 1. The session is SEEDED with the magnitude the gesture ended on, so the
-//    very first delta after a commit is measured against something real
-//    instead of being swallowed for lack of a reference.
-// 2. Decay is judged over TIME, not over a count of events. Hardware momentum
-//    loses a fixed fraction per millisecond, so a 120Hz display delivers half
-//    the per-event decay of a 60Hz one. Counting events let a ProMotion Mac's
-//    tail read as steady input and switch tabs on its own.
-// 3. The session WATCHES THE WHOLE STREAM rather than releasing once. A swipe
-//    is finger motion followed by momentum with no gap in between, and a
-//    finger is steady or ramping right up until it lifts. A guard that let go
-//    the first time it saw steady or rising input was always gone by the time
-//    the tail arrived. Now a delta passes while the stream is steady or
-//    rising and is blocked whenever it is decaying, until the stream ends.
+// 1. The session is seeded with the magnitude the gesture ended on, so the
+//    first delta after a commit is measured against something real instead of
+//    being swallowed for lack of a reference.
+// 2. Decay is judged per millisecond, not per event. Hardware momentum loses a
+//    fixed fraction per ms, so a 120Hz display shows half the per-event decay
+//    of a 60Hz one, and an event count would misread its tail as steady input.
+// 3. The session watches the whole stream rather than releasing once. A swipe
+//    is finger motion followed by momentum with no gap, and the finger is
+//    steady or ramping right up until it lifts. So a delta passes while the
+//    stream is steady or rising and is blocked whenever it is decaying, until
+//    the stream ends.
 
+/** The knobs of the tail verdict. All times are in ms. */
 export interface MomentumGuardTuning {
-  // Momentum arrives as a dense stream. A gap wider than this cannot be a
-  // hardware tail: it is a detented wheel, a pause, or a new gesture.
+  /**
+   * The widest gap between two deltas of one momentum stream. Momentum arrives
+   * densely, so a wider gap is a detented wheel, a pause, or a new gesture, and
+   * ends the session.
+   */
   maxTailGapMs: number;
-  // A delta this many times the previous one is a fresh, intentional input.
+  /** A delta at least this multiple of the previous one is fresh input. */
   rampRatio: number;
-  // ...and it must also rise by at least this many pixels, so the integer
-  // rounding of a faint tail (2px, 3px, 2px) never reads as a fresh flick.
+  /**
+   * ...and it must also rise by at least this many px, so the integer rounding
+   * of a faint tail (2px, 3px, 2px) never reads as a fresh flick.
+   */
   rampMinRisePx: number;
-  // How far back the decay verdict looks.
+  /** How far back the decay verdict looks. */
   tailWindowMs: number;
-  // Until the window spans this long there is too little evidence to call a
-  // same-level delta steady, so it is held as a tail candidate.
+  /**
+   * Until the window spans this long there is too little evidence to call a
+   * same-level delta steady, so it is blocked as a tail candidate.
+   */
   minJudgeSpanMs: number;
-  // A window losing at least this fraction per millisecond, without rising
-  // anywhere inside it, is a decaying tail.
+  /**
+   * A window losing at least this fraction of its magnitude per ms, without
+   * rising anywhere inside it, is a decaying tail.
+   */
   minTailDecayPerMs: number;
-  // Rises smaller than this fraction of the previous delta are rounding noise,
-  // not a rise, when checking that a window only falls.
+  /**
+   * Rises smaller than this fraction of the previous delta are rounding noise,
+   * not a rise, when checking that a window only falls.
+   */
   riseToleranceRatio: number;
 }
 
-// One tuning for every device.
-//
-// maxTailGapMs 48 is three 60Hz frames: a tail survives a couple of dropped
-// frames on a busy page, while a detented wheel (~40ms+ between notches) is
-// recognized as a notch before it ever reaches the guard.
-//
-// minTailDecayPerMs 0.0008 is ~3% across the 40ms window. macOS momentum
-// sheds roughly 0.2% per millisecond, so it clears the bar with a wide margin
-// at 60Hz and 120Hz alike; steady input shows ~0 and passes.
+/**
+ * The one tuning shipped for every device.
+ *
+ * maxTailGapMs 48 is three 60Hz frames: a tail survives a couple of dropped
+ * frames on a busy page, while a detented wheel (~40ms+ between notches) is
+ * recognized as a notch before it ever reaches the guard.
+ *
+ * minTailDecayPerMs 0.0008 is ~3% across the 40ms window. macOS momentum sheds
+ * roughly 0.2% per ms, so it clears the bar with a wide margin at 60Hz and
+ * 120Hz alike, while steady input shows ~0 and passes. That margin is pinned by
+ * test/momentum-guard-core.test.mjs.
+ */
 export const DEFAULT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
   maxTailGapMs: 48,
   rampRatio: 1.3,
@@ -67,19 +79,33 @@ export const DEFAULT_MOMENTUM_GUARD_TUNING: MomentumGuardTuning = {
   riseToleranceRatio: 0.02,
 };
 
+/** One delta inside the decay window: its magnitude in px and time in ms. */
 export interface MomentumGuardSample {
   atMs: number;
   magnitudePx: number;
 }
 
+/**
+ * Guard state for the stream that followed one commit. Created by
+ * createMomentumGuardSession and updated in place by shouldBlockWheelDelta.
+ */
 export interface MomentumGuardSession {
+  /** Sign of the committing gesture; a delta the other way ends the session. */
   direction: 1 | -1;
+  /** False once the stream has ended; an inactive session blocks nothing. */
   active: boolean;
+  /** When the last delta arrived, blocked or not, for measuring gaps. */
   lastEventAtMs: number;
+  /** Magnitude of the previous delta, in px: the reference for a fresh ramp. */
   envelopeMagnitudePx: number;
+  /** The deltas inside the last tailWindowMs, oldest first. */
   recentSamples: MomentumGuardSample[];
 }
 
+/**
+ * Starts a session when a gesture commits a tab switch at `committedAtMs`.
+ * `seedMagnitudePx` is the delta the gesture ended on (its sign is ignored).
+ */
 export function createMomentumGuardSession(
   committedAtMs: number,
   direction: 1 | -1,
@@ -109,6 +135,8 @@ function endSession(session: MomentumGuardSession): void {
   session.recentSamples = [];
 }
 
+// True when no sample rises above the one before it by more than the rounding
+// tolerance.
 function isOnlyFalling(samples: readonly MomentumGuardSample[], tuning: MomentumGuardTuning): boolean {
   for (let index = 1; index < samples.length; index += 1) {
     const previous = samples[index - 1].magnitudePx;
@@ -117,11 +145,13 @@ function isOnlyFalling(samples: readonly MomentumGuardSample[], tuning: Momentum
   return true;
 }
 
-// Pure decision with session-state update rules baked in: every call both
-// answers "should this delta be swallowed?" and advances the session so the
-// next call sees an up-to-date window. A session lasts for the stream that
-// followed its commit: a gap or a reversal ends it for good, and nothing short
-// of a new commit starts another.
+/**
+ * Whether one continuous wheel delta is momentum tail and should be swallowed.
+ * Every call also advances `session`, so the next call sees an up-to-date
+ * window. A session lasts for the stream that followed its commit: a gap wider
+ * than maxTailGapMs or a direction reversal ends it for good, and only a new
+ * commit starts another. `nowMs` is the caller's clock in ms.
+ */
 export function shouldBlockWheelDelta(
   session: MomentumGuardSession,
   deltaPx: number,
@@ -160,10 +190,12 @@ export function shouldBlockWheelDelta(
 
   const samples = session.recentSamples;
   samples.push({ atMs: nowMs, magnitudePx: magnitude });
+  // Slide the window, always keeping the newest sample.
   while (samples.length > 1 && nowMs - samples[0].atMs > tuning.tailWindowMs) samples.shift();
 
   const oldest = samples[0];
   const spanMs = nowMs - oldest.atMs;
+  // Too little of the stream seen to call it steady: hold it as a possible tail.
   if (spanMs < tuning.minJudgeSpanMs) return true;
 
   // A tail falls smoothly: nothing inside the window rises, and the window as
@@ -173,6 +205,8 @@ export function shouldBlockWheelDelta(
   // settled level as soon as the fall slides out of the window.
   if (!isOnlyFalling(samples, tuning)) return false;
   if (oldest.magnitudePx <= 0) return false;
+  // The per-ms rate that turns the oldest magnitude into this one over spanMs:
+  // retained = (1 - decayPerMs) ^ spanMs.
   const retained = magnitude / oldest.magnitudePx;
   const decayPerMs = 1 - retained ** (1 / spanMs);
   return decayPerMs >= tuning.minTailDecayPerMs;

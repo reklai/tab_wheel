@@ -1,3 +1,13 @@
+// Toolbar popup. It shows whether TabWheel is live on the current page,
+// mirrors every setting from the options page in the same order, and offers
+// Previous/Next buttons for browser-protected pages where the content script
+// cannot run. Refresh re-injects the content script into open tabs; Reset
+// restores defaults.
+//
+// Settings render from storage immediately. The page status comes from a
+// background overview, fetched with retries because opening the popup may be
+// what wakes the service worker.
+
 import browser from "webextension-polyfill";
 import {
   applyTabWheelPreset,
@@ -28,6 +38,7 @@ import {
 } from "../../lib/ui/settings/settingsControls";
 import { noticeDisplayMs } from "../../lib/common/utils/notice";
 
+/** Coarse word for the drag-speed slider, shown instead of a raw multiplier. */
 function dragSpeedLabel(sensitivity: number): string {
   if (sensitivity < 0.9) return "Slower";
   if (sensitivity > 1.2) return "Faster";
@@ -64,6 +75,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let overview: TabWheelOverview | null = null;
   let toastTimer = 0;
 
+  /** Shows a bottom pill; its duration scales with the message length. */
   function showToast(message: string): void {
     if (toastTimer) window.clearTimeout(toastTimer);
     toast.textContent = message;
@@ -71,6 +83,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     toastTimer = window.setTimeout(() => toast.classList.remove("visible"), noticeDisplayMs(message));
   }
 
+  /**
+   * Builds settings from the current control values. The preset is detected
+   * from the result, so moving a tuning control off a preset's values reads as
+   * Custom.
+   */
   function readSettings(): TabWheelSettings {
     const next: TabWheelSettings = {
       ...settings,
@@ -93,6 +110,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return { ...next, wheelPreset: detectTabWheelPreset(next) };
   }
 
+  /** Writes `next` into every control and redraws the page status row. */
   function render(next: TabWheelSettings = settings): void {
     settings = next;
     const combo = formatTabWheelModifierCombo(next.gestureModifier, next.gestureWithShift);
@@ -117,6 +135,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     wheelSensitivityValue.textContent = `${next.wheelSensitivity.toFixed(1)}×`;
     wheelCooldownValue.textContent = `${Math.round(next.wheelCooldownMs)}ms`;
 
+    // No overview (worker unreachable) reads the same as a protected page, so
+    // the Previous/Next fallback is offered whenever TabWheel is not live here.
     const ready = overview?.contentScriptStatus === "ready";
     statusDot.className = `status-dot ${ready ? "ready" : "unavailable"}`;
     statusLabel.textContent = ready ? "Ready on this page" : "Browser-restricted or unavailable";
@@ -124,11 +144,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     firstUseNote.hidden = !ready || overview?.firstGestureCycleCompleted === true;
   }
 
+  /** Re-fetches the page status from the background and re-renders. */
   async function refreshOverview(): Promise<void> {
     overview = await getTabWheelOverviewWithRetry().catch(() => null);
     render();
   }
 
+  /**
+   * Saves `next` and re-renders. The storage write also reaches content
+   * scripts and the options page through storage.onChanged.
+   */
   async function persist(next: TabWheelSettings): Promise<void> {
     settings = next;
     await saveTabWheelSettings(next);
@@ -153,6 +178,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   wheelCooldownMs.max = String(MAX_WHEEL_COOLDOWN_MS);
   render();
 
+  // Discrete controls save on every change.
   for (const control of [
     gestureModifier,
     gestureWithShift,
@@ -171,6 +197,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   wheelPreset.addEventListener("change", () => {
     void persist(applyTabWheelPreset(readSettings(), wheelPreset.value as TabWheelPreset));
   });
+  // Sliders update their label (and flip the preset to Custom) while dragging,
+  // but only save on change, so storage is written once per adjustment.
   wheelSensitivity.addEventListener("input", () => {
     wheelSensitivityValue.textContent = `${Number(wheelSensitivity.value).toFixed(1)}×`;
     wheelPreset.value = "custom";
@@ -186,6 +214,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   wheelCooldownMs.addEventListener("change", () => void saveCurrent());
 
+  // The popup has no sender tab, so the Previous/Next buttons name the active
+  // window explicitly.
   byId<HTMLButtonElement>("prevTabBtn").addEventListener("click", async () => {
     const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
     const result = await cycleTabWheel("prev", "popup", activeTab?.windowId).catch(() => null);
@@ -206,6 +236,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const tabWord = result.injected === 1 ? "tab" : "tabs";
     showToast(`Reconnected TabWheel on ${result.injected} open ${tabWord}`);
   });
+  // Reset clears settings in the background, then re-reads storage so the
+  // popup shows exactly what was restored.
   byId<HTMLButtonElement>("resetDefaults").addEventListener("click", async () => {
     const result = await resetTabWheelState().catch(() => null);
     if (!result?.ok) {
@@ -224,6 +256,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
   byId<HTMLButtonElement>("settingsBtn").addEventListener("click", openSettings);
 
+  // Stay in sync with edits made on the options page while the popup is open.
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
     const change = changes[TABWHEEL_STORAGE_KEYS.settings];
@@ -233,5 +266,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // Last, so the settings above are already painted while the worker wakes.
   await refreshOverview();
 });

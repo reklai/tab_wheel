@@ -1,16 +1,28 @@
+// String and URL helpers with no browser or extension dependencies.
+
 const HTML_ESCAPE: Record<string, string> = {
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 };
 const HTML_ESCAPE_RE = /[&<>"']/;
+/**
+ * Escapes the five HTML-significant characters so `text` can be placed in
+ * markup. Returns `text` itself when there is nothing to escape.
+ */
 export function escapeHtml(text: string): string {
   if (!HTML_ESCAPE_RE.test(text)) return text;
   return text.replace(/[&<>"']/g, (character) => HTML_ESCAPE[character]);
 }
 
+/** Escapes RegExp metacharacters so `text` matches literally. */
 export function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * A case-insensitive subsequence matcher for `query`: the characters of each
+ * whitespace-separated term, and the terms themselves, must appear in order
+ * with anything in between. Returns null for a blank query.
+ */
 export function buildFuzzyPattern(query: string): RegExp | null {
   const terms = query.trim().split(/\s+/).filter(Boolean);
   if (terms.length === 0) return null;
@@ -29,6 +41,8 @@ export function buildFuzzyPattern(query: string): RegExp | null {
   }
 }
 
+// Bounded memo for extractDomain. A Map iterates in insertion order, so the
+// first key is the oldest and is evicted first.
 const DOMAIN_CACHE_MAX = 500;
 const domainCache = new Map<string, string>();
 
@@ -41,6 +55,10 @@ function cacheDomain(url: string, value: string): string {
   return value;
 }
 
+/**
+ * The hostname of `url` for display. An unparseable URL shows as its first 30
+ * characters plus an ellipsis.
+ */
 export function extractDomain(url: string): string {
   const cached = domainCache.get(url);
   if (cached) return cached;
@@ -51,6 +69,8 @@ export function extractDomain(url: string): string {
   }
 }
 
+// Query parameters that only carry campaign or click tracking; dropping them
+// never changes which page loads.
 const TRACKING_QUERY_PREFIXES = ["utm_"];
 const TRACKING_QUERY_KEYS = new Set([
   "fbclid",
@@ -59,8 +79,12 @@ const TRACKING_QUERY_KEYS = new Set([
   "mc_eid",
 ]);
 
-// Match reusable pages by stable URL parts, not by tracking noise or fragments
-// added by sites after navigation.
+/**
+ * A comparison key for `rawUrl` that ignores what does not change the page:
+ * scheme and host case, a leading "www.", default ports, repeated or trailing
+ * slashes, tracking parameters, parameter order, and the fragment (sites often
+ * add one after navigation).
+ */
 export function normalizeUrlForMatch(rawUrl: string): string {
   const trimmed = rawUrl.trim();
   if (!trimmed) return "";

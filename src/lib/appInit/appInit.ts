@@ -1,5 +1,34 @@
-// initApp can be injected more than once after installs, updates, or popup
-// refreshes. Run the previous cleanup hook first so wheel listeners never stack.
+/**
+ * The TabWheel content script. It runs in every frame of every page Chrome
+ * lets extensions into, and it is the only part of TabWheel that sees input
+ * on web pages. It recognizes gestures, swallows their events so the page never
+ * reacts to them, and sends each resulting action to the background service
+ * worker, which does the actual tab work.
+ *
+ * Everything is set up inside initApp. The main flows:
+ *
+ * - Wheel switching (wheelHandler): chord check -> measure the event
+ *   (notch or continuous stream) -> drop Chrome's inertia events -> arrival
+ *   and momentum guards -> accumulate distance -> past the trigger distance,
+ *   runWheelCycle switches one tab, subject to the cooldown.
+ * - Click actions (mouseGestureHandler): a modified button press opens a
+ *   short session that swallows every event of that click and runs the
+ *   configured action once, on the click's terminal event.
+ * - Drag current tab: a modified press-and-drag moves the active tab one slot
+ *   at a time toward the pointer (see ActiveTabDragGesture).
+ * - Scroll memory (top frame only): the scroll position is saved on a
+ *   debounce and restored when the background sends SET_SCROLL.
+ * - Status pill (showStatus): the only UI TabWheel ever draws on a page.
+ *
+ * Logic that can be tested without a DOM lives in src/lib/core/tabWheel/:
+ * tabWheelCore.ts (modifier chord, wheel measurement, trigger distance),
+ * momentumGuardCore.ts, mouseGestureCore.ts, and tabDragCore.ts. This file
+ * owns the listeners and the mutable state and wires those pieces together.
+ *
+ * initApp can run more than once in one document (install, update, and
+ * refresh all re-inject), so it always runs the previous injection's cleanup
+ * hook first; listeners must never stack.
+ */
 
 import browser from "webextension-polyfill";
 import {
@@ -62,7 +91,13 @@ import {
 
 declare global {
   interface Window {
+    /** Tears down the current injection. The next initApp calls it first. */
     __tabWheelCleanup?: () => void;
+    /**
+     * A button whose remaining events (release, click, contextmenu) must still
+     * be swallowed; expiresAt is a Date.now() deadline. It lives on window, not
+     * in initApp's closure, so a re-injection that lands mid-click inherits it.
+     */
     __tabWheelMouseClaim?: {
       button: number;
       expiresAt: number;
@@ -70,103 +105,179 @@ declare global {
   }
 }
 
+/** Quiet time after the last scroll before the position is sent for saving. */
 const SCROLL_SAVE_DEBOUNCE_MS = 700;
+/**
+ * How long after a programmatic restore scroll to ignore scroll events, so the
+ * restore's own scrolling is not saved back as the user's position.
+ */
 const SCROLL_RESTORE_SUPPRESS_SAVE_MS = 450;
+/**
+ * Wheel distance per switch at sensitivity 1; the sensitivity setting divides
+ * it. Every preset resolves to 100px or less, so one notch (floored to
+ * WHEEL_NOTCH_PX) always switches one tab. test/tabwheel-core.test.mjs pins
+ * the Precise preset at exactly 100px.
+ */
 const WHEEL_TRIGGER_THRESHOLD_PX = 80;
-// How long after a tab becomes visible a wheel event can still be the tail of
-// the gesture that switched to it, rather than new input from the user. A
-// handed-off tail is a continuous 8-16ms stream, so its next event lands almost
-// immediately; a detented notch cannot arrive faster than its own ~40ms cadence.
-// Keeping this window under that cadence is what stops clicky wheels paying an
-// arrival tax on every switch.
+/**
+ * How long after a tab becomes visible a wheel event can still be the tail of
+ * the gesture that switched to it, rather than new input from the user. A
+ * handed-off tail is a continuous 8-16ms stream, so its next event lands almost
+ * immediately; a detented notch cannot arrive faster than its own ~40ms
+ * cadence. The window must stay under that cadence or clicky wheels lose a
+ * notch on every switch. Pinned by test/runtime-wiring.test.mjs.
+ */
 const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
-// A continuous wheel stream (trackpad, Magic Mouse) that goes quiet this long
-// has ended: lifting and re-placing fingers for the next swipe takes longer,
-// while the events inside one swipe, even a slow one, arrive far more often.
+/**
+ * A continuous wheel stream (trackpad, Magic Mouse) that goes quiet this long
+ * has ended: lifting and re-placing fingers for the next swipe takes longer,
+ * while the events inside one swipe, even a slow one, arrive far more often.
+ */
 const WHEEL_GESTURE_IDLE_MS = 250;
-// MV3 shuts the service worker down after ~30s idle, so the first switch after
-// a pause pays worker cold start (~50-300ms) on top of the switch itself, with
-// nothing waking the worker earlier than the switch message. Crossing the
-// trigger distance takes 30-150ms of wheel motion the user is already
-// spending, so a ping sent the moment the gesture chord is recognized overlaps
-// the wake with that motion instead of stacking on top of it. One ping per 15s
-// comfortably covers the idle threshold without turning every wheel event into
-// a message.
+/**
+ * Minimum gap between worker pre-warm pings. MV3 stops the service worker
+ * after ~30s idle, and a cold start adds ~50-300ms to the first switch after a
+ * pause. Crossing the trigger distance already takes 30-150ms of wheel motion,
+ * so a ping sent when the chord is recognized hides the wake behind it. One
+ * ping per 15s stays under the idle limit without a message per wheel event.
+ */
 const WORKER_PREWARM_INTERVAL_MS = 15000;
-// KeyboardEvent.key values for the configurable gesture modifiers, so the
-// modifier press itself — which precedes the first wheel notch by the user's
-// wind-up — can trigger the same pre-warm.
+/**
+ * KeyboardEvent.key for each configurable gesture modifier, so the modifier
+ * press itself (which comes before the first wheel event) can pre-warm too.
+ */
 const MODIFIER_PREWARM_KEYS = { alt: "Alt", ctrl: "Control", meta: "Meta" } as const;
+/**
+ * A switch within this long of the previous one continues a burst. With
+ * acceleration on, each burst step shortens the trigger distance.
+ */
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
+/** Shown when the message to the background itself fails, not the action. */
 const ACTION_UNREACHABLE_STATUS =
   "TabWheel couldn't reach the browser. Use Refresh extension in the popup.";
+/**
+ * How often a held drag re-announces itself to the background. It must stay
+ * well under MV3's ~30s idle limit so the worker, and the drag's slot in it,
+ * stay alive while the pointer holds still.
+ */
 const TAB_DRAG_KEEPALIVE_MS = 15000;
+/** DOM id of the status pill, so a re-injection reuses or removes the same node. */
 const STATUS_ID = "tw-status-indicator";
+/**
+ * Retry schedule for a scroll restore, in ms between attempts. Pages that load
+ * content late keep growing after they look ready, so a restore is re-applied
+ * until the position sticks or the schedule runs out.
+ */
 const SCROLL_RESTORE_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600];
+/**
+ * A restore first waits for the page's scroll size to hold still (within
+ * LAYOUT_DIMENSION_TOLERANCE_PX) for LAYOUT_STABILITY_REQUIRED_FRAMES frames,
+ * giving up after LAYOUT_STABILITY_TIMEOUT_MS.
+ */
 const LAYOUT_STABILITY_TIMEOUT_MS = 1600;
 const LAYOUT_STABILITY_REQUIRED_FRAMES = 3;
 const LAYOUT_DIMENSION_TOLERANCE_PX = 4;
+/**
+ * A saved layout still counts as the same one when each dimension is within
+ * this fraction (or LAYOUT_DIMENSION_TOLERANCE_PX) of the saved size. Beyond
+ * that, the restore uses the saved relative position instead of the pixels.
+ */
 const LAYOUT_DIMENSION_MATCH_RATIO = 0.08;
 
-// A live "Drag current tab" gesture. The tab lives in the browser's tab strip,
-// which a page extension cannot see or draw in, so the drag is a closed loop:
-// we track where the pointer is and, on each background round-trip, move the
-// tab one slot toward that live position. Because nothing is queued, a stopped
-// or reversed pointer settles the tab exactly where it is, instead of replaying
-// a backlog and overshooting.
+/**
+ * A live "Drag current tab" gesture. The tab lives in the browser's tab strip,
+ * which a page extension cannot see or draw in, so the drag is a closed loop:
+ * we track where the pointer is and, on each background round-trip, move the
+ * tab one slot toward that live position. Because nothing is queued, a stopped
+ * or reversed pointer settles the tab exactly where it is, instead of replaying
+ * a backlog and overshooting.
+ */
 interface ActiveTabDragGesture {
-  // The pointer this drag is bound to; events from any other pointer id are
-  // ignored so a second finger or stylus cannot hijack the drag.
+  /**
+   * The pointer this drag is bound to; events from any other pointer id are
+   * ignored so a second finger or stylus cannot hijack the drag.
+   */
   pointerId: number;
-  // The physical button held down (0 left, 1 middle, 2 right), used to
-  // recognise this drag's own release and completion events.
+  /**
+   * The physical button held down (0 left, 1 middle, 2 right), used to
+   * recognise this drag's own release and completion events.
+   */
   button: number;
-  // Correlates this drag's begin/move/end messages in the background, which
-  // serialises drags per window so two windows cannot fight over one tab.
+  /**
+   * Correlates this drag's begin/move/end messages in the background, which
+   * serialises drags per window so two windows cannot fight over one tab.
+   */
   gestureId: string;
-  // The element pointer capture was taken on, so movement keeps reaching us
-  // when the cursor leaves it. Null when the event target was not an Element.
+  /**
+   * The element pointer capture was taken on, so movement keeps reaching us
+   * when the cursor leaves it. Null when the event target was not an Element.
+   */
   captureTarget: Element | null;
 
   // Closed-loop position model:
-  // Page X where the drag began. The target slot is measured from here, so the
-  // mapping is anchored to the gesture's start, not to the previous move.
+  /**
+   * Pointer clientX where the drag began. The target slot is measured from
+   * here, so the mapping is anchored to the gesture's start, not the last move.
+   */
   startX: number;
-  // The pointer's most recent X. The drain reads this live each step and moves
-  // toward it; this is what makes the drag target-seeking rather than a queue.
+  /**
+   * The pointer's most recent X. The drain reads this live each step and moves
+   * toward it; this is what makes the drag target-seeking rather than a queue.
+   */
   latestClientX: number;
-  // How many slots the tab has actually moved. The next move is one step toward
-  // (target - appliedOffset); when they are equal the tab is under the pointer
-  // and the drain rests.
+  /**
+   * How many slots the tab has actually moved. The next move is one step toward
+   * (target - appliedOffset); when they are equal the tab is under the pointer
+   * and the drain rests.
+   */
   appliedOffset: number;
-  // The direction that last hit a pinned or tab-group edge. Moving that way is
-  // suppressed until the pointer asks for the other way, so pushing against an
-  // edge does not spin.
+  /**
+   * The direction that last hit a pinned or tab-group edge. Moving that way is
+   * suppressed until the pointer asks for the other way, so pushing against an
+   * edge does not spin.
+   */
   blockedDirection: TabDragDirection | null;
 
   // Lifecycle:
-  // True while a move is awaiting the background, so only one move is ever in
-  // flight. That single in-flight move is the one step a reversal cannot undo.
+  /**
+   * True while a move is awaiting the background, so only one move is ever in
+   * flight. That single in-flight move is the one step a reversal cannot undo.
+   */
   moveInFlight: boolean;
-  // True once the button is up. The gesture then finishes as soon as the tab
-  // reaches the pointer instead of cancelling mid-drag.
+  /**
+   * True once the button is up. The gesture then finishes as soon as the tab
+   * reaches the pointer instead of cancelling mid-drag.
+   */
   released: boolean;
-  // True once the terminal click/auxclick/contextmenu for this button arrived,
-  // confirming the browser considers the interaction complete.
+  /**
+   * True once the terminal click/auxclick/contextmenu for this button arrived,
+   * confirming the browser considers the interaction complete.
+   */
   completionReceived: boolean;
-  // Set when the drag is abandoned (button released early, pointer lost). The
-  // drain and finish paths bail as soon as they see it.
+  /**
+   * Set when the drag is abandoned (button released early, pointer lost). The
+   * drain and finish paths bail as soon as they see it.
+   */
   cancelled: boolean;
-  // Timer id for the grace period that waits for a late completion event after
-  // release, so a drag that never gets one still tears down. 0 when unset.
+  /**
+   * Timer id for the grace period that waits for a late completion event after
+   * release, so a drag that never gets one still tears down. 0 when unset.
+   */
   finishTimer: number;
-  // Resolves after any previous drag on this window finishes; every move awaits
-  // it so drags on the same window run in order.
+  /**
+   * Resolves once the background gives this drag its turn (after any earlier
+   * drag in the window); every move awaits it. Rejects if the background
+   * refuses the drag.
+   */
   waitForPreviousDrag: Promise<void>;
-  // Tears down this drag's slot in the per-window queue and stops its keepalive.
+  /** Gives up this drag's turn in the per-window queue and stops its keepalive. */
   releaseDragQueue: () => void;
 }
 
+/**
+ * True when the target is inside a text-entry control. Gestures there are left
+ * to the page unless the user turned on allowGesturesInEditableFields.
+ */
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return target.closest(
@@ -174,6 +285,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
   ) !== null;
 }
 
+/**
+ * The document's full scrollable size. Pages disagree on whether <html> or
+ * <body> carries it, so take the largest of both elements' measurements.
+ */
 function getPageScrollWidth(): number {
   const documentElement = document.documentElement;
   const body = document.body;
@@ -200,6 +315,7 @@ function getPageScrollHeight(): number {
   );
 }
 
+/** Largest scroll offsets the current layout allows. */
 function getMaxScrollX(): number {
   return Math.max(0, getPageScrollWidth() - window.innerWidth);
 }
@@ -216,6 +332,11 @@ function clampScrollY(scrollY: number): number {
   return Math.max(0, Math.min(scrollY, getMaxScrollY()));
 }
 
+/**
+ * The root scroller's position plus the layout it was taken in. The sizes and
+ * ratios let a later restore tell whether the page still has the same layout,
+ * and fall back to a relative position when it does not.
+ */
 function getRootScrollSnapshot(): ScrollData {
   const scrollX = Math.max(0, window.scrollX);
   const scrollY = Math.max(0, window.scrollY);
@@ -237,12 +358,22 @@ function getRootScrollSnapshot(): ScrollData {
   };
 }
 
+/**
+ * True when current is close enough to a saved size to call it the same
+ * layout. A missing (zero or non-finite) saved size never matches.
+ */
 function hasSimilarDimension(current: number, stored: number): boolean {
   if (!Number.isFinite(stored) || stored <= 0) return false;
   return Math.abs(current - stored)
     <= Math.max(LAYOUT_DIMENSION_TOLERANCE_PX, stored * LAYOUT_DIMENSION_MATCH_RATIO);
 }
 
+/**
+ * Where to scroll to restore snapshot, decided per axis. If the layout matches
+ * the saved one, or the snapshot has no layout to compare, restore the exact
+ * pixel offset; if it changed (resized window, different content), restore the
+ * same relative position instead.
+ */
 function resolveRootScrollTarget(snapshot: ScrollData): { left: number; top: number } {
   const current = getRootScrollSnapshot();
   const hasStoredWidth = snapshot.scrollWidth > 0 && snapshot.viewportWidth > 0;
@@ -265,6 +396,12 @@ function resolveRootScrollTarget(snapshot: ScrollData): { left: number; top: num
   };
 }
 
+/**
+ * Resolves true once the page's scroll size has held still for a few frames,
+ * or when LAYOUT_STABILITY_TIMEOUT_MS passes. Resolves false as soon as
+ * shouldContinue reports the restore was superseded. Restoring into a page
+ * that is still growing would clamp to a max offset that is about to change.
+ */
 async function waitForLayoutStability(shouldContinue: () => boolean): Promise<boolean> {
   const startedAt = performance.now();
   let stableFrames = 0;
@@ -292,12 +429,18 @@ async function waitForLayoutStability(shouldContinue: () => boolean): Promise<bo
   return shouldContinue();
 }
 
+/**
+ * Hides an event from the page completely: no default action and no page
+ * listener. Our listeners sit on window in the capture phase, the first stop
+ * of every event's path, so the page never sees what we stop here.
+ */
 function suppressPageEvent(event: Event): void {
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
 }
 
+/** True in the top-level document. If window.top cannot be read, assume a subframe. */
 function isTopFrame(): boolean {
   try {
     return window.top === window;
@@ -306,28 +449,44 @@ function isTopFrame(): boolean {
   }
 }
 
+/**
+ * Installs TabWheel on this document: loads settings, registers every
+ * listener, and publishes a cleanup hook on window. Safe to call repeatedly.
+ * The body must start with the previous injection's cleanup, before anything
+ * is attached, so listeners never stack (pinned by test/zero-reload.test.mjs).
+ */
 export function initApp(): void {
   window.__tabWheelCleanup?.();
 
   const isTopFrameContext = isTopFrame();
   let settings: TabWheelSettings = { ...DEFAULT_TABWHEEL_SETTINGS };
+  // Every gesture is ignored until stored settings arrive, so a user's chosen
+  // modifier is never judged against the defaults.
   let areSettingsLoaded = false;
   let statusTimer = 0;
+  // True between pagehide and pageshow: the document is unloading or sitting
+  // in the back/forward cache, so a late action failure must stay quiet.
   let pageHidden = false;
   let scrollSaveTimer = 0;
   let lastScrollSaveX = Number.NaN;
   let lastScrollSaveY = Number.NaN;
   let suppressScrollSaveUntil = 0;
+  // Bumped to cancel a restore in flight; each restore checks it between steps.
   let scrollRestoreToken = 0;
+  // Signed wheel distance collected toward the next switch.
   let wheelAccumulator = 0;
   // Magnitude of the most recent delta accumulated into the current gesture.
   // This is the envelope the momentum guard inherits on commit: a tail starts
   // from the magnitude the gesture ended on, which is also why it can never
   // trip the guard's ramp escape.
   let lastGestureMagnitudePx = 0;
+  // When this document last became visible; the arrival guard's clock.
   let lastVisibleAtMs = 0;
+  // Time of the previous gesture wheel event, for detecting an idle stream.
   let lastWheelEventAt = 0;
+  // Shared by the wheel and keydown pre-warms, so they rate-limit together.
   let lastWorkerPrewarmAt = 0;
+  // Time of the last switch (cooldown and burst clock) and the burst level.
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
   let mouseGesturePolicies = buildMouseGesturePolicies(settings);
@@ -335,6 +494,8 @@ export function initApp(): void {
   let tabDragGesture: ActiveTabDragGesture | null = null;
   let momentumGuardSession: MomentumGuardSession | null = null;
 
+  // Settings count as loaded even if the read fails, so gestures still work
+  // with the defaults.
   void loadTabWheelSettings()
     .then((loadedSettings) => {
       settings = loadedSettings;
@@ -344,10 +505,13 @@ export function initApp(): void {
       areSettingsLoaded = true;
     });
 
-  // The only thing TabWheel ever draws on a page: a one-line notice at the
-  // bottom edge for a gesture that landed but could not do its job. The same
-  // pill as the popup toast and the settings status; it never takes the
-  // centre, never takes input, and leaves on its own.
+  /**
+   * The only thing TabWheel ever draws on a page: a one-line notice at the
+   * bottom edge for a gesture that landed but could not do its job. The same
+   * pill as the popup toast and the settings status; it never takes the
+   * centre, never takes input, and leaves on its own. Styled inline because
+   * the content script ships no stylesheet.
+   */
   function showStatus(message: string): void {
     const reduceMotion = prefersReducedMotion();
     const hidden = "translate(-50%,6px) scale(0.96)";
@@ -405,6 +569,10 @@ export function initApp(): void {
     }, noticeDisplayMs(message));
   }
 
+  /**
+   * Sends the current scroll position to the background, which keeps it per
+   * tab. Skipped while a restore is scrolling the page and when nothing moved.
+   */
   function sendScrollSnapshot(): void {
     if (!settings.restorePagePosition || Date.now() < suppressScrollSaveUntil) return;
     const snapshot = getRootScrollSnapshot();
@@ -414,6 +582,7 @@ export function initApp(): void {
     void saveTabWheelScrollPosition(snapshot).catch(() => {});
   }
 
+  /** Sends a pending save now, for a page being hidden or unloaded. */
   function flushScrollSnapshot(): void {
     if (scrollSaveTimer) {
       window.clearTimeout(scrollSaveTimer);
@@ -422,6 +591,7 @@ export function initApp(): void {
     sendScrollSnapshot();
   }
 
+  /** The scroll listener: saves once scrolling has been quiet for a moment. */
   function scheduleScrollSnapshot(): void {
     if (!settings.restorePagePosition || Date.now() < suppressScrollSaveUntil) return;
     if (scrollSaveTimer) window.clearTimeout(scrollSaveTimer);
@@ -431,10 +601,16 @@ export function initApp(): void {
     }, SCROLL_SAVE_DEBOUNCE_MS);
   }
 
+  /** Invalidates any restore in flight; it stops at its next token check. */
   function cancelScrollRestore(): void {
     scrollRestoreToken += 1;
   }
 
+  /**
+   * Scrolls once toward snapshot and reports whether the page actually landed
+   * there (within 2px) a frame later. A page still growing clamps the scroll
+   * short, which is what the retries in restoreWindowScroll wait out.
+   */
   async function applyScrollRestoreAttempt(snapshot: ScrollData): Promise<boolean> {
     suppressScrollSaveUntil = Date.now() + SCROLL_RESTORE_SUPPRESS_SAVE_MS;
     if (scrollSaveTimer) {
@@ -447,6 +623,11 @@ export function initApp(): void {
     return Math.abs(window.scrollX - target.left) <= 2 && Math.abs(window.scrollY - target.top) <= 2;
   }
 
+  /**
+   * Restores a saved position sent by the background (SET_SCROLL). A restore
+   * is abandoned when a newer one starts, the tab is hidden, or scroll memory
+   * is turned off.
+   */
   async function restoreWindowScroll(snapshot: ScrollData): Promise<void> {
     if (!settings.restorePagePosition) return;
     const token = ++scrollRestoreToken;
@@ -454,6 +635,9 @@ export function initApp(): void {
       && document.visibilityState !== "hidden"
       && settings.restorePagePosition;
     if (!isCurrentRestore()) return;
+    // An immediate attempt handles a page that is already laid out. Late
+    // content can still shift or clamp it, so once layout settles we re-apply
+    // on the SCROLL_RESTORE_DELAYS_MS schedule until one attempt sticks.
     await applyScrollRestoreAttempt(snapshot);
     if (!isCurrentRestore() || !await waitForLayoutStability(isCurrentRestore)) return;
     for (const delay of SCROLL_RESTORE_DELAYS_MS) {
@@ -464,6 +648,11 @@ export function initApp(): void {
     }
   }
 
+  /**
+   * True when this wheel event is a TabWheel gesture: trusted, with the
+   * configured modifier chord held, and not in an editable field (unless the
+   * user allows that). Always false until settings have loaded.
+   */
   function isKeyboardWheelEvent(event: WheelEvent): boolean {
     return areSettingsLoaded
       && event.isTrusted
@@ -471,6 +660,10 @@ export function initApp(): void {
       && (settings.allowGesturesInEditableFields || !isEditableTarget(event.target));
   }
 
+  /**
+   * The configured click action for this event's button, or null when the
+   * event is not a gesture (same gating as wheel events) or the button is Off.
+   */
   function resolveMousePolicy(event: MouseEvent): TabWheelMouseGesturePolicy | null {
     if (!areSettingsLoaded || !event.isTrusted) return null;
     if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return null;
@@ -482,6 +675,11 @@ export function initApp(): void {
     mouseGestureSession = null;
   }
 
+  /**
+   * Leaves a claim on window for a drag's button so its release and completion
+   * events stay swallowed after the drag state is gone. No claim once the
+   * completion event has arrived: nothing is left to swallow.
+   */
   function rememberTabDragMouseClaim(session: ActiveTabDragGesture): void {
     if (session.completionReceived) return;
     window.__tabWheelMouseClaim = {
@@ -490,6 +688,11 @@ export function initApp(): void {
     };
   }
 
+  /**
+   * Run by the cleanup hook. If a click or drag is mid-interaction, leave a
+   * claim so the next injection swallows the rest of it instead of handing the
+   * page half a click.
+   */
   function rememberMouseClaimForReinjection(): void {
     let button = mouseGestureSession?.policy.button;
     if (button === undefined) {
@@ -505,6 +708,10 @@ export function initApp(): void {
     };
   }
 
+  /**
+   * The event that ends a click for button: click for left, auxclick for
+   * middle, contextmenu for right.
+   */
   function isMouseClaimCompletionEvent(button: number, event: MouseEvent): boolean {
     if (button === 0) return event.type === "click";
     if (button === 1) return event.type === "auxclick";
@@ -515,6 +722,12 @@ export function initApp(): void {
     return event.type === "pointerup" || event.type === "mouseup";
   }
 
+  /**
+   * Swallows events that belong to a claimed button's interaction and returns
+   * true if it did. Release and completion events are always swallowed, and
+   * the completion clears the claim; other events only until expiresAt. A new
+   * pointerdown clears the claim first, so it never eats the next interaction.
+   */
   function handleCarriedMouseClaim(event: MouseEvent): boolean {
     const claim = window.__tabWheelMouseClaim;
     if (!claim) return false;
@@ -550,10 +763,17 @@ export function initApp(): void {
     }
   }
 
+  /**
+   * Registers a new drag with the background, which runs drags one at a time
+   * per window. The returned promise resolves when this drag's turn comes.
+   * While it holds the turn, a keepalive re-sends the begin message every
+   * TAB_DRAG_KEEPALIVE_MS; releaseDragQueue stops it and ends the drag there.
+   */
   function reserveTabDragQueue(): Pick<
     ActiveTabDragGesture,
     "gestureId" | "waitForPreviousDrag" | "releaseDragQueue"
   > {
+    // randomUUID only exists in secure contexts, so http pages need a fallback.
     const gestureId = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -585,6 +805,7 @@ export function initApp(): void {
     };
   }
 
+  /** Tears down a drag's timer, pointer capture, and queue turn. Idempotent. */
   function resetTabDragGesture(session: ActiveTabDragGesture): void {
     if (session.finishTimer) window.clearTimeout(session.finishTimer);
     releaseTabDragPointerCapture(session);
@@ -592,10 +813,12 @@ export function initApp(): void {
     if (tabDragGesture === session) tabDragGesture = null;
   }
 
-  // The next slot to move toward the live pointer, or null when the tab is
-  // already where the pointer is (or can't advance because it hit a boundary
-  // in that direction). This is what makes the drag target-seeking: it is
-  // recomputed from the current pointer, never replayed from a queue.
+  /**
+   * The next slot to move toward the live pointer, or null when the tab is
+   * already where the pointer is (or can't advance because it hit a boundary
+   * in that direction). This is what makes the drag target-seeking: it is
+   * recomputed from the current pointer, never replayed from a queue.
+   */
   function nextTabDragMove(session: ActiveTabDragGesture): TabDragDirection | null {
     const stepPx = resolveTabDragStepPx(settings.tabDragSensitivity);
     const desiredOffset = resolveTabDragTargetOffset(session.startX, session.latestClientX, stepPx);
@@ -605,6 +828,11 @@ export function initApp(): void {
     return session.blockedDirection === direction ? null : direction;
   }
 
+  /**
+   * Ends a drag once it is fully over: no move in flight, the tab under the
+   * pointer, the button released, and its completion event seen (or its grace
+   * period lapsed). Called after every step that could satisfy the last one.
+   */
   function finishTabDragGestureWhenIdle(session: ActiveTabDragGesture): void {
     if (
       session.cancelled
@@ -616,6 +844,11 @@ export function initApp(): void {
     resetTabDragGesture(session);
   }
 
+  /**
+   * Abandons the active drag and leaves the tab where it is. With
+   * preserveCompletionClaim, the release and click still to come are claimed
+   * so they stay swallowed after the drag state is gone.
+   */
   function cancelTabDragGesture(preserveCompletionClaim = false): void {
     const session = tabDragGesture;
     if (!session) return;
@@ -624,10 +857,19 @@ export function initApp(): void {
     resetTabDragGesture(session);
   }
 
+  /**
+   * Cancels a drag only while its button is held. A released drag is left to
+   * finish moving the tab to where the pointer let go.
+   */
   function cancelUnreleasedTabDragGesture(): void {
     if (!tabDragGesture?.released) cancelTabDragGesture();
   }
 
+  /**
+   * Sends one move toward the pointer and, when it returns, recomputes and
+   * repeats until the tab is under the pointer. Only one move is ever in
+   * flight; pointer movement meanwhile just updates latestClientX.
+   */
   function drainTabDragMoves(session: ActiveTabDragGesture): void {
     if (session.cancelled || session.moveInFlight) {
       finishTabDragGestureWhenIdle(session);
@@ -672,6 +914,10 @@ export function initApp(): void {
       });
   }
 
+  /**
+   * Starts a drag bound to this pointer and takes pointer capture, so movement
+   * keeps arriving after the cursor leaves the pressed element.
+   */
   function startTabDragGesture(
     event: PointerEvent,
     policy: TabWheelMouseGesturePolicy,
@@ -701,6 +947,11 @@ export function initApp(): void {
     }
   }
 
+  /**
+   * Marks the drag's button as released. The tab may still be catching up to
+   * the pointer; the finish timer guarantees teardown even if the completion
+   * event never arrives.
+   */
   function releaseActiveTabDragGesture(session: ActiveTabDragGesture): void {
     if (session.released) return;
     session.released = true;
@@ -709,6 +960,10 @@ export function initApp(): void {
     finishTabDragGestureWhenIdle(session);
   }
 
+  /**
+   * Waits MOUSE_GESTURE_CLAIM_MS for the completion event after a release,
+   * then assumes it, so a drag whose click the browser never fires still ends.
+   */
   function scheduleTabDragFinishTimer(session: ActiveTabDragGesture): void {
     if (session.finishTimer) window.clearTimeout(session.finishTimer);
     session.finishTimer = window.setTimeout(() => {
@@ -717,6 +972,12 @@ export function initApp(): void {
     }, MOUSE_GESTURE_CLAIM_MS);
   }
 
+  /**
+   * A drag press arrived while a released drag is still moving the tab. The
+   * press is swallowed and the draining drag rebinds to it, so it waits for
+   * this press's completion event too. The drag stays released, so this
+   * press's movement does not steer the tab.
+   */
   function claimTabDragPressWhileDraining(
     session: ActiveTabDragGesture,
     event: PointerEvent,
@@ -732,6 +993,11 @@ export function initApp(): void {
     }
   }
 
+  /**
+   * Follows the pointer while the drag button is held. A move without that
+   * button pressed means the release happened where we could not see it, so
+   * the drag is cancelled.
+   */
   function tabDragPointerMoveHandler(event: PointerEvent): void {
     const session = tabDragGesture;
     if (!session || session.released || event.pointerId !== session.pointerId) return;
@@ -746,6 +1012,7 @@ export function initApp(): void {
     drainTabDragMoves(session);
   }
 
+  /** The browser took the pointer away; an unreleased drag is abandoned. */
   function tabDragPointerCancelHandler(event: PointerEvent): void {
     const session = tabDragGesture;
     if (!session || event.pointerId !== session.pointerId) return;
@@ -753,6 +1020,10 @@ export function initApp(): void {
     cancelUnreleasedTabDragGesture();
   }
 
+  /**
+   * Capture was lost while the button is held (the page removed the element
+   * or took capture itself), so the drag can no longer track the pointer.
+   */
   function tabDragPointerCaptureLostHandler(event: PointerEvent): void {
     const session = tabDragGesture;
     if (
@@ -764,6 +1035,7 @@ export function initApp(): void {
     cancelUnreleasedTabDragGesture();
   }
 
+  /** Same mapping as isMouseClaimCompletionEvent, for the drag's button. */
   function isTabDragCompletionEvent(
     session: ActiveTabDragGesture,
     event: MouseEvent,
@@ -773,6 +1045,11 @@ export function initApp(): void {
     return event.type === "contextmenu";
   }
 
+  /**
+   * Swallows the drag's own button events and advances its lifecycle; returns
+   * true if the event belonged to the drag. Once the drag is released and its
+   * completion seen, events go back to normal handling.
+   */
   function handleActiveTabDragMouseEvent(event: MouseEvent): boolean {
     const session = tabDragGesture;
     if (!session) return false;
@@ -786,6 +1063,8 @@ export function initApp(): void {
       || (session.button === 2 && event.type === "contextmenu");
     if (!matchesButton) return false;
     suppressPageEvent(event);
+    // A second pointerup on a released drag comes from a press folded in by
+    // claimTabDragPressWhileDraining; it restarts the wait for completion.
     if (event.type === "pointerup") {
       if (session.released) scheduleTabDragFinishTimer(session);
       else releaseActiveTabDragGesture(session);
@@ -801,6 +1080,7 @@ export function initApp(): void {
     return true;
   }
 
+  /** The click session this event belongs to, dropping one that has expired. */
   function getActiveMouseGestureSession(event: MouseEvent): TabWheelMouseGestureSession | null {
     if (!mouseGestureSession) return null;
     if (isMouseGestureSessionExpired(mouseGestureSession, Date.now())) {
@@ -812,6 +1092,10 @@ export function initApp(): void {
       : null;
   }
 
+  /**
+   * Runs a one-shot background action and shows its failure on the page: the
+   * background's reason, or ACTION_UNREACHABLE_STATUS when the message failed.
+   */
   async function runActionWithStatus(
     task: () => Promise<TabWheelActionResult>,
   ): Promise<void> {
@@ -829,6 +1113,10 @@ export function initApp(): void {
     if (status) showStatus(status);
   }
 
+  /**
+   * Sends a click action to the background. dragCurrentTab is a no-op here:
+   * drags run through the pointer handlers, never as a click session.
+   */
   async function executeMouseGestureSession(
     session: TabWheelMouseGestureSession,
   ): Promise<void> {
@@ -862,20 +1150,21 @@ export function initApp(): void {
     }
   }
 
+  /** Runs a click session's action, at most once per session. */
   function runMouseGestureSession(session: TabWheelMouseGestureSession): void {
     if (session.hasRun) return;
     session.hasRun = true;
     // A right-click action runs on contextmenu, which is not the last event of
     // the interaction: pointerup, mouseup, and auxclick still follow. Claim the
-    // button so those trailing events are swallowed like the rest of the
-    // interaction instead of reaching the page. Left and middle actions run on
-    // their terminal event, so the claim they set simply lapses on the next
-    // pointerdown. The claim never crosses into the next interaction because
-    // handleCarriedMouseClaim clears it the moment a fresh pointerdown arrives.
+    // button so those trailing events are swallowed instead of reaching the
+    // page. Left and middle actions run on their terminal event, so their claim
+    // just lapses; a fresh pointerdown always clears it.
     window.__tabWheelMouseClaim = {
       button: session.policy.button,
       expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
     };
+    // A released drag is still moving the tab; running another tab action now
+    // would act on a tab in mid-move, so this click is swallowed and dropped.
     if (
       tabDragGesture?.released
       && (tabDragGesture.moveInFlight || nextTabDragMove(tabDragGesture) !== null)
@@ -885,6 +1174,12 @@ export function initApp(): void {
     void executeMouseGestureSession(session);
   }
 
+  /**
+   * The one capture-phase handler for every button event (pointer, mouse,
+   * click, auxclick, contextmenu, dblclick). The order of checks matters:
+   * carried claims, then dblclick, then drag bookkeeping on a new press, then
+   * the active drag, then the active click session, and last a new gesture.
+   */
   function mouseGestureHandler(event: MouseEvent): void {
     if (handleCarriedMouseClaim(event)) return;
     // The browser synthesizes dblclick after two clicks on the same element
@@ -894,6 +1189,11 @@ export function initApp(): void {
       if (resolveMousePolicy(event)) suppressPageEvent(event);
       return;
     }
+    // A new mouse press settles any drag left over. A released drag that is
+    // still moving the tab absorbs the press if it starts another drag;
+    // otherwise the press proves the old click is over, so we stop waiting
+    // for its completion and tear it down once idle. A drag whose button is
+    // still held here missed its release and is cancelled.
     if (
       event.type === "pointerdown"
       && typeof PointerEvent !== "undefined"
@@ -941,6 +1241,8 @@ export function initApp(): void {
     const policy = resolveMousePolicy(event);
     if (!policy) return;
     if (policy.interaction === "drag") {
+      // A drag starts only from a real mouse pointerdown, which carries the
+      // pointerId used for capture and for matching the drag's later events.
       if (
         event.type !== "pointerdown"
         || typeof PointerEvent === "undefined"
@@ -955,20 +1257,30 @@ export function initApp(): void {
     mouseGestureSession = createMouseGestureSession(policy, Date.now());
   }
 
+  /**
+   * The burst level a switch at now would have: one more than the last switch
+   * if it came within WHEEL_ACCELERATION_WINDOW_MS (capped at 6), else 0. Only
+   * reads state; runWheelCycle commits it.
+   */
   function computeNextBurstCount(now: number): number {
     return now - lastWheelCycleAt <= WHEEL_ACCELERATION_WINDOW_MS
       ? Math.min(wheelBurstCount + 1, 6)
       : 0;
   }
 
+  /**
+   * Switches one tab in direction unless the cooldown since the last switch is
+   * still running, and returns whether it switched. A switch also arms the
+   * momentum guard for the tail of the gesture that caused it. deltaDirection
+   * is the raw wheel sign; direction is after invertScroll.
+   */
   function runWheelCycle(
     direction: "prev" | "next",
     deltaDirection: 1 | -1,
     now: number,
   ): boolean {
-    // The configured cooldown, plain: nothing adjusts it per device, and every
-    // settings object reaching here has been through normalizeTabWheelSettings,
-    // which already clamps it to [MIN_WHEEL_COOLDOWN_MS, MAX_WHEEL_COOLDOWN_MS].
+    // The cooldown is the user's setting as is. normalizeTabWheelSettings has
+    // already clamped it to [MIN_WHEEL_COOLDOWN_MS, MAX_WHEEL_COOLDOWN_MS].
     if (now - lastWheelCycleAt < settings.wheelCooldownMs) return false;
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
@@ -981,12 +1293,13 @@ export function initApp(): void {
     return true;
   }
 
-  // The earliest observable moment of a gesture is the modifier going down,
-  // which beats the first wheel notch by the user's wind-up. Warming here
-  // hides more of an MV3 cold start than the wheel-time ping alone; a press
-  // that never becomes a gesture (Alt-Tab, shortcuts) costs at most one
-  // rate-limited no-op message per interval. Same top-frame gate and shared
-  // rate-limit clock as the wheel-time pre-warm, and equally fire-and-forget.
+  /**
+   * Pre-warms the worker when the gesture modifier goes down, the earliest
+   * sign of a gesture, so more of an MV3 cold start is hidden than by the
+   * wheel-time ping alone. A press that never becomes a gesture (Alt-Tab,
+   * shortcuts) costs at most one rate-limited message. Same top-frame gate,
+   * rate-limit clock, and fire-and-forget rule as the wheel pre-warm.
+   */
   function modifierKeydownPrewarmHandler(event: KeyboardEvent): void {
     if (!event.isTrusted) return;
     if (event.key !== MODIFIER_PREWARM_KEYS[settings.gestureModifier]) return;
@@ -997,12 +1310,22 @@ export function initApp(): void {
     }
   }
 
+  /**
+   * The wheel gesture pipeline, run for every wheel event in this frame. Each
+   * step either drops the event or passes it on: chord check, measurement,
+   * Chrome's inertia flag, notch/idle bookkeeping, arrival guard, momentum
+   * guard, then accumulation toward the trigger distance and a switch.
+   * test/runtime-wiring.test.mjs pins the order of these steps.
+   */
   function wheelHandler(event: WheelEvent): void {
-    // Cheapest possible exit for plain scrolling, which is the overwhelming
-    // majority of wheel events on any page: the chord check (which includes
-    // the isTrusted test) runs before any work, so an unmodified scroll never
-    // pays normalization or a clock read.
+    // Plain scrolling is almost every wheel event a page sees, so the chord
+    // check (which also covers isTrusted) comes first and an unmodified
+    // scroll exits before measurement or a clock read.
     if (!isKeyboardWheelEvent(event)) return;
+    // Measurement also classifies the event. A notch is recognized per event
+    // from Chrome's legacy wheelDelta (whole 120-unit ticks, divided by
+    // devicePixelRatio) and floored to 100px; anything else is a slice of a
+    // continuous stream (trackpad, Magic Mouse, hi-res wheel).
     const { deltaPx: wheelDelta, isNotch } = measureWheelInput(
       event,
       window.innerHeight,
@@ -1012,42 +1335,30 @@ export function initApp(): void {
     );
     if (wheelDelta === 0) return;
     const now = Date.now();
+    // From here on the event belongs to the gesture: the page never scrolls
+    // on it, even when a guard below drops the delta.
     suppressPageEvent(event);
-    // Pre-warm the background worker as soon as the chord is recognized, so a
-    // cold start overlaps the accumulation below instead of delaying the
-    // switch that ends it. TABWHEEL_CONTENT_READY is reused rather than adding
-    // a wake type: its handler is the only one in the router that returns
-    // without awaiting anything (no tabs query or injection; the recent-tab
-    // touch it triggers is detached and a no-op for a tab that is already
-    // current), and what it asserts is literally true right here — this
-    // content script is alive and handling an event. A worker that just
-    // restarted also lost its readiness cache, so the same message re-seeds
-    // this tab's entry for free.
-    //
-    // Top frame only, matching the send at the end of initApp: only the top
-    // frame registers the runtime message listener, so only the top frame can
-    // answer the ping that "ready" promises. A subframe claiming readiness
-    // would leave the background willing to activate a tab whose gestures are
-    // dead. Gestures started over an iframe therefore skip the pre-warm and
-    // pay cold start exactly as they do today — no regression, just no gain.
-    //
-    // Fire-and-forget and never awaited: this sits above the accumulation path
-    // on purpose, and a slow or failed wake must not delay, block, or alter
-    // the gesture it is warming.
+    // Pre-warm the worker as soon as the chord is recognized, so a cold start
+    // overlaps the accumulation below instead of delaying the switch. The
+    // wake reuses TABWHEEL_CONTENT_READY: its handler awaits nothing, what it
+    // asserts is true here, and it re-seeds the readiness cache a restarted
+    // worker has lost. Top frame only, because only the top frame answers the
+    // ping that "ready" promises; gestures over an iframe skip the pre-warm.
+    // Fire-and-forget: a slow or failed wake must never delay or alter the
+    // gesture, which is also why it runs even for deltas the guards drop.
     if (isTopFrameContext && now - lastWorkerPrewarmAt >= WORKER_PREWARM_INTERVAL_MS) {
       lastWorkerPrewarmAt = now;
       void notifyTabWheelContentReady().catch(() => {});
     }
     const previousWheelEventAt = lastWheelEventAt;
     lastWheelEventAt = now;
-    // Chrome 151+ says outright which events are the platform's inertia after
-    // the fingers lift (macOS trackpads and Magic Mouse, and Chrome's own
-    // touchpad fling elsewhere). Those are never the user's input, so they are
-    // swallowed like the rest of the gesture and never counted: a trackpad
-    // swipe switches by finger travel alone. The fingers lifting also ends the
-    // swipe, so a partial distance it left behind is dropped rather than
-    // carried into the next swipe. Every other browser leaves the attribute
-    // undefined and relies on the momentum guard below.
+    // Chrome 151+ flags the platform's inertia events after the fingers lift
+    // (macOS trackpads and Magic Mouse, Chrome's touchpad fling elsewhere).
+    // They are never the user's input, so they are swallowed and never
+    // counted: a trackpad swipe switches by finger travel alone. Lifting the
+    // fingers also ends the swipe, so any partial distance is dropped. Where
+    // the flag is undefined (older Chrome), the momentum guard below does
+    // this job.
     if ((event as WheelEvent & { momentum?: boolean }).momentum === true) {
       wheelAccumulator = 0;
       lastGestureMagnitudePx = 0;
@@ -1064,21 +1375,16 @@ export function initApp(): void {
       // distance from a swipe seconds or minutes ago.
       wheelAccumulator = 0;
     }
-    // Cross-tab handoff: the gesture that switched tabs committed in the
-    // previous document, whose guard session died with its visibility. The
-    // rest of that tail is delivered here, to a tab with no session and no
-    // cooldown, where it would re-accumulate into an unintended switch. Seed a
-    // session from the first delta to arrive so the tail is judged in the tab
-    // it landed in. The seeding delta is evidence, not input: it is dropped.
-    //
-    // The arrival guard is the last defense against a handed-off tail
-    // switching again in the tab it lands in, and being wrong in that
-    // direction costs an unintended switch, while being conservative costs at
-    // most one continuous delta inside a 32ms window. A recognized notch never
-    // seeds — a detent cannot be a momentum tail — so a clicky wheel pays
-    // nothing on arrival. Only a wheel whose notches the browser does not
-    // identify (see isWheelNotchEvent) can still lose one landing inside the
-    // window.
+    // Arrival guard. The gesture that switched to this tab committed in the
+    // previous document, whose guard session died with its visibility, and
+    // the rest of its tail is delivered here, to a tab with no session and no
+    // cooldown. Seed a session from the first continuous delta that arrives
+    // within WHEEL_ARRIVAL_GUARD_WINDOW_MS of becoming visible, so the tail is
+    // judged here too. The seeding delta is evidence, not input: it is
+    // dropped. That costs at most one delta; missing a tail costs an unwanted
+    // switch. A recognized notch never seeds (a detent cannot be a momentum
+    // tail); only a wheel whose notches go unrecognized (see
+    // isWheelNotchEvent) can lose one on arrival.
     if (
       !momentumGuardSession
       && !isNotch
@@ -1114,8 +1420,8 @@ export function initApp(): void {
       computeNextBurstCount(now),
       settings.wheelAcceleration,
     );
-    // The whole trigger: the configured sensitivity, accelerated by the
-    // current burst. Nothing adjusts it per device.
+    // The trigger is the configured sensitivity, shortened by acceleration
+    // during a burst, and nothing else.
     if (Math.abs(wheelAccumulator) < acceleratedDistance) return;
     const direction = resolveWheelDirection(wheelAccumulator, settings.invertScroll);
     const cycleRan = runWheelCycle(
@@ -1123,24 +1429,25 @@ export function initApp(): void {
       wheelAccumulator > 0 ? 1 : -1,
       now,
     );
+    // A switch spends the whole accumulated distance, so one swipe never pays
+    // toward the next. With overshootGuard on, distance that crossed the
+    // trigger during the cooldown is dropped the same way.
     if (cycleRan || settings.overshootGuard) {
       wheelAccumulator = 0;
       lastGestureMagnitudePx = 0;
       return;
     }
-    // Dead in the shipped product today: normalizeTabWheelSettings
-    // force-trues overshootGuard, so `cycleRan || settings.overshootGuard`
-    // above is always true and this line never runs. Kept as
-    // defense-in-depth in case that ever changes (a future settings
-    // relaxation, or an unnormalized settings object reaching here) — if it
-    // does run, an overshoot may carry at most one trigger's worth of
-    // distance into the next switch.
+    // Only reachable with overshootGuard off, which normalizeTabWheelSettings
+    // never produces (it always sets it true). If it can ever be off, a
+    // trigger blocked by the cooldown keeps at most one trigger's worth of
+    // distance for the next switch.
     wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(
       Math.abs(wheelAccumulator),
       acceleratedDistance,
     );
   }
 
+  /** Forgets the wheel gesture in progress, including its guard session. */
   function resetWheelGestureState(): void {
     wheelAccumulator = 0;
     lastGestureMagnitudePx = 0;
@@ -1149,15 +1456,19 @@ export function initApp(): void {
     momentumGuardSession = null;
   }
 
+  /**
+   * Applies settings saved from the popup or settings page to this live page,
+   * and ends any gesture in progress so it is not finished under new rules.
+   */
   function storageChangedHandler(
     changes: Record<string, browser.Storage.StorageChange>,
     areaName: string,
   ): void {
     if (areaName !== "local") return;
     // Filtering by key keeps the reset scoped to a real settings change: every
-    // other key this extension writes (scroll memory, recent tabs, onboarding) lands
-    // mid-gesture, and zeroing the accumulator on one would silently eat the
-    // switch the user is actively scrolling toward.
+    // other key this extension writes (scroll memory, recent tabs, onboarding)
+    // lands mid-gesture, and zeroing the accumulator on one would silently eat
+    // the switch the user is actively scrolling toward.
     const settingsChange = changes[TABWHEEL_STORAGE_KEYS.settings];
     if (!settingsChange) return;
     settings = normalizeTabWheelSettings(settingsChange.newValue);
@@ -1174,6 +1485,11 @@ export function initApp(): void {
     cancelUnreleasedTabDragGesture();
   }
 
+  /**
+   * Answers the background (top frame only). TABWHEEL_PING confirms this tab
+   * has a live content script; GET_SCROLL and SET_SCROLL carry scroll memory.
+   * SET_SCROLL is acknowledged at once while the restore runs on its own.
+   */
   function messageHandler(message: unknown): Promise<unknown> | undefined {
     const receivedMessage = message as ContentRuntimeMessage;
     switch (receivedMessage.type) {
@@ -1187,6 +1503,10 @@ export function initApp(): void {
     }
   }
 
+  /**
+   * Gaining visibility arms the arrival guard. Losing it ends every gesture in
+   * progress and saves the scroll position while this tab is still current.
+   */
   function visibilityHandler(): void {
     if (document.visibilityState !== "hidden") {
       // A tab activated by a wheel switch starts receiving the tail of the
@@ -1202,16 +1522,25 @@ export function initApp(): void {
     if (isTopFrameContext) flushScrollSnapshot();
   }
 
+  /**
+   * Saves the scroll position as the page goes away. Shared by pagehide and
+   * beforeunload, but only pagehide marks the page hidden: the user can still
+   * cancel a beforeunload.
+   */
   function pageHideHandler(event: Event): void {
     if (event.type === "pagehide") pageHidden = true;
     cancelScrollRestore();
     flushScrollSnapshot();
   }
 
+  /** The page is live again, e.g. restored from the back/forward cache. */
   function pageShowHandler(): void {
     pageHidden = false;
   }
 
+  // Every input listener is on window in the capture phase, so TabWheel sees
+  // an event before any page handler and can swallow it. wheel and
+  // pointermove are non-passive because they call preventDefault.
   window.addEventListener("pointerdown", mouseGestureHandler, true);
   window.addEventListener("pointermove", tabDragPointerMoveHandler, { passive: false, capture: true });
   window.addEventListener("pointercancel", tabDragPointerCancelHandler, true);
@@ -1229,6 +1558,8 @@ export function initApp(): void {
   document.addEventListener("visibilitychange", visibilityHandler);
   browser.storage.onChanged.addListener(storageChangedHandler);
 
+  // Scroll memory and the background's messages belong to the top frame: the
+  // background keeps one scroll position per tab and expects one answer.
   if (isTopFrameContext) {
     window.addEventListener("scroll", scheduleScrollSnapshot, { passive: true, capture: true });
     window.addEventListener("pagehide", pageHideHandler);
@@ -1237,6 +1568,9 @@ export function initApp(): void {
     browser.runtime.onMessage.addListener(messageHandler);
   }
 
+  // Undoes everything above for the next injection. A claim is left first so
+  // an interaction cut short by re-injection stays swallowed, and a released
+  // drag is not cancelled so it can finish settling the tab.
   window.__tabWheelCleanup = () => {
     rememberMouseClaimForReinjection();
     window.removeEventListener("pointerdown", mouseGestureHandler, true);
@@ -1270,6 +1604,8 @@ export function initApp(): void {
     document.getElementById(STATUS_ID)?.remove();
   };
 
+  // Tell the background this tab can take gestures and answer pings. Top
+  // frame only, since only the top frame registers the message listener.
   if (isTopFrameContext) {
     void notifyTabWheelContentReady().catch(() => {});
   }

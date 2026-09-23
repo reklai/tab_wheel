@@ -1,10 +1,15 @@
-// This handler owns TabWheel messages only; unrelated runtime messages must
-// keep flowing to later handlers through UNHANDLED.
+// Maps each TabWheel runtime message to its TabWheelDomain call. This is the
+// hop between the router and the domain (see tabWheelApi.ts for the full path);
+// it only unpacks the message and sender, and the domain holds all behavior.
+//
+// It owns TabWheel messages only; anything else returns UNHANDLED so later
+// handlers still see it.
 
 import browser from "webextension-polyfill";
 import { TabWheelDomain } from "../domains/tabWheelDomain";
 import { RuntimeMessageHandler, UNHANDLED } from "./runtimeRouter";
 
+/** Opens the settings page, reporting failure as a result instead of throwing. */
 async function openOptionsPage(): Promise<TabWheelActionResult> {
   try {
     await browser.runtime.openOptionsPage();
@@ -14,11 +19,19 @@ async function openOptionsPage(): Promise<TabWheelActionResult> {
   }
 }
 
+/**
+ * Builds the router handler for `domain`. `sender.tab` is the calling page's
+ * tab for content-script messages and undefined for the popup, which is why
+ * most cases also forward the message's own windowId.
+ */
 export function createTabWheelMessageHandler(
   domain: TabWheelDomain,
 ): RuntimeMessageHandler {
   return async (message, sender) => {
     switch (message.type) {
+      // Synchronous on purpose: this message doubles as the worker pre-warm
+      // (see notifyTabWheelContentReady), so its reply must not wait on
+      // storage or tab queries.
       case "TABWHEEL_CONTENT_READY":
         return domain.markContentScriptReady(sender.tab);
 
@@ -61,6 +74,8 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_END_TAB_DRAG":
         return await domain.endTabDrag(message.gestureId, sender.tab);
 
+      // Scroll memory is keyed by the sending tab, so only content scripts can
+      // save a position.
       case "TABWHEEL_SAVE_SCROLL_POSITION": {
         const tabId = sender.tab?.id;
         const windowId = sender.tab?.windowId;
@@ -74,6 +89,8 @@ export function createTabWheelMessageHandler(
       }
 
       case "TABWHEEL_OPEN_OPTIONS":
+        // Opening a tab shifts tab indices, so let an in-flight drag in this
+        // window finish its moves first.
         await domain.waitForTabDrag(sender.tab);
         return await openOptionsPage();
 

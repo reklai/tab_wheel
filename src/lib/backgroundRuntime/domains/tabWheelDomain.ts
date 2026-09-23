@@ -1,6 +1,35 @@
-// The background worker owns browser state and may restart at any time. Treat
-// maps below as per-worker caches; only settings, onboarding state, recent-tab
-// and scroll memory survive through storage.
+// The background service worker's TabWheel domain. Everything that reads or
+// changes browser tab state on behalf of the page-side gesture code
+// (src/lib/appInit) and the popup lives here; handlers/tabWheelMessageHandler.ts
+// routes runtime messages to the TabWheelDomain methods returned below.
+//
+// Main flows:
+// - Cycle (modifier + wheel): query the window's tabs (briefly cached) ->
+//   filter to the eligible tabs for the current settings -> pick the next tab
+//   in strip order -> probe its content script when restricted-page skipping
+//   is on -> activate it -> restore its saved scroll position. After landing,
+//   the neighbors a continued gesture would reach are probed off the hot path.
+// - Click actions (new tab, back to recent tab, close to recent, duplicate,
+//   mute, history back/forward) act on the active tab of the sender's window.
+// - Drag current tab: a drag session reserves its window, so its moves never
+//   interleave with a cycle, a click action, or another drag in that window.
+// - Scroll memory: pages report their scroll position, we keep it per tab, and
+//   a switch that lands on the tab restores it.
+// - Lifecycle: install, update, browser startup, and every worker start inject
+//   the content script into tabs that are already open, so nothing needs a
+//   reload to start working.
+//
+// Every gesture, click action, and drag move for a window runs through one
+// per-window task queue, so each one sees the tab strip the previous one left.
+//
+// State: the MV3 service worker can be killed at any moment and restarted by
+// the next event, so every Map, Set, and timer in createTabWheelDomain is a
+// per-worker cache that must be safe to lose. Only settings, onboarding state,
+// recent-tab history, and scroll memory persist, in browser.storage.local.
+//
+// Pure decision logic (cycle target index, drag target index, restricted-URL
+// rules) lives in src/lib/core/tabWheel/* so it can be tested without a
+// browser. This file is the browser-facing glue around it.
 
 import browser, { Tabs } from "webextension-polyfill";
 import {
@@ -32,9 +61,15 @@ import {
   updateTabToolbarBadge,
 } from "./toolbarBadge";
 
+/** Saved scroll positions, keyed by stringified tab id (see tabKey). */
 type ScrollMemoryByTabId = Record<string, TabWheelScrollMemoryEntry>;
+/** Most-recent-first tab ids per window, keyed by stringified window id. */
 type RecentTabIdsByWindowId = TabWheelRecentTabState;
 
+/**
+ * The slice of Chrome's tabGroups API this module uses. The polyfill's types
+ * don't include it, so we declare what we read and look it up at runtime.
+ */
 interface BrowserTabGroup {
   id: number;
   collapsed: boolean;
@@ -55,6 +90,10 @@ interface BrowserTabGroupsApi {
   onUpdated?: BrowserTabGroupEvent;
 }
 
+/**
+ * Counts from a bulk content-script injection pass. Tabs that are discarded
+ * or on restricted URLs are "skipped" and never counted as attempted.
+ */
 interface ExistingTabActivationResult {
   attempted: number;
   injected: number;
@@ -62,12 +101,17 @@ interface ExistingTabActivationResult {
   failed: number;
 }
 
+/** A short-lived snapshot of one window's tabs (see WINDOW_TABS_CACHE_TTL_MS). */
 interface WindowTabsCacheEntry {
   tabs: Tabs.Tab[];
   expiresAt: number;
 }
 
 interface ActivateTabOptions {
+  /**
+   * Start the scroll restore without waiting for it. Gesture paths set this so
+   * the switch resolves as soon as the tab is active.
+   */
   restoreScrollAsync?: boolean;
 }
 
@@ -77,25 +121,47 @@ interface EnsurePageGestureProbeOptions {
   recordFailure?: boolean;
 }
 
+/**
+ * A negative readiness answer for one tab. It only applies while the tab is
+ * still on `url`; a navigation makes it stale.
+ */
 interface ContentScriptUnavailableEntry {
   url: string;
   expiresAt: number;
 }
 
+/**
+ * Marks a discarded tab we just switched to as "waking". While the hold is
+ * live, cycling away does not capture its scroll position, because a waking
+ * document reports top-of-page and would overwrite the saved position.
+ */
 interface DiscardedTabWakeHold {
   tabId: number;
   expiresAt: number;
 }
 
+/**
+ * One in-progress "drag current tab" gesture, identified by the page-generated
+ * gestureId. The session owns its window's drag slot until released.
+ */
 interface BackgroundTabDragSession {
   gestureId: string;
   tabId: number;
   windowId: number;
+  /** Resolves once earlier drags and queued window tasks have drained. */
   ready: Promise<void>;
+  /** Frees the window's drag slot. Idempotent. */
   release: () => void;
+  /** Releases an abandoned session; reset on every begin/move. */
   timeoutId: ReturnType<typeof setTimeout> | null;
 }
 
+/**
+ * The background API for TabWheel. Methods that take `tab` expect the message
+ * sender's tab; `windowId` is for callers without one, such as the popup.
+ * Expected failures come back as `ok: false` results rather than throws, and
+ * their `reason` is user-facing copy shown as-is.
+ */
 export interface TabWheelDomain {
   ensureLoaded(): Promise<void>;
   activateExistingContentScripts(): Promise<ExistingTabActivationResult>;
@@ -124,28 +190,48 @@ export interface TabWheelDomain {
   registerLifecycleListeners(): void;
 }
 
+// Queue key for window tasks when neither the caller nor the tab names a
+// window. Chrome window ids are positive, so 0 never collides with one.
 const FALLBACK_CYCLE_LOCK_WINDOW_ID = 0;
+// Recent-tab history's pre-migration storage key. storageMigrations moves it
+// to the current key; reading it as a fallback keeps history across a failed
+// migration, since ensureLoaded tolerates migrationReady rejecting.
 const LEGACY_RECENT_TABS_STORAGE_KEY = "tabWheelMruState";
+// Long enough to share one tabs.query across the ticks of a fast wheel burst,
+// short enough that a missed invalidation event heals almost immediately.
 const WINDOW_TABS_CACHE_TTL_MS = 350;
+// Coalesces bursts of scroll saves (a cycle captures the tab it leaves, and
+// pages report as they scroll) into one storage write.
 const SCROLL_MEMORY_SAVE_DEBOUNCE_MS = 120;
 // Bounds how long resolving a switch may wait on one candidate's readiness.
 // Expiry means "slow", which lands rather than skips, so the budget only has
 // to cover the common fast path — not protect reachability.
 const GESTURE_TARGET_PROBE_TIMEOUT_MS = 150;
+// How many unavailable candidates one gesture tick may skip past before it
+// gives up. Caps the worst-case tick at a few probe budgets.
 const MAX_GESTURE_PROBE_ATTEMPTS = 4;
 // How far the post-switch pre-probe looks in each cycle direction. Two covers
 // the tabs a continued gesture reaches within the next couple of cooldowns
-// (which is what the hot-path readiness probe is currently paid for), while
+// (the ones the hot-path readiness probe would otherwise pay for), while
 // keeping the speculative work per switch bounded at four tabs.
 const NEIGHBOR_PREPROBE_DEPTH = 2;
+// How long a "this tab can't host the content script" answer is trusted before
+// the tab is probed again. Short, so a transient refusal (a tab mid-navigation,
+// say) doesn't hide the tab from cycling for long.
 const CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS = 2500;
 // A speculative probe deliberately does not write the negative cache, so it
 // needs its own way to not retry a tab that just failed. Mirrors the negative
 // cache's window so the retry cadence is unchanged; the difference is only
 // that this one is invisible to cycle eligibility.
 const NEIGHBOR_PREPROBE_RETRY_COOLDOWN_MS = CONTENT_SCRIPT_UNAVAILABLE_CACHE_TTL_MS;
+// Ping schedule after injecting on a gesture or tab-activation path. Kept
+// short; hot-path callers also cap it with GESTURE_TARGET_PROBE_TIMEOUT_MS.
 const GESTURE_CONTENT_SCRIPT_READY_RETRY_DELAYS_MS = [0, 80, 180] as const;
+// Delivery retries for SET_SCROLL while a landed tab's content script comes
+// up. Once delivered, the page runs its own retries until layout settles.
 const SCROLL_RESTORE_RETRY_DELAYS_MS = [0, 80, 220, 500, 900, 1500, 2400, 3600] as const;
+// A discarded tab reloads from scratch when woken, so it gets one extra,
+// later attempt.
 const DISCARDED_SCROLL_RESTORE_RETRY_DELAYS_MS = [...SCROLL_RESTORE_RETRY_DELAYS_MS, 4000] as const;
 // A safety net, not the real release: the hold lifts when the wake completes
 // (onUpdated status "complete"), the user switches away, or the tab closes.
@@ -154,8 +240,12 @@ const DISCARDED_SCROLL_RESTORE_RETRY_DELAYS_MS = [...SCROLL_RESTORE_RETRY_DELAYS
 // expired hold lets cycle-away capture a waking document's top-of-page scroll
 // over the position the user actually left.
 const DISCARDED_WAKE_HOLD_SAFETY_MS = 15000;
+// Releases a drag whose page went away without ending it. A live drag never
+// reaches this: the page re-sends begin as a keepalive well inside the window.
 const TAB_DRAG_SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Persisted state is plain JSON objects, so window and tab ids become string
+// keys. Always go through these so keys are spelled one way.
 function windowKey(windowId: number): string {
   return String(windowId);
 }
@@ -164,6 +254,11 @@ function tabKey(tabId: number): string {
   return String(tabId);
 }
 
+/**
+ * Resolves with `task`'s value, or with `fallback` if it rejects or takes
+ * longer than `timeoutMs`. The task itself is not cancelled; it keeps running
+ * and its late result is ignored.
+ */
 async function resolveWithTimeout<T>(
   task: Promise<T>,
   timeoutMs: number,
@@ -200,6 +295,11 @@ function normalizeScrollDimension(value: unknown): number {
   return Math.max(0, numeric);
 }
 
+/**
+ * Clamps scroll data reported by a page (or read back from storage) to finite,
+ * non-negative numbers. Missing ratios are derived from the offsets, so a
+ * restore can land at the same relative spot after the page's height changes.
+ */
 function normalizeScrollData(value: Partial<ScrollData>): ScrollData {
   const scroll = normalizeScroll(Number(value.scrollX), Number(value.scrollY));
   const scrollWidth = normalizeScrollDimension(value.scrollWidth);
@@ -250,6 +350,10 @@ function normalizeScrollMemoryEntry(rawEntry: unknown): TabWheelScrollMemoryEntr
   };
 }
 
+/**
+ * Parses stored scroll memory. Malformed entries, and entries filed under a key
+ * that doesn't match their own tab id, are dropped rather than repaired.
+ */
 function normalizeScrollMemory(rawValue: unknown): ScrollMemoryByTabId {
   if (typeof rawValue !== "object" || rawValue === null || Array.isArray(rawValue)) return {};
   const normalized: ScrollMemoryByTabId = {};
@@ -261,6 +365,7 @@ function normalizeScrollMemory(rawValue: unknown): ScrollMemoryByTabId {
   return normalized;
 }
 
+/** Keeps only the most recently updated MAX_SCROLL_MEMORY_ENTRIES entries. */
 function trimScrollMemory(memory: ScrollMemoryByTabId): ScrollMemoryByTabId {
   const entries = Object.values(memory)
     .sort((left, right) => right.updatedAt - left.updatedAt)
@@ -268,6 +373,10 @@ function trimScrollMemory(memory: ScrollMemoryByTabId): ScrollMemoryByTabId {
   return Object.fromEntries(entries.map((entry) => [tabKey(entry.tabId), entry]));
 }
 
+/**
+ * Parses stored recent-tab history: positive integer ids only, deduplicated
+ * with the first (most recent) occurrence kept, capped at MAX_RECENT_TABS.
+ */
 function normalizeRecentTabState(rawValue: unknown): RecentTabIdsByWindowId {
   if (typeof rawValue !== "object" || rawValue === null || Array.isArray(rawValue)) return {};
   const normalized: RecentTabIdsByWindowId = {};
@@ -318,6 +427,7 @@ function isRestrictedTab(tab: Tabs.Tab): boolean {
   return isPageGestureRestrictedUrl(tab.url);
 }
 
+/** Chrome's tabGroups API, or null when it isn't exposed to this context. */
 function getBrowserTabGroupsApi(): Partial<BrowserTabGroupsApi> | null {
   return (browser as unknown as { tabGroups?: Partial<BrowserTabGroupsApi> }).tabGroups ?? null;
 }
@@ -334,6 +444,11 @@ function normalizeTabGroupId(groupId: number | undefined): number {
   return groupId ?? -1;
 }
 
+/**
+ * Filters a window's tabs down to the ones a cycle may land on under the
+ * current settings, sorted in tab-strip order. Pure: the content-script
+ * negative cache is layered on top by getGestureEligibleTabs.
+ */
 function getEligibleTabs(
   tabs: Tabs.Tab[],
   settings: TabWheelSettings,
@@ -354,42 +469,71 @@ function getEligibleTabs(
     .sort((left, right) => getTabIndex(left) - getTabIndex(right));
 }
 
+/** Lets callers skip a storage write when a list came out unchanged. */
 function hasSameNumberList(left: number[], right: number[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+/**
+ * Creates the domain. Call once per worker start, then call
+ * registerLifecycleListeners synchronously so Chrome's events reach this
+ * worker instance. `migrationReady` is the storage migration for this start;
+ * persisted state is not read until it settles, whether or not it succeeds.
+ */
 export function createTabWheelDomain(options: {
   migrationReady?: Promise<unknown>;
 } = {}): TabWheelDomain {
   const migrationReady = options.migrationReady ?? Promise.resolve();
+  // Persisted state, mirrored in memory. Loaded once by ensureLoaded and
+  // written back after each change, so a killed worker loses little.
   let scrollMemoryByTabId: ScrollMemoryByTabId = {};
   let recentTabIdsByWindowId: RecentTabIdsByWindowId = {};
+  // Everything below is per-worker and rebuilt on demand after a restart.
+  // Short-lived snapshots of tabs.query and tabGroups.query, dropped by the
+  // tab and group events in registerLifecycleListeners.
   const windowTabsCacheByWindowId = new Map<number, WindowTabsCacheEntry>();
   const collapsedTabGroupIdsCacheByWindowId = new Map<number, {
     collapsedTabGroupIds: Set<number>;
     expiresAt: number;
   }>();
+  // Tab id -> the URL its content script last confirmed it was running on.
+  // Only trusted while the tab is still on that URL.
   const contentScriptReadyUrlsByTabId = new Map<number, string>();
+  // Serializes gestures, click actions, and drag moves per window id.
   const windowGestureTaskQueue = createKeyedTaskQueue();
   const tabDragSessionsById = new Map<string, BackgroundTabDragSession>();
+  // The tail of each window's chain of drag sessions. While present, new
+  // window tasks wait for it (see runSerializedWindowTask).
   const tabDragTailsByWindowId = new Map<number, Promise<void>>();
   const recentTabStateWriteChain = createWriteChain();
+  // The last active tab we saw per window, so onActivated knows which tab was
+  // left and can cancel its pending scroll restore.
   const activeTabIdsByWindowId = new Map<number, number>();
+  // Latest restore token per tab. A running restore stops once its token is
+  // no longer current (see beginScrollRestore).
   const scrollRestoreTokensByTabId = new Map<number, number>();
+  // The negative readiness cache. It removes tabs from cycling, so only the
+  // hot path may write it (see resolvePageGestureReadiness).
   const contentScriptUnavailableUrlsByTabId = new Map<number, ContentScriptUnavailableEntry>();
+  // Neighbor pre-probe bookkeeping (see warmNeighborReadiness).
   const neighborWarmupTabIds = new Set<number>();
   const neighborPreprobedUntilByTabId = new Map<number, number>();
   const neighborWarmupGenerationByWindowId = new Map<number, number>();
   const discardedWakeHoldByWindowId = new Map<number, DiscardedTabWakeHold>();
   let scrollRestoreSerial = 0;
+  // Debounced scroll-memory save: callers each get a promise that settles
+  // with the write that eventually covers their change.
   let scrollMemorySaveTimer: ReturnType<typeof setTimeout> | null = null;
   let scrollMemorySaveResolvers: Array<{
     resolve: () => void;
     reject: (error: unknown) => void;
   }> = [];
   let scrollMemoryWriteChain: Promise<void> = Promise.resolve();
+  // Kept current by storage.onChanged, so settings edits apply immediately.
   let settingsCache: TabWheelSettings | null = null;
 
+  // Loads persisted state once per worker. Concurrent callers share the
+  // in-flight load; a failed load is retried by the next caller.
   const ensureLoaded = createInFlightMemo(async () => {
     await migrationReady.catch(() => {});
     const stored = await browser.storage.local.get([
@@ -405,6 +549,7 @@ export function createTabWheelDomain(options: {
     );
   });
 
+  /** Settings from the in-memory cache, loading from storage on first use. */
   async function getSettings(): Promise<TabWheelSettings> {
     if (settingsCache) return settingsCache;
     settingsCache = await loadTabWheelSettings();
@@ -422,6 +567,10 @@ export function createTabWheelDomain(options: {
     });
   }
 
+  /**
+   * Writes scroll memory now and settles every pending saveScrollMemory
+   * promise with the result. Writes are chained so they land in order.
+   */
   function flushScrollMemorySave(): Promise<void> {
     if (scrollMemorySaveTimer) {
       clearTimeout(scrollMemorySaveTimer);
@@ -444,6 +593,10 @@ export function createTabWheelDomain(options: {
     return scrollMemoryWriteChain;
   }
 
+  /**
+   * Schedules a debounced write of scroll memory. The returned promise settles
+   * when the write that includes this change finishes.
+   */
   function saveScrollMemory(): Promise<void> {
     const pendingSave = new Promise<void>((resolve, reject) => {
       scrollMemorySaveResolvers.push({ resolve, reject });
@@ -456,12 +609,15 @@ export function createTabWheelDomain(options: {
     return pendingSave;
   }
 
+  // Writes are chained so an older snapshot can never land after a newer one.
   function saveRecentTabState(): Promise<void> {
     return recentTabStateWriteChain.enqueue(() => browser.storage.local.set({
       [TABWHEEL_STORAGE_KEYS.recentTabs]: recentTabIdsByWindowId,
     }));
   }
 
+  // Returns null instead of throwing when tabs.query rejects (for example, for
+  // a window that just closed), so callers can tell "no answer" from "no tabs".
   function queryTabsSafe(queryInfo: Tabs.QueryQueryInfoType): Promise<Tabs.Tab[] | null> {
     return browser.tabs.query(queryInfo).catch(() => null);
   }
@@ -473,6 +629,12 @@ export function createTabWheelDomain(options: {
     return activeTab?.id != null && activeTab.windowId != null ? activeTab : null;
   }
 
+  /**
+   * The tab an action should act on: the sender's tab if it is still active,
+   * otherwise whatever is active in its window (or in `windowId`, or the
+   * current window). Re-reads the tab because the sender's snapshot is from
+   * when the message was sent, and the user may have switched since.
+   */
   async function resolveActiveTab(tab?: Tabs.Tab, windowId?: number): Promise<Tabs.Tab | null> {
     const fallbackWindowId = windowId ?? tab?.windowId;
     if (tab?.id != null && tab.windowId != null) {
@@ -495,6 +657,7 @@ export function createTabWheelDomain(options: {
     return activeTab?.windowId ?? null;
   }
 
+  /** Drops cached tabs and group state for a window, or for all windows. */
   function invalidateWindowTabsCache(windowId: number | undefined): void {
     if (windowId == null) {
       windowTabsCacheByWindowId.clear();
@@ -505,6 +668,11 @@ export function createTabWheelDomain(options: {
     collapsedTabGroupIdsCacheByWindowId.delete(windowId);
   }
 
+  /**
+   * A window's tabs, served from a brief cache. Callers that change the strip
+   * (create, move, close) must invalidate it themselves rather than wait for
+   * the tab events, which can arrive after the next wheel tick.
+   */
   async function getWindowTabs(windowId: number): Promise<Tabs.Tab[]> {
     const cached = windowTabsCacheByWindowId.get(windowId);
     if (cached && cached.expiresAt > Date.now()) return cached.tabs;
@@ -517,6 +685,9 @@ export function createTabWheelDomain(options: {
     return tabs;
   }
 
+  // The readiness caches are keyed by tab and pinned to a URL: a positive or
+  // negative answer only holds while the tab is still on the URL it was
+  // recorded for, and marking one side clears the other.
   function markContentScriptAvailable(tab: Tabs.Tab, url: string): void {
     if (tab.id == null) return;
     contentScriptReadyUrlsByTabId.set(tab.id, url);
@@ -547,6 +718,10 @@ export function createTabWheelDomain(options: {
     return false;
   }
 
+  /**
+   * Ids of collapsed groups in a window, used to skip "hidden" tabs. Skips
+   * the tabGroups query entirely when the setting is off or no tab is grouped.
+   */
   async function getCollapsedTabGroupIds(
     windowId: number,
     tabs: Tabs.Tab[],
@@ -573,6 +748,12 @@ export function createTabWheelDomain(options: {
     return collapsedTabGroupIds;
   }
 
+  /**
+   * The tabs a gesture may cycle through: getEligibleTabs plus, when skipping
+   * restricted pages, removal of tabs recently found unable to host the
+   * content script. The only place an active tab becomes the group id that
+   * cycle-within-group compares against.
+   */
   async function getGestureEligibleTabs(
     tabs: Tabs.Tab[],
     settings: TabWheelSettings,
@@ -591,6 +772,10 @@ export function createTabWheelDomain(options: {
       : eligibleTabs;
   }
 
+  // Scroll restores are cancelled by token, not by handle. Each restore takes
+  // a fresh serial for its tab and checks it before every retry; bumping the
+  // serial (a newer restore, the user leaving the tab, a navigation) makes
+  // the older one stop at its next check.
   function beginScrollRestore(tabId: number): number {
     const token = ++scrollRestoreSerial;
     scrollRestoreTokensByTabId.set(tabId, token);
@@ -606,6 +791,10 @@ export function createTabWheelDomain(options: {
     return scrollRestoreTokensByTabId.get(tabId) === token;
   }
 
+  /**
+   * The window's wake hold if it still covers `activeTabId`. A hold for a
+   * different tab, or one past its safety timeout, is deleted on read.
+   */
   function getActiveDiscardedWakeHold(windowId: number, activeTabId: number): DiscardedTabWakeHold | null {
     const hold = discardedWakeHoldByWindowId.get(windowId);
     if (!hold) return null;
@@ -616,6 +805,8 @@ export function createTabWheelDomain(options: {
     return hold;
   }
 
+  // Called after activating a tab. A no-op unless the tab was discarded, in
+  // which case this activation is what wakes it.
   function setDiscardedWakeHold(tab: Tabs.Tab): void {
     if (tab.id == null || tab.windowId == null || tab.discarded !== true) return;
     discardedWakeHoldByWindowId.set(tab.windowId, {
@@ -630,6 +821,11 @@ export function createTabWheelDomain(options: {
     }
   }
 
+  /**
+   * Drops tabs that are no longer in the window from its recent-tab history.
+   * onRemoved handles closed tabs; this also catches tabs dragged to another
+   * window, so run it before reading the history.
+   */
   async function reconcileRecentTabs(windowId: number, tabs: Tabs.Tab[]): Promise<void> {
     await ensureLoaded();
     const key = windowKey(windowId);
@@ -642,7 +838,8 @@ export function createTabWheelDomain(options: {
     await saveRecentTabState();
   }
 
-  // Recent-tab state is advisory. A storage failure should not block a gesture.
+  // Moves a tab to the front of its window's recent-tab history. The history
+  // is advisory, so a storage failure is logged and never blocks a gesture.
   async function recordRecentTab(tabId: number, windowId: number): Promise<void> {
     try {
       await ensureLoaded();
@@ -658,6 +855,12 @@ export function createTabWheelDomain(options: {
     }
   }
 
+  /**
+   * Injects the content script bundle with chrome.scripting. Resolves false,
+   * never throws, when Chrome refuses (restricted page, missing permission, the
+   * tab closed). Re-injecting into a live page is safe: the script tears down
+   * its previous instance.
+   */
   async function executeContentScriptInTab(tabId: number, allFrames: boolean): Promise<boolean> {
     const runtimeBrowser = browser as typeof browser & {
       scripting?: {
@@ -683,6 +886,11 @@ export function createTabWheelDomain(options: {
     }
   }
 
+  /**
+   * Injects the content script into an already-open tab. Discarded tabs have
+   * no live document, so they are "skipped"; the manifest injects them when a
+   * switch wakes them. Restricted URLs are skipped because Chrome refuses them.
+   */
   async function injectContentScriptIntoTab(tab: Tabs.Tab): Promise<"injected" | "skipped" | "failed"> {
     if (tab.id == null || tab.discarded === true || isPageGestureRestrictedUrl(tab.url)) return "skipped";
 
@@ -695,8 +903,9 @@ export function createTabWheelDomain(options: {
     return await executeContentScriptInTab(tab.id, false) ? "injected" : "failed";
   }
 
-  // Reset keeps onboarding completion so restoring settings does not reopen the
-  // first-run coach, but clears all behavior and position state.
+  // Reset to defaults: clears settings, recent-tab history, and scroll memory,
+  // in storage and in memory (a live worker would otherwise keep serving the
+  // old maps). Onboarding completion is kept so the first-run coach stays done.
   async function resetState(): Promise<TabWheelActionResult> {
     await ensureLoaded();
     recentTabIdsByWindowId = {};
@@ -710,6 +919,11 @@ export function createTabWheelDomain(options: {
     return { ok: true };
   }
 
+  /**
+   * Injects the content script into every open tab in every window. Used on
+   * install, update, and browser startup, and by the popup and options page.
+   * Tabs are injected in parallel; one tab failing does not stop the rest.
+   */
   async function activateExistingContentScripts(): Promise<ExistingTabActivationResult> {
     const result: ExistingTabActivationResult = {
       attempted: 0,
@@ -747,6 +961,11 @@ export function createTabWheelDomain(options: {
     await applyToolbarBadgeForTab(tab);
   }
 
+  /**
+   * Makes sure the active tab of each window has a live content script,
+   * pinging first and injecting only if the ping goes unanswered. The active
+   * tabs are the ones the user will gesture on first after a worker start.
+   */
   async function ensureActiveTabContentScripts(): Promise<void> {
     const windows = await browser.windows.getAll().catch(() => []);
     await Promise.all(windows.map(async (win) => {
@@ -766,6 +985,10 @@ export function createTabWheelDomain(options: {
     }));
   }
 
+  /**
+   * Same check for one tab as it becomes active. The wait after injecting is
+   * bounded by the gesture probe budget.
+   */
   async function ensureContentScriptForActiveTab(tabId: number): Promise<void> {
     const tab = await browser.tabs.get(tabId).catch(() => null);
     if (!tab || tab.id == null) return;
@@ -781,6 +1004,11 @@ export function createTabWheelDomain(options: {
     ).catch(() => {});
   }
 
+  /**
+   * Asks the tab's content script to answer and records the result in the
+   * positive cache. A failed ping only clears the positive entry; it never
+   * marks the tab unavailable, since the script may simply not be up yet.
+   */
   async function pingContentScript(tab: Tabs.Tab): Promise<boolean> {
     if (tab.id == null) return false;
     const url = normalizePageUrl(tab.url);
@@ -795,6 +1023,8 @@ export function createTabWheelDomain(options: {
     }
   }
 
+  // Pings on a schedule until the script answers. The default schedule is for
+  // user-initiated refreshes, which can afford to wait longer than a gesture.
   async function waitForContentScriptReady(
     tab: Tabs.Tab,
     retryDelaysMs: readonly number[] = [0, 90, 240, 450, 800],
@@ -814,6 +1044,7 @@ export function createTabWheelDomain(options: {
     }
   }
 
+  /** The status the popup shows for a tab. Pings but never injects. */
   async function resolveContentScriptStatus(tab: Tabs.Tab | null): Promise<TabWheelContentScriptStatus> {
     if (!tab?.id) return "unavailable";
     if (isPageGestureRestrictedUrl(tab.url)) return "unavailable";
@@ -825,11 +1056,12 @@ export function createTabWheelDomain(options: {
     return await pingContentScript(tab) ? "ready" : "unavailable";
   }
 
-  // Also the MV3 worker pre-warm target (see appInit's wheelHandler), which is
-  // why it is chosen: it returns without awaiting anything. Keep it that way
-  // and keep its side effects to seeding the readiness caches — the recent-tab touch
-  // below is deliberately detached and a no-op for an already-current tab —
-  // or every gesture chord starts paying for whatever gets added here.
+  // Handles the page's "content script is up" message. The page also sends it
+  // to pre-warm the MV3 worker before a gesture (see appInit's wheel and
+  // modifier-keydown handlers), which works because this returns without
+  // awaiting anything. Keep it that way, and keep its side effects to seeding
+  // the readiness caches (the recent-tab touch below is detached and a no-op
+  // for an already-current tab), or every gesture chord pays for what's added.
   function markContentScriptReady(tab?: Tabs.Tab): TabWheelActionResult {
     if (!tab?.id) return { ok: false, reason: "Couldn't find the current tab" };
     if (isPageGestureRestrictedUrl(tab.url)) return { ok: false, reason: "TabWheel can't save your place on this page" };
@@ -882,6 +1114,7 @@ export function createTabWheelDomain(options: {
     return readiness;
   }
 
+  /** True only when the tab is confirmed ready; "slow" counts as not ready. */
   async function ensurePageGestureAvailable(
     tab: Tabs.Tab,
     options: EnsurePageGestureProbeOptions = {},
@@ -889,6 +1122,11 @@ export function createTabWheelDomain(options: {
     return await resolvePageGestureReadiness(tab, options) === "ready";
   }
 
+  /**
+   * Sends the tab its saved scroll position, retrying while the content script
+   * comes up. Only restores when the tab is still on the URL the position was
+   * saved for. Stops early if a newer restore or a navigation supersedes it.
+   */
   async function restoreScroll(tab: Tabs.Tab): Promise<boolean> {
     if (tab.id == null) return false;
     const settings = await getSettings();
@@ -926,6 +1164,9 @@ export function createTabWheelDomain(options: {
     return false;
   }
 
+  // Reads the tab's current scroll from its content script and saves it. Used
+  // on the tab being left, so the position is fresh even if the page's own
+  // debounced report hasn't arrived yet.
   async function captureTabScroll(tab: Tabs.Tab): Promise<void> {
     if (tab.id == null || tab.windowId == null) return;
     const url = normalizePageUrl(tab.url);
@@ -937,8 +1178,8 @@ export function createTabWheelDomain(options: {
     await saveScrollMemory();
   }
 
-  // A discarded tab can report top-of-page while waking. Preserve the old scroll
-  // entry until the wake/restore cycle has settled.
+  // A discarded tab reports top-of-page while it wakes. Keep its saved entry
+  // untouched until the wake has settled (see DiscardedTabWakeHold).
   function captureTabScrollUnlessWaking(tab: Tabs.Tab, settings: TabWheelSettings): void {
     if (!settings.restorePagePosition) return;
     if (tab.id == null || tab.windowId == null) return;
@@ -946,6 +1187,10 @@ export function createTabWheelDomain(options: {
     void captureTabScroll(tab).catch(() => {});
   }
 
+  /**
+   * The popup's summary of a window: where the active tab sits among the tabs a
+   * gesture can reach, how many there are, and whether this page is ready.
+   */
   async function getOverview(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelOverview> {
     await ensureLoaded();
     const settings = await getSettings();
@@ -991,6 +1236,8 @@ export function createTabWheelDomain(options: {
     return candidateTabs.find((tab) => getTabIndex(tab) === targetIndex) || null;
   }
 
+  // The single place a cycle's next tab is resolved. The neighbor pre-probe
+  // goes through here too, so it predicts exactly what the next gesture does.
   function resolveCycleTargetTab(
     activeTab: Tabs.Tab,
     candidateTabs: Tabs.Tab[],
@@ -1000,6 +1247,11 @@ export function createTabWheelDomain(options: {
     return resolveStripTargetTab(activeTab, candidateTabs, direction, settings.wrapAround);
   }
 
+  /**
+   * Picks the tab a cycle should land on. With restricted-page skipping on,
+   * candidates are probed and provably unusable ones are skipped, up to
+   * MAX_GESTURE_PROBE_ATTEMPTS. Returns null when there is nowhere to go.
+   */
   async function resolveAvailableCycleTargetTab(
     activeTab: Tabs.Tab,
     candidateTabs: Tabs.Tab[],
@@ -1022,17 +1274,18 @@ export function createTabWheelDomain(options: {
       if (await resolvePageGestureReadiness(targetTab) !== "unavailable") return targetTab;
       remainingTabs = remainingTabs.filter((candidate) => candidate.id !== targetTab.id);
     }
-    // Do not activate an unprobed restricted-page candidate. Failed probes are
-    // cached, so the next gesture tick will skip them cheaply.
+    // Out of attempts: don't land on a candidate we haven't probed. The
+    // refusals are cached, so the next tick skips them cheaply and reaches
+    // further.
     return null;
   }
 
   // Walks the cycle's own target resolution outward from the tab just
   // activated, so pre-probing inherits the exact tab-strip and wrap-around
-  // semantics the next real gesture will use instead of
-  // re-deriving them. Stops on a repeat: both resolvers hand back the tab they
-  // were given once a non-wrapping cycle reaches the edge, and a wrapping
-  // cycle in a short list comes back around to somewhere already collected.
+  // semantics the next real gesture will use instead of re-deriving them.
+  // Stops on a repeat: the resolver hands back the tab it was given once a
+  // non-wrapping cycle reaches the edge, and a wrapping cycle in a short list
+  // comes back around to somewhere already collected.
   function collectNeighborCandidateTabs(
     originTab: Tabs.Tab,
     candidateTabs: Tabs.Tab[],
@@ -1104,8 +1357,8 @@ export function createTabWheelDomain(options: {
   // ever make the next cycle faster, never narrower. It can add readiness
   // (warming a tab the user has not reached yet) but it can never take a tab
   // away, which is why the probe runs with recordFailure: false — see
-  // ensurePageGestureAvailable for why a speculative timeout is not evidence
-  // of an unusable tab. Nothing in this path may write the negative cache.
+  // resolvePageGestureReadiness for why a timeout is not evidence of an
+  // unusable tab. Nothing in this path may write the negative cache.
   //
   // Suppression is layered so that invariant costs nothing: probes run one at
   // a time so a cold window cannot become four simultaneous injections,
@@ -1143,6 +1396,11 @@ export function createTabWheelDomain(options: {
     }
   }
 
+  /**
+   * Switches to a tab and does the bookkeeping every switch needs: a wake hold
+   * if it was discarded, a recent-tab entry, and a scroll restore. Resolves
+   * false if Chrome refused the switch, typically because the tab just closed.
+   */
   async function activateTab(targetTab: Tabs.Tab, options: ActivateTabOptions = {}): Promise<boolean> {
     if (targetTab.id == null) return false;
     const didActivate = await browser.tabs
@@ -1162,6 +1420,9 @@ export function createTabWheelDomain(options: {
     return true;
   }
 
+  // Runs `task` on the window's queue without checking for a drag. Only the
+  // drag path uses this directly: a drag's own moves must not wait on the drag
+  // slot they hold, or they would deadlock behind themselves.
   function runRawSerializedWindowTask<T>(
     tab: Tabs.Tab | undefined,
     windowId: number | undefined,
@@ -1173,6 +1434,11 @@ export function createTabWheelDomain(options: {
     );
   }
 
+  /**
+   * Runs `task` after everything already queued for the window, and after any
+   * drag that holds the window. Every user action on the tab strip goes
+   * through here so each one sees the strip the previous one left behind.
+   */
   async function runSerializedWindowTask<T>(
     tab: Tabs.Tab | undefined,
     windowId: number | undefined,
@@ -1184,12 +1450,15 @@ export function createTabWheelDomain(options: {
     return await runRawSerializedWindowTask(tab, windowId, task);
   }
 
+  /** Resolves once no drag holds the tab's window. */
   async function waitForTabDrag(tab?: Tabs.Tab): Promise<void> {
     if (tab?.windowId == null) return;
     const dragTail = tabDragTailsByWindowId.get(tab.windowId);
     if (dragTail) await dragTail;
   }
 
+  // Ends a session and frees its window's drag slot. Safe to call for a
+  // session that is already gone.
   function releaseTabDragSession(gestureId: string): void {
     const session = tabDragSessionsById.get(gestureId);
     if (!session) return;
@@ -1206,6 +1475,12 @@ export function createTabWheelDomain(options: {
     );
   }
 
+  /**
+   * Starts a drag of the sender's tab, or refreshes the session when called
+   * again with the same gestureId (the page re-sends begin as a keepalive).
+   * Resolves once the drag owns its window: earlier drags have ended and the
+   * cycles and click actions already queued have run.
+   */
   async function beginTabDrag(
     gestureId: string,
     tab?: Tabs.Tab,
@@ -1226,6 +1501,10 @@ export function createTabWheelDomain(options: {
       return { ok: true };
     }
 
+    // Drags in a window form a chain: each session appends a promise that stays
+    // pending until it is released, and the chain's tail is what new window
+    // tasks wait on. The map entry is removed once the last drag in the chain
+    // releases, unless a newer drag has already extended it.
     const windowId = tab.windowId;
     const previousTail = tabDragTailsByWindowId.get(windowId) ?? Promise.resolve();
     let releaseOwnedQueue = () => {};
@@ -1246,6 +1525,8 @@ export function createTabWheelDomain(options: {
       }
     });
 
+    // Wait for the previous drag, then for tasks queued before this drag took
+    // the slot. Later window tasks wait on the tail installed above instead.
     const ready = (async () => {
       await previousTail;
       await runRawSerializedWindowTask(tab, windowId, async () => {});
@@ -1260,6 +1541,7 @@ export function createTabWheelDomain(options: {
     };
     tabDragSessionsById.set(gestureId, session);
     await ready;
+    // The session can be released while we waited (tab closed, window closed).
     if (tabDragSessionsById.get(gestureId) !== session) {
       return { ok: false, reason: "The drag timed out" };
     }
@@ -1267,6 +1549,7 @@ export function createTabWheelDomain(options: {
     return { ok: true };
   }
 
+  // Ends a drag. Unknown ids are already released, which is success.
   async function endTabDrag(
     gestureId: string,
     tab?: Tabs.Tab,
@@ -1280,6 +1563,8 @@ export function createTabWheelDomain(options: {
     return { ok: true };
   }
 
+  // Marks onboarding's "first real gesture" milestone. Reads first so repeat
+  // gestures don't write.
   async function recordFirstGestureCycle(): Promise<void> {
     const state = await loadTabWheelOnboardingState();
     if (state.firstGestureCycleCompleted) return;
@@ -1289,6 +1574,7 @@ export function createTabWheelDomain(options: {
     });
   }
 
+  // The body of a cycle. Must only run inside the window queue (see cycle).
   async function cycleUnlocked(
     direction: "prev" | "next",
     source: TabWheelCycleSource,
@@ -1312,6 +1598,8 @@ export function createTabWheelDomain(options: {
       return { ok: false, reason: "No more tabs in that direction" };
     }
 
+    // Stop any restore still running on the tab we're leaving so it can't
+    // scroll the page after the user moved on, then save where they left it.
     cancelScrollRestore(activeTab.id);
     captureTabScrollUnlessWaking(activeTab, settings);
     const didActivate = await activateTab(targetTab, { restoreScrollAsync: true });
@@ -1328,6 +1616,10 @@ export function createTabWheelDomain(options: {
     return { ok: true, tabId: targetTab.id };
   }
 
+  /**
+   * Switches one eligible tab in `direction`. Serialized per window, so a
+   * fast wheel burst lands each tick on the tab the previous tick reached.
+   */
   async function cycle(
     direction: "prev" | "next",
     source: TabWheelCycleSource,
@@ -1341,6 +1633,11 @@ export function createTabWheelDomain(options: {
     );
   }
 
+  /**
+   * The window's recent tabs, most recent first, excluding the active one.
+   * Unlike cycling, no eligibility filters apply: "go back" means the exact
+   * tab the user was on, whatever it is.
+   */
   function getRecentCandidateTabs(
     windowId: number,
     tabs: Tabs.Tab[],
@@ -1356,6 +1653,8 @@ export function createTabWheelDomain(options: {
       .filter((candidate): candidate is Tabs.Tab => candidate != null);
   }
 
+  // Opens Chrome's own new tab page right after the active tab, as if the
+  // user had opened it from that tab.
   async function openNativeNewTab(
     tab?: Tabs.Tab,
     windowId?: number,
@@ -1381,6 +1680,8 @@ export function createTabWheelDomain(options: {
     });
   }
 
+  // Returns to the previously used tab, falling back through the history if
+  // the most recent one can't be activated.
   async function activateMostRecentTab(
     tab?: Tabs.Tab,
     windowId?: number,
@@ -1405,6 +1706,11 @@ export function createTabWheelDomain(options: {
     });
   }
 
+  /**
+   * Closes the active tab and lands on the previously used one. The recent tab
+   * is activated before the close so Chrome never briefly activates (and
+   * possibly wakes) whichever neighbor it would pick on its own.
+   */
   async function closeCurrentTabAndActivateRecent(
     tab?: Tabs.Tab,
     windowId?: number,
@@ -1434,6 +1740,7 @@ export function createTabWheelDomain(options: {
     });
   }
 
+  // Duplicates the active tab and switches to the copy.
   async function duplicateTab(
     tab?: Tabs.Tab,
     windowId?: number,
@@ -1454,6 +1761,9 @@ export function createTabWheelDomain(options: {
     });
   }
 
+  // Moves the dragged tab one slot. Must only run inside the window queue.
+  // The tab never crosses the pinned/unpinned boundary or leaves its group:
+  // at those edges resolveTabDragTargetIndex returns null and nothing moves.
   async function moveCurrentTabUnlocked(
     direction: TabWheelMoveDirection,
     tab?: Tabs.Tab,
@@ -1487,6 +1797,11 @@ export function createTabWheelDomain(options: {
     };
   }
 
+  /**
+   * One step of a tab drag. Rejected unless it comes from the tab and window
+   * that began the session. Uses the raw queue: the session already holds the
+   * window's drag slot, so waiting on the slot would deadlock.
+   */
   async function moveCurrentTab(
     direction: TabWheelMoveDirection,
     tab?: Tabs.Tab,
@@ -1510,6 +1825,11 @@ export function createTabWheelDomain(options: {
     );
   }
 
+  /**
+   * Re-injects the content script into the active tab and waits for it to
+   * answer. A tab that refuses injection but already has a working script
+   * still counts as success.
+   */
   async function refreshCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelRefreshResult> {
     await ensureLoaded();
     const activeTab = await resolveActiveTab(tab, windowId);
@@ -1619,6 +1939,10 @@ export function createTabWheelDomain(options: {
     return await navigateCurrentTabHistory("forward", tab, windowId);
   }
 
+  /**
+   * Stores a scroll position reported by a page. Unchanged reports are dropped
+   * without a write, since pages report whenever scrolling settles.
+   */
   async function saveScrollPosition(
     tabId: number,
     windowId: number,
@@ -1651,6 +1975,11 @@ export function createTabWheelDomain(options: {
     return { ok: true };
   }
 
+  /**
+   * Registers every browser event listener the domain needs. Call exactly once,
+   * synchronously during the worker's first run: MV3 only delivers the waking
+   * event to listeners that exist by then.
+   */
   function registerLifecycleListeners(): void {
     browser.runtime.onInstalled.addListener((details: { reason: string; previousVersion?: string }) => {
       // Installs and extension updates leave existing tabs without live content
@@ -1681,6 +2010,7 @@ export function createTabWheelDomain(options: {
       const previousSettings = normalizeTabWheelSettings(settingsChange.oldValue);
       const nextSettings = normalizeTabWheelSettings(settingsChange.newValue);
       updateSettingsCache(settingsChange.newValue);
+      // Turning off "restore page position" also forgets every saved position.
       if (previousSettings.restorePagePosition && !nextSettings.restorePagePosition) {
         scrollMemoryByTabId = {};
         void browser.storage.local.remove(TABWHEEL_STORAGE_KEYS.scrollMemory).catch(() => {});
@@ -1692,6 +2022,8 @@ export function createTabWheelDomain(options: {
     });
 
     browser.tabs.onActivated.addListener((activeInfo: { tabId: number; windowId: number }) => {
+      // This fires for every activation, including ones TabWheel didn't make.
+      // Leaving a tab ends its wake hold and any restore still running on it.
       const previousTabId = activeTabIdsByWindowId.get(activeInfo.windowId);
       activeTabIdsByWindowId.set(activeInfo.windowId, activeInfo.tabId);
       const wakeHold = discardedWakeHoldByWindowId.get(activeInfo.windowId);
@@ -1724,6 +2056,8 @@ export function createTabWheelDomain(options: {
         if (session.tabId === tabId) releaseTabDragSession(session.gestureId);
       }
       invalidateWindowTabsCache(removeInfo?.windowId);
+      // Forget everything keyed by this tab so the per-tab maps and persisted
+      // state don't accumulate closed tabs.
       await ensureLoaded();
       delete scrollMemoryByTabId[tabKey(tabId)];
       contentScriptReadyUrlsByTabId.delete(tabId);
@@ -1751,9 +2085,12 @@ export function createTabWheelDomain(options: {
       if (changeInfo.url || changeInfo.pinned != null || changeInfo.groupId != null) {
         invalidateWindowTabsCache(updatedTab?.windowId);
       }
+      // A finished load is the normal end of a wake hold.
       if (changeInfo.status === "complete") {
         clearDiscardedWakeHoldForTab(tabId);
       }
+      // A navigation invalidates both readiness caches (they are per URL) and
+      // any restore aimed at the previous page.
       if (changeInfo.url) {
         contentScriptReadyUrlsByTabId.delete(tabId);
         contentScriptUnavailableUrlsByTabId.delete(tabId);
@@ -1767,6 +2104,8 @@ export function createTabWheelDomain(options: {
       }
     });
 
+    // Collapsing or expanding a group changes which tabs are eligible, so group
+    // events drop the window's cached tabs and collapsed-group ids.
     const tabGroupsApi = getBrowserTabGroupsApi();
     const invalidateTabGroupWindow = (group: BrowserTabGroup): void => {
       invalidateWindowTabsCache(group.windowId);
@@ -1778,6 +2117,8 @@ export function createTabWheelDomain(options: {
     addTabGroupInvalidationListener(tabGroupsApi?.onRemoved);
     addTabGroupInvalidationListener(tabGroupsApi?.onUpdated);
 
+    // A closed window's ids are never coming back, so drop its drags, caches,
+    // history, and saved scroll positions.
     browser.windows.onRemoved.addListener((windowId: number) => {
       for (const session of tabDragSessionsById.values()) {
         if (session.windowId === windowId) releaseTabDragSession(session.gestureId);
@@ -1801,7 +2142,11 @@ export function createTabWheelDomain(options: {
     });
 
     browser.runtime.onStartup.addListener(async () => {
-      // Housekeeping is best-effort: storage failures must not skip reinject.
+      // Tab and window ids don't survive a browser restart, so recent-tab
+      // history and every per-tab cache from the last session are cleared.
+      // Scroll memory is only trimmed: a restore also requires a URL match, so
+      // an old entry can't land on the wrong page. Housekeeping is best-effort;
+      // a storage failure must not skip the reinjection below.
       try {
         await ensureLoaded();
         scrollMemoryByTabId = trimScrollMemory(scrollMemoryByTabId);

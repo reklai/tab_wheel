@@ -1,5 +1,7 @@
-// Every surface loads settings through this contract. Keep defaults,
-// normalizers, storage keys, and focused-product state together.
+// The settings contract. Every surface (content script, background, popup,
+// options page, onboarding) loads and saves settings and onboarding state
+// through here. Storage keys, defaults, ranges, presets, and normalizers live
+// together so a setting's default, range, and normalization cannot drift apart.
 
 import browser from "webextension-polyfill";
 import {
@@ -9,24 +11,44 @@ import {
 
 export { TABWHEEL_CLICK_ACTIONS };
 
+/** Most saved scroll positions kept; the least recently updated go first. */
 export const MAX_SCROLL_MEMORY_ENTRIES = 300;
+/** Most tab ids kept in each window's recent-tab history. */
 export const MAX_RECENT_TABS = 100;
+/** Version stamped on the stored onboarding state. */
 export const TABWHEEL_ONBOARDING_VERSION = 2;
+/**
+ * The storage.local key of each persisted record. Renaming one orphans the
+ * data already stored under it unless a storage migration moves it.
+ */
 export const TABWHEEL_STORAGE_KEYS = {
   settings: "tabWheelSettings",
   scrollMemory: "tabWheelScrollMemory",
   recentTabs: "tabWheelRecentTabs",
   onboarding: "tabWheelOnboarding",
 } as const;
+/** The modifiers the wheel gesture can be bound to (Shift is a separate flag). */
 export const TABWHEEL_MODIFIER_KEYS: readonly TabWheelModifierKey[] = ["alt", "ctrl", "meta"];
+/** Every wheel preset; "custom" is any combination no named preset matches. */
 export const TABWHEEL_PRESETS: readonly TabWheelPreset[] = ["precise", "balanced", "fast", "custom"];
+// Ranges of the two sensitivity multipliers; higher is faster for both.
+// wheelSensitivity: the wheel travels 80px / sensitivity per switch.
+// tabDragSensitivity ("Drag speed"): the pointer travels 96px / sensitivity
+// per slot (see tabDragCore.ts).
 export const MIN_WHEEL_SENSITIVITY = 0.5;
 export const MIN_TAB_DRAG_SENSITIVITY = 0.6;
 export const MAX_TAB_DRAG_SENSITIVITY = 2;
 export const MAX_WHEEL_SENSITIVITY = 2;
+// Range, in ms, of wheelCooldownMs: the least time between two wheel switches.
 export const MIN_WHEEL_COOLDOWN_MS = 60;
 export const MAX_WHEEL_COOLDOWN_MS = 400;
 
+/**
+ * The wheel values each named preset applies. Values that match a preset
+ * exactly carry its name (detectTabWheelPreset); anything else is Custom.
+ * Precise's sensitivity of 0.8 is the lowest at which one wheel notch still
+ * switches one tab. test/wheel-profiles.test.mjs pins these values.
+ */
 export const TABWHEEL_PRESET_VALUES: Record<Exclude<TabWheelPreset, "custom">, {
   wheelSensitivity: number;
   wheelCooldownMs: number;
@@ -53,6 +75,10 @@ export const TABWHEEL_PRESET_VALUES: Record<Exclude<TabWheelPreset, "custom">, {
   },
 };
 
+/**
+ * Settings for a fresh install, and the fallback for any stored value that
+ * fails normalization. The click-action defaults come from mouseGestureCore.
+ */
 export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   invertScroll: false,
   gestureModifier: "alt",
@@ -75,6 +101,7 @@ export const DEFAULT_TABWHEEL_SETTINGS: TabWheelSettings = {
   overshootGuard: true,
 };
 
+/** Onboarding state for a fresh install: nothing seen or completed yet. */
 export const DEFAULT_TABWHEEL_ONBOARDING_STATE: TabWheelOnboardingState = {
   version: TABWHEEL_ONBOARDING_VERSION,
   demoCompleted: false,
@@ -92,6 +119,7 @@ function normalizeEnabledFlag(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+// Coerces to a number clamped to [min, max]; a non-numeric value falls back.
 function normalizeNumberInRange(
   value: unknown,
   fallback: number,
@@ -115,6 +143,7 @@ function normalizeClickAction(value: unknown, fallback: TabWheelClickAction): Ta
     : fallback;
 }
 
+/** The preset whose four wheel values `settings` matches exactly, else "custom". */
 export function detectTabWheelPreset(settings: Pick<
   TabWheelSettings,
   "wheelSensitivity" | "wheelCooldownMs" | "wheelAcceleration" | "overshootGuard"
@@ -133,6 +162,10 @@ export function detectTabWheelPreset(settings: Pick<
   return "custom";
 }
 
+/**
+ * Applies a preset's wheel values and name. Choosing Custom only relabels, so
+ * the user edits from the values already in place.
+ */
 export function applyTabWheelPreset(
   settings: TabWheelSettings,
   preset: TabWheelPreset,
@@ -141,6 +174,15 @@ export function applyTabWheelPreset(
   return { ...settings, ...TABWHEEL_PRESET_VALUES[preset], wheelPreset: preset };
 }
 
+/**
+ * Turns any stored value into a valid TabWheelSettings: unknown choices and
+ * non-booleans fall back to their defaults, and numbers are clamped to their
+ * ranges. Internal reliability rules that the UI does not expose
+ * (allowGesturesInEditableFields, restorePagePosition, skipRestrictedPages,
+ * showRestrictedBadge, horizontalWheel, overshootGuard) are forced on whatever
+ * is stored. A missing preset name is inferred from the wheel values; a stored
+ * one is kept as is.
+ */
 export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ...DEFAULT_TABWHEEL_SETTINGS };
@@ -205,6 +247,10 @@ export function normalizeTabWheelSettings(value: unknown): TabWheelSettings {
   return normalized;
 }
 
+/**
+ * Turns any stored value into a valid onboarding state. A flag counts only
+ * when stored as literally true, and the version is always the current one.
+ */
 export function normalizeTabWheelOnboardingState(value: unknown): TabWheelOnboardingState {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ...DEFAULT_TABWHEEL_ONBOARDING_STATE };
@@ -220,12 +266,14 @@ export function normalizeTabWheelOnboardingState(value: unknown): TabWheelOnboar
   };
 }
 
+/** The modifier's user-facing name, covering both the PC and Mac key labels. */
 export function formatTabWheelModifierKey(modifier: TabWheelModifierKey): string {
   if (modifier === "ctrl") return "Ctrl / Control";
   if (modifier === "meta") return "Meta / Command";
   return "Alt / Option";
 }
 
+/** The full chord's user-facing name, e.g. "Alt / Option + Shift". */
 export function formatTabWheelModifierCombo(
   modifier: TabWheelModifierKey,
   withShift: boolean,
@@ -234,6 +282,7 @@ export function formatTabWheelModifierCombo(
   return withShift ? `${base} + Shift` : base;
 }
 
+/** The preset's user-facing name. */
 export function formatTabWheelPresetLabel(preset: TabWheelPreset): string {
   if (preset === "precise") return "Precise";
   if (preset === "fast") return "Fast";
@@ -241,6 +290,7 @@ export function formatTabWheelPresetLabel(preset: TabWheelPreset): string {
   return "Balanced";
 }
 
+/** The click action's user-facing name, as shown in the dropdowns. */
 export function formatTabWheelClickAction(action: TabWheelClickAction): string {
   switch (action) {
     case "nativeNewTab": return "Browser new tab";
@@ -256,6 +306,7 @@ export function formatTabWheelClickAction(action: TabWheelClickAction): string {
   }
 }
 
+/** Reads normalized settings; falls back to the defaults if storage fails. */
 export async function loadTabWheelSettings(): Promise<TabWheelSettings> {
   try {
     const data = await browser.storage.local.get(TABWHEEL_STORAGE_KEYS.settings);
@@ -265,12 +316,14 @@ export async function loadTabWheelSettings(): Promise<TabWheelSettings> {
   }
 }
 
+/** Normalizes and stores settings. Rejects if the write fails. */
 export async function saveTabWheelSettings(settings: TabWheelSettings): Promise<void> {
   await browser.storage.local.set({
     [TABWHEEL_STORAGE_KEYS.settings]: normalizeTabWheelSettings(settings),
   });
 }
 
+/** Reads normalized onboarding state; falls back to the defaults if storage fails. */
 export async function loadTabWheelOnboardingState(): Promise<TabWheelOnboardingState> {
   try {
     const data = await browser.storage.local.get(TABWHEEL_STORAGE_KEYS.onboarding);
@@ -280,6 +333,7 @@ export async function loadTabWheelOnboardingState(): Promise<TabWheelOnboardingS
   }
 }
 
+/** Normalizes and stores onboarding state. Rejects if the write fails. */
 export async function saveTabWheelOnboardingState(state: TabWheelOnboardingState): Promise<void> {
   await browser.storage.local.set({
     [TABWHEEL_STORAGE_KEYS.onboarding]: normalizeTabWheelOnboardingState(state),

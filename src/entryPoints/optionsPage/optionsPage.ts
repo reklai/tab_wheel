@@ -1,3 +1,8 @@
+// Options page, opened in its own tab from the popup's gear button or the
+// "Open settings" click action. It holds the same controls as the popup in the
+// same order, a live title describing the current gesture, and the Refresh and
+// Reset buttons. Every change saves straight to storage; there is no Save step.
+
 import browser from "webextension-polyfill";
 import {
   applyTabWheelPreset,
@@ -26,6 +31,7 @@ import {
 } from "../../lib/ui/settings/settingsControls";
 import { noticeDisplayMs } from "../../lib/common/utils/notice";
 
+/** Coarse word for the drag-speed slider, shown instead of a raw multiplier. */
 function dragSpeedLabel(sensitivity: number): string {
   if (sensitivity < 0.9) return "Slower";
   if (sensitivity > 1.2) return "Faster";
@@ -57,6 +63,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let settings = await loadTabWheelSettings();
   let statusTimer = 0;
 
+  /** Shows a bottom pill; its duration scales with the message length. */
   function showStatus(message: string): void {
     if (statusTimer) window.clearTimeout(statusTimer);
     statusBar.textContent = message;
@@ -64,6 +71,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     statusTimer = window.setTimeout(() => statusBar.classList.remove("visible"), noticeDisplayMs(message));
   }
 
+  /**
+   * Builds settings from the current control values. The preset is detected
+   * from the result, so moving a tuning control off a preset's values reads as
+   * Custom.
+   */
   function readSettings(): TabWheelSettings {
     const next: TabWheelSettings = {
       ...settings,
@@ -86,6 +98,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return { ...next, wheelPreset: detectTabWheelPreset(next) };
   }
 
+  /** Writes `next` into every control and the page title. */
   function render(next: TabWheelSettings): void {
     settings = next;
     gestureModifier.value = next.gestureModifier;
@@ -111,6 +124,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     wheelCooldownValue.textContent = `${Math.round(next.wheelCooldownMs)}ms`;
   }
 
+  /**
+   * Saves `next` and re-renders. The storage write also reaches content
+   * scripts and any open popup through storage.onChanged.
+   */
   async function persist(next: TabWheelSettings): Promise<void> {
     settings = next;
     await saveTabWheelSettings(next);
@@ -135,12 +152,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   wheelCooldownMs.max = String(MAX_WHEEL_COOLDOWN_MS);
   render(settings);
 
+  // Stay in sync with edits made from the popup or another settings tab.
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
     const change = changes[TABWHEEL_STORAGE_KEYS.settings];
     if (change) render(normalizeTabWheelSettings(change.newValue));
   });
 
+  // Discrete controls save on every change.
   for (const control of [
     gestureModifier,
     gestureWithShift,
@@ -160,6 +179,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   wheelPreset.addEventListener("change", () => {
     void persist(applyTabWheelPreset(readSettings(), wheelPreset.value as TabWheelPreset));
   });
+  // Sliders update their label (and flip the preset to Custom) while dragging,
+  // but only save on change, so storage is written once per adjustment.
   wheelSensitivity.addEventListener("input", () => {
     wheelSensitivityValue.textContent = `${Number(wheelSensitivity.value).toFixed(1)}×`;
     wheelPreset.value = "custom";
@@ -175,6 +196,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   wheelCooldownMs.addEventListener("change", () => void saveCurrent());
 
+  // The background removes the stored settings, so every surface now reads the
+  // defaults; render them directly rather than waiting on storage.onChanged.
   byId<HTMLButtonElement>("resetDefaults").addEventListener("click", async () => {
     await resetTabWheelState().catch(() => {});
     render({ ...DEFAULT_TABWHEEL_SETTINGS });
@@ -184,6 +207,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const result = await activateTabWheelContentScripts().catch(() => null);
     showStatus(result ? `Refreshed ${result.injected} open tabs` : "Couldn't refresh TabWheel");
   });
+  // Pages cannot window.close() a tab they did not open, so remove this tab
+  // through the tabs API and fall back to window.close() only without one.
   byId<HTMLButtonElement>("closeOptionsBtn").addEventListener("click", async () => {
     const tab = await browser.tabs.getCurrent().catch(() => null);
     if (tab?.id != null) await browser.tabs.remove(tab.id).catch(() => {});
