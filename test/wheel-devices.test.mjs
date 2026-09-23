@@ -82,13 +82,6 @@ test("macOS wheel acceleration no longer decides how far the wheel travels", asy
   });
 });
 
-test("a Mac mouse notch in Firefox (one whole line) switches one tab per notch", async () => {
-  await withWorld(async (world) => {
-    const notches = Array.from({ length: 4 }, () => ({ deltaMode: 1, deltaY: 1, advanceMs: 400 }));
-    assert.equal(await countCycles(world, notches), 4);
-  });
-});
-
 test("a fast spin is paced by the cooldown, not multiplied by acceleration", async () => {
   await withWorld(async (world) => {
     // Twelve accelerated notches 20ms apart: 240ms of spinning at a 160ms
@@ -140,7 +133,7 @@ test("Chrome's momentum flag: inertia cannot finish a swipe the fingers did not"
 });
 
 test("the same short swipe gives the same result every time", async () => {
-  // Without a momentum flag (Firefox, Zen): a swipe that falls short of the
+  // Without a momentum flag (Chrome before 151): a swipe that falls short of the
   // trigger used to bank its distance forever, so every second identical
   // swipe switched. A pause ends the swipe and its leftover distance.
   await withWorld(async (world) => {
@@ -154,7 +147,7 @@ test("the same short swipe gives the same result every time", async () => {
 
 for (const { label, gapMs } of [{ label: "60Hz", gapMs: 16 }, { label: "120Hz", gapMs: 8 }]) {
   test(`without a momentum flag, one ${label} swipe and its inertia switch exactly once`, async () => {
-    // Firefox / Zen on a Mac trackpad: pixel mode, no wheelDelta ticks, no
+    // Chrome before 151 on a Mac trackpad: pixel mode, no wheelDelta ticks, no
     // momentum flag. A steady finger swipe, then macOS inertia (~0.2%/ms).
     await withWorld(async (world) => {
       const fingerEvents = Math.round(96 / gapMs);

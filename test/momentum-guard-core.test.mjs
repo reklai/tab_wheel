@@ -106,7 +106,7 @@ test("the seeded envelope judges the first post-commit delta instead of swallowi
 test("a stream too sparse to be hardware momentum is never blocked", async () => {
   // A detented wheel cannot notch faster than its own ~40ms cadence, which is
   // wider than maxTailGapMs, so it can never physically produce a tail. This
-  // is what keeps a clicky wheel (Chrome notches, Firefox line mode) at zero
+  // is what keeps a clicky wheel whose notches go unrecognized at zero
   // guard cost without anything having to recognize it as a wheel.
   const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
   const tuning = await loadShippedTuning();
@@ -296,7 +296,7 @@ test("the guard costs no switches and no latency in the free-spin fast path", as
 });
 
 test("detented wheels pay nothing for the guard at any notch spacing", async () => {
-  // Chrome 100px notches and Firefox line-mode 48px notches, balanced and
+  // 100px pixel-mode notches and 48px line-mode notches, balanced and
   // precise presets. The 48px/100ms row is the one that used to lose ~100ms
   // per switch to the old unconditional first-delta block; the tail-cadence
   // test now takes detented wheels out of the guard's scope entirely.
@@ -379,7 +379,7 @@ test("detented wheels pay no arrival tax on a cross-tab handoff", async () => {
 });
 
 test("line-mode and page-mode events never arrival-seed, whatever their timing", async () => {
-  // Firefox reports detented wheels in line mode, and page mode is a
+  // Line mode is whole scroll units only a wheel produces, and page mode is a
   // synthetic multi-line jump — belt and braces for a slow switch round-trip
   // that could otherwise land one inside the window: only deltaMode 0 (pixel)
   // is evidence of a real momentum tail.

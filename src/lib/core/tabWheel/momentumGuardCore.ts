@@ -7,7 +7,8 @@
 //
 // Chrome 151+ flags momentum events directly (WheelEvent.momentum) and the
 // content script drops those before they get here; this guard is what judges
-// every stream that carries no such flag (Firefox, Zen, older Chrome).
+// every stream that carries no such flag (Chrome before 151, and any platform
+// that does not report the flag).
 //
 // Three properties make the judgment hold on real hardware:
 //

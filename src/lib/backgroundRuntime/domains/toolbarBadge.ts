@@ -1,11 +1,8 @@
 // Toolbar badge adapter. The decision of whether a tab should show the
 // restricted-page badge is pure (resolveToolbarBadge in restrictedPagesCore);
-// this module only knows how to talk to whichever toolbar-icon API the
-// current manifest exposes and how to keep it tab-scoped.
-//
-// MV3 Chrome declares "action"; MV2 Firefox declares "browser_action".
-// webextension-polyfill only implements the namespace the underlying browser
-// actually supports, so both must be feature-detected defensively (mirrors
+// this module only knows how to talk to the toolbar-icon ("action") API and
+// how to keep it tab-scoped. The API is still feature-detected so a missing
+// namespace degrades to no badge instead of a thrown error (mirrors
 // getBrowserTabGroupsApi() in tabWheelDomain.ts).
 
 import browser from "webextension-polyfill";
@@ -19,19 +16,18 @@ interface ToolbarBadgeApi {
 }
 
 // Module-level cache of tabIds currently showing the badge, so a settings
-// toggle-off (or event-page reload) knows which tabs to clear. This state is
-// a best-effort cache, not a source of truth: an MV2 Firefox event page can
-// be suspended and lose it, but the badge text itself persists per-tab in the
-// browser UI, and the next activation/update re-applies it from scratch.
+// toggle-off knows which tabs to clear. This state is a best-effort cache, not
+// a source of truth: the service worker can be shut down and lose it, but the
+// badge text itself persists per-tab in the browser UI, and the next
+// activation/update re-applies it from scratch.
 const badgedTabIds = new Set<number>();
 let badgeBackgroundColorApplied = false;
 
 export function getToolbarBadgeApi(): ToolbarBadgeApi | null {
   const runtimeBrowser = browser as unknown as {
     action?: Partial<ToolbarBadgeApi>;
-    browserAction?: Partial<ToolbarBadgeApi>;
   };
-  const api = runtimeBrowser.action ?? runtimeBrowser.browserAction ?? null;
+  const api = runtimeBrowser.action ?? null;
   return typeof api?.setBadgeText === "function" ? (api as ToolbarBadgeApi) : null;
 }
 
@@ -68,8 +64,8 @@ export async function updateTabToolbarBadge(
   }
 
   // Always issue the clear call, even if this tabId isn't in badgedTabIds:
-  // the Set is wiped on every MV3 service-worker idle restart / MV2
-  // event-page suspend, so a badge applied before a restart would otherwise
+  // the Set is wiped on every MV3 service-worker idle restart, so a badge
+  // applied before a restart would otherwise
   // be un-clearable — gating this on Set membership would leave a stale "!"
   // on a backgrounded tab that navigates away after the worker restarts.
   try {

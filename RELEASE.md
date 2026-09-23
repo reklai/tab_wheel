@@ -4,7 +4,6 @@ Release packages are generated from `dist/` after browser builds complete.
 
 Expected package names:
 
-- `tabwheel-firefox-v<version>.xpi`
 - `tabwheel-chrome-v<version>.zip`
 - `tabwheel-source-v<version>.zip`
 
@@ -17,8 +16,9 @@ npm run release:package
 
 ## 4.2.0
 
-- Made one wheel notch switch one tab on macOS. macOS scales a slow notch down to about 4 px (Chrome) or a single line (Firefox) and a fast spin far up, so a Mac mouse used to need a long run of slow notches for one switch and then jump several tabs on a quick spin. Notches are now recognized from what the browser already reports (Chrome's raw notch count, Firefox's whole-line deltas) and each one counts as at least a full 100 px step, so every preset switches one tab per notch, as it already did on Windows and Linux Chrome. Firefox line-mode notches elsewhere follow the same rule, so they no longer need two or three notches per switch; a custom sensitivity below 0.8 still asks for two.
-- Made trackpad and Magic Mouse switching consistent. A swipe now switches by finger travel alone: the inertia after the fingers lift is ignored outright on Chrome 151+, which marks those events, and a stronger momentum guard handles Firefox, Zen, and older Chrome. The guard judges decay per millisecond instead of per event (a 120 Hz ProMotion display's tail used to read as steady input), and it keeps watching the whole stream instead of standing down the first time it saw steady or rising finger motion, which is what let the tail after a normal swipe or a flick switch again. A swipe that falls short no longer banks its distance for the next one, so the same swipe gives the same result every time.
+- Made TabWheel a Chrome-only extension. The Firefox and Zen (Manifest V2) build, its manifest, its packaging, and its compatibility code paths are removed; releases now produce the Chrome package and the source archive only. Settings and defaults are unchanged for Chrome users.
+- Made one wheel notch switch one tab on macOS. macOS scales a slow notch down to about 4 px and a fast spin far up, so a Mac mouse used to need a long run of slow notches for one switch and then jump several tabs on a quick spin. Notches are now recognized from the raw notch count Chrome already reports, and each one counts as at least a full 100 px step, so every preset switches one tab per notch, as it already did on Windows and Linux. A custom sensitivity below 0.8 still asks for two.
+- Made trackpad and Magic Mouse switching consistent. A swipe now switches by finger travel alone: the inertia after the fingers lift is ignored outright on Chrome 151+, which marks those events, and a stronger momentum guard handles older Chrome. The guard judges decay per millisecond instead of per event (a 120 Hz ProMotion display's tail used to read as steady input), and it keeps watching the whole stream instead of standing down the first time it saw steady or rising finger motion, which is what let the tail after a normal swipe or a flick switch again. A swipe that falls short no longer banks its distance for the next one, so the same swipe gives the same result every time.
 - Recognized notches skip the post-switch arrival guard, so a clicky wheel no longer risks losing a notch that lands just after a switch.
 
 ## 4.1.0
@@ -105,34 +105,21 @@ The 1.x and 2.x releases established modifier-wheel cycling, left-to-right and M
 TabWheel injects into already-open tabs on install and update so the gesture
 works immediately, without the user reloading anything. `test/zero-reload.test.mjs`
 locks the wiring behind this promise with automated regex assertions, but the
-end-to-end behavior still needs a manual pass before each release, on both
-target browsers:
+end-to-end behavior still needs a manual pass in Chrome before each release:
 
-1. Open at least 5 tabs before installing: a normal https page, chrome://settings
-   (Firefox: about:config), a PDF, a discarded/sleeping tab, and an iframe-heavy
-   page.
+1. Open at least 5 tabs before installing: a normal https page, chrome://settings,
+   a PDF, a discarded/sleeping tab, and an iframe-heavy page.
 2. Install the unpacked/temporary extension. Without reloading anything: the
    gesture works immediately on the active tab, and switching to a background
    tab and gesturing there works too.
 3. Bump the version and reload the extension (the update path), then repeat
    the same checks.
-4. Repeat steps 1-3 on both Chrome (unpacked, MV3) and Firefox (temporary
-   add-on, MV2).
-5. Use the popup's "Refresh extension" control and confirm it reports the
+4. Use the popup's "Refresh extension" control and confirm it reports the
    injected tab counts.
-6. Check the toolbar badge: a restricted tab shows "!", a normal tab shows no
+5. Check the toolbar badge: a restricted tab shows "!", a normal tab shows no
    badge.
-7. Arrival guard, on a clicky (detented) mouse wheel. On the Fast preset,
-   notch quickly and deliberately across several tabs, including switching
-   between them mid-notch. Expect the occasional swallowed notch: a notch
-   landing inside the 32ms post-switch arrival window costs that one notch —
-   Chrome reports clicky wheels in pixel mode, so it is the more likely of the
-   two browsers to show this occasionally. At the Fast preset the 90ms
-   cooldown itself also drops a notch that lands inside it (the accumulator is
-   zeroed on any blocked crossing), so distinguish that cooldown drop from an
-   arrival-window drop rather than attributing both to the guard. The arrival
-   guard only ever engages on pixel-mode wheel events (`deltaMode === 0`);
-   Firefox reports clicky wheels in line mode, so it can never trigger there,
-   and the Firefox pass of this step is expected to show zero arrival-window
-   drops. The check is that arrival-window drops stay occasional on Chrome,
-   not that they never happen.
+6. Wheel feel, on a clicky (detented) mouse wheel and on a trackpad. On the
+   Balanced preset, each slow notch switches exactly one tab, including on
+   macOS; a fast spin is paced by the cooldown rather than jumping ahead. A
+   short trackpad swipe repeated several times gives the same result every
+   time, and the coasting after a flick never switches an extra tab.

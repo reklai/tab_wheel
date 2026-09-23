@@ -24,8 +24,7 @@ test("verifyStore script succeeds", () => {
 test("store and package metadata use the approved mouse-first summary", () => {
   const expected =
     "Switch tabs with Alt + mouse wheel anywhere on the page. Fast, private, mouse-first tab control.";
-  const manifestV2 = JSON.parse(readText("esBuildConfig/manifest_v2.json"));
-  const manifestV3 = JSON.parse(readText("esBuildConfig/manifest_v3.json"));
+  const manifest = JSON.parse(readText("esBuildConfig/manifest.json"));
   const packageJson = JSON.parse(readText("package.json"));
   const store = readText("STORE.md");
   const summary = store
@@ -35,8 +34,7 @@ test("store and package metadata use the approved mouse-first summary", () => {
     .find(Boolean);
 
   assert.equal(expected.length, 96);
-  assert.equal(manifestV2.description, expected);
-  assert.equal(manifestV3.description, expected);
+  assert.equal(manifest.description, expected);
   assert.equal(packageJson.description, expected);
   assert.equal(summary, expected);
   assert.match(
@@ -85,7 +83,7 @@ test("release packaging preserves historical artifacts while refreshing V4 outpu
   assert.match(packaging, /for \(const artifactPath of releaseArtifacts\)/);
   assert.match(packaging, /rmSync\(artifactPath,\s*\{\s*force:\s*true\s*\}\)/);
   assert.match(gitignore, /^\/release\/tabwheel-chrome-v\*\.zip$/m);
-  assert.match(gitignore, /^\/release\/tabwheel-firefox-v\*\.xpi$/m);
+  assert.doesNotMatch(gitignore, /firefox|\.xpi/);
   assert.match(gitignore, /^\/release\/tabwheel-source-v\*\.zip$/m);
 });
 

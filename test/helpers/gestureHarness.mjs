@@ -87,7 +87,7 @@ function installDom() {
       this.deltaX = opts.deltaX ?? 0;
       this.deltaY = opts.deltaY ?? 0;
       this.deltaMode = opts.deltaMode ?? 0;
-      // Legacy Chromium/Gecko notch report and Chrome 151+'s momentum flag;
+      // Chrome's legacy notch report and its 151+ momentum flag;
       // left undefined unless a profile supplies them, like a browser without.
       if (opts.wheelDeltaX !== undefined) this.wheelDeltaX = opts.wheelDeltaX;
       if (opts.wheelDeltaY !== undefined) this.wheelDeltaY = opts.wheelDeltaY;

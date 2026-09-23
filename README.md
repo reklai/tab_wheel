@@ -11,7 +11,7 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Restores the root page position when you return to a tab and URL.
 - Offers Precise, Balanced, Fast, and Custom wheel feel.
 - Switches one tab per wheel notch on every OS, including macOS, where the system scales a slow notch down to a few pixels.
-- Switches by finger travel on a trackpad or Magic Mouse: a short swipe moves one tab, a longer swipe moves more, and each swipe starts fresh. The inertia after you lift your fingers never switches tabs. Chrome 151+ marks those inertia events directly; in Firefox and older Chrome a momentum guard recognizes them by their smooth decay, including right after you land on the newly focused tab.
+- Switches by finger travel on a trackpad or Magic Mouse: a short swipe moves one tab, a longer swipe moves more, and each swipe starts fresh. The inertia after you lift your fingers never switches tabs. Chrome 151+ marks those inertia events directly; on older Chrome a momentum guard recognizes them by their smooth decay, including right after you land on the newly focused tab.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
 - Opens the browser's New Tab page beside the current tab with modifier + left click.
@@ -23,7 +23,7 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Shows a toolbar badge on recognized browser-restricted URLs, such as `chrome://`, `about:`, and extension stores.
 - Stores settings, onboarding state, recent-tab order, and scroll positions locally.
 
-Setting a physical button to Off leaves its native modifier-click behavior completely untouched. Enabled combinations suppress page-delivered defaults such as opening or downloading links and showing context menus. OS shortcuts, browser-chrome shortcuts, and protected pages cannot be intercepted; Firefox also reserves Shift + right click for its native context menu.
+Setting a physical button to Off leaves its native modifier-click behavior completely untouched. Enabled combinations suppress page-delivered defaults such as opening or downloading links and showing context menus. OS shortcuts, browser-chrome shortcuts, and protected pages cannot be intercepted.
 
 ## First run
 
@@ -58,8 +58,7 @@ Page-position restore, editable-field gestures, horizontal wheel input, protecte
 
 ## Browser support
 
-- Chrome and Chromium-based browsers use the Manifest V3 build.
-- Firefox and Zen Browser use the Manifest V2 build.
+TabWheel is a Manifest V3 extension for Google Chrome and other Chromium-based browsers.
 
 Browser settings, extension stores, PDF viewers, devtools, and other protected pages may block page gestures. OS or browser-chrome combinations that never reach a page are also outside a WebExtension's control. The toolbar popup still offers Previous and Next buttons.
 
@@ -76,17 +75,13 @@ npm ci
 npm run ci
 ```
 
-Build individual targets:
+Build the extension into `dist/`:
 
 ```bash
-npm run build:chrome
-npm run build:firefox
+npm run build
 ```
 
-Load the generated build:
-
-- Chrome: open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist/chrome`.
-- Firefox: open `about:debugging`, choose **This Firefox**, then **Load Temporary Add-on**, and select the generated Firefox manifest.
+Load it in Chrome: open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `dist`.
 
 Package a release:
 
@@ -96,8 +91,7 @@ npm run release:package
 
 This creates:
 
-- `release/tabwheel-chrome-v4.2.0.zip`
-- `release/tabwheel-firefox-v4.2.0.xpi`
+- `release/tabwheel-chrome-v4.2.0.zip` (upload to the Chrome Web Store)
 - `release/tabwheel-source-v4.2.0.zip`
 
 ## Project structure

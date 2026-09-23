@@ -19,8 +19,9 @@ const PROFILES = {
   custom: { wheelSensitivity: 1, wheelCooldownMs: 160, wheelAcceleration: false },
 };
 
-// A clicky wheel notch on Linux reports line mode with deltaY 3, i.e. 48px.
-const CLICKY = { deltaY: 3, deltaMode: 1, alt: true };
+// A slow notch of a clicky wheel on macOS: the OS scales it down to ~4px, and
+// wheelDelta carries the raw notch (-120).
+const CLICKY = { deltaY: 4.000244140625, deltaMode: 0, wheelDeltaY: -120, alt: true };
 // A coarse free-spin / Chrome pixel-mode notch, ~120px.
 const COARSE = { deltaY: 120, deltaMode: 0, alt: true };
 

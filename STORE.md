@@ -6,7 +6,6 @@ Scroll Wheel Tab Switcher
 
 ## Extension Names
 
-- Firefox / Zen: Scroll Wheel Tab Switcher
 - Chrome: Scroll Wheel Tab Switcher
 
 ## Summary (short, <=132 chars)
@@ -68,7 +67,7 @@ LIMITATIONS AND FALLBACK
 
 TabWheel works on normal webpages where the browser allows extensions to run. Browser settings, internal pages, extension pages, extension stores, PDF viewers, devtools, and other protected pages may block its content script. TabWheel marks the toolbar icon with a small badge for recognized browser-restricted URLs. If a page gesture is unavailable, open the toolbar popup to use Previous and Next fallback buttons.
 
-Enabled modifier-click actions suppress native page-delivered behavior. Setting a button to Off leaves it completely native. OS shortcuts, browser-chrome shortcuts, and Firefox's reserved Shift + right-click context menu cannot be overridden by a page extension.
+Enabled modifier-click actions suppress native page-delivered behavior. Setting a button to Off leaves it completely native. OS shortcuts and browser-chrome shortcuts cannot be overridden by a page extension.
 
 ACCESS THE EXTENSION POPUP
 
@@ -101,7 +100,7 @@ TabWheel does not request `history` or `bookmarks` permissions.
 
 ## Browser Support
 
-Works on Firefox, Chrome, and Zen Browser.
+Works on Google Chrome and other Chromium-based browsers.
 
 ## Store Assets
 

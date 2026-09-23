@@ -88,8 +88,8 @@ function resolveWheelAxis(
 
 // What one detent of a notched wheel is worth, whatever the OS claims. The
 // pixels a notch reports are an OS decision, not a physical one: ~100-120px on
-// Windows and Linux Chrome, 48px (3 lines) in Firefox, and on macOS as little
-// as 4px, because macOS accelerates wheel deltas — a slow notch is scaled way
+// Windows and Linux, and on macOS as little as 4px, because macOS accelerates
+// wheel deltas — a slow notch is scaled way
 // down and a fast spin way up. Measured in raw pixels, a Mac mouse needed ~20
 // slow notches for one switch and then jumped several tabs on a quick spin.
 // Flooring a recognized notch at this distance makes one detent switch one tab
@@ -101,8 +101,8 @@ export const WHEEL_NOTCH_PX = 100;
 // back to within this tolerance on Retina screens and zoomed pages.
 const WHEEL_TICK_TOLERANCE = 0.05;
 const LEGACY_WHEEL_DELTA_PER_TICK = 120;
-// Precise (trackpad) events report wheelDelta = -3 x deltaY in both engines;
-// the echo is off by at most the integer truncation.
+// Precise (trackpad) events report wheelDelta = -3 x deltaY; the echo is off by
+// at most the integer truncation.
 const PRECISE_WHEEL_DELTA_RATIO = 3;
 const PRECISE_ECHO_TOLERANCE = 1;
 
@@ -123,14 +123,11 @@ function isWholeTickCount(ticks: number): boolean {
 
 // True when this one event is a detent of a notched wheel rather than a slice
 // of a continuous (trackpad, Magic Mouse, hi-res wheel) stream. Judged from the
-// event alone — no history, no device profile — from what each engine already
+// event alone — no history, no device profile — from what Chrome already
 // reports about the hardware:
 //
-// - Page mode is a synthetic page jump; line mode in whole lines is a notch
-//   (Firefox on every OS reports mouse wheels this way, a Mac notch as 1+
-//   whole lines). Firefox's Linux touchpad also uses line mode, but in
-//   fractional lines, so it stays continuous.
-// - In pixel mode, Chromium also reports the unaccelerated notch count through
+// - Line and page mode are whole scroll units, which only a wheel produces.
+// - In pixel mode, Chrome also reports the unaccelerated notch count through
 //   the legacy wheelDelta (macOS: kCGScrollWheelEventDeltaAxis, +/-1 per notch
 //   no matter how hard the OS scaled deltaY). A trackpad's wheelDelta is just
 //   deltaY x -3, so that echo is excluded first.
@@ -141,8 +138,7 @@ export function isWheelNotchEvent(
 ): boolean {
   const delta = axis === "x" ? event.deltaX : event.deltaY;
   if (!Number.isFinite(delta) || delta === 0) return false;
-  if (event.deltaMode === 2) return true;
-  if (event.deltaMode === 1) return Number.isInteger(delta);
+  if (event.deltaMode !== 0) return true;
   const legacyDelta = axis === "x" ? event.wheelDeltaX : event.wheelDeltaY;
   if (typeof legacyDelta !== "number" || !Number.isFinite(legacyDelta) || legacyDelta === 0) {
     return false;
@@ -157,13 +153,11 @@ export function isWheelNotchEvent(
   const pixelRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
     ? devicePixelRatio
     : 1;
-  // Gecko reports ticks x 120 as-is; Blink divides by devicePixelRatio first.
-  return isWholeTickCount(legacyMagnitude / LEGACY_WHEEL_DELTA_PER_TICK)
-    || isWholeTickCount(legacyMagnitude * pixelRatio / LEGACY_WHEEL_DELTA_PER_TICK);
+  return isWholeTickCount(legacyMagnitude * pixelRatio / LEGACY_WHEEL_DELTA_PER_TICK);
 }
 
 // The signed distance one wheel event contributes to a gesture, with notches
-// floored at WHEEL_NOTCH_PX. A notch that already reports more (Linux Chrome's
+// floored at WHEEL_NOTCH_PX. A notch that already reports more (Linux's
 // 120px) keeps it, so no platform that already switched on one notch changes.
 export function measureWheelInput(
   event: WheelNotchEvent,

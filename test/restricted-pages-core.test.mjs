@@ -39,10 +39,12 @@ test("normalizeHostname lowercases and strips a leading www.", async () => {
   assert.equal(normalizeHostname("Sub.Example.com"), "sub.example.com");
 });
 
-test("isKnownBrowserStoreRestrictedUrl flags addon and web store hosts only", async () => {
+test("isKnownBrowserStoreRestrictedUrl flags Chrome Web Store hosts only", async () => {
   const { isKnownBrowserStoreRestrictedUrl } = await loadCore();
 
-  assert.equal(isKnownBrowserStoreRestrictedUrl("https://addons.mozilla.org/en-US/firefox/"), true);
+  // Chrome blocks content scripts on its own store only; other browsers'
+  // add-on sites are ordinary pages there.
+  assert.equal(isKnownBrowserStoreRestrictedUrl("https://addons.mozilla.org/en-US/firefox/"), false);
   assert.equal(isKnownBrowserStoreRestrictedUrl("https://chromewebstore.google.com/detail/abc"), true);
   assert.equal(isKnownBrowserStoreRestrictedUrl("https://chrome.google.com/webstore/detail/abc"), true);
   assert.equal(isKnownBrowserStoreRestrictedUrl("https://chrome.google.com/other-path"), false);
@@ -56,7 +58,6 @@ test("isPageGestureRestrictedUrl blocks internal pages, store pages, and bad inp
 
   assert.equal(isPageGestureRestrictedUrl("chrome://extensions"), true);
   assert.equal(isPageGestureRestrictedUrl("about:blank"), true);
-  assert.equal(isPageGestureRestrictedUrl("https://addons.mozilla.org/en-US/firefox/"), true);
   assert.equal(isPageGestureRestrictedUrl("https://chromewebstore.google.com/detail/abc"), true);
   assert.equal(isPageGestureRestrictedUrl("https://chrome.google.com/webstore/detail/abc"), true);
   assert.equal(isPageGestureRestrictedUrl(undefined), true);
@@ -68,7 +69,7 @@ test("resolveToolbarBadge only shows the exclamation badge when enabled and rest
   const { resolveToolbarBadge } = await loadCore();
 
   assert.deepEqual(resolveToolbarBadge("chrome://extensions", true), { text: "!" });
-  assert.deepEqual(resolveToolbarBadge("https://addons.mozilla.org/en-US/firefox/", true), { text: "!" });
+  assert.deepEqual(resolveToolbarBadge("https://chromewebstore.google.com/detail/abc", true), { text: "!" });
   assert.equal(resolveToolbarBadge("https://example.com/page", true), null);
   assert.equal(resolveToolbarBadge("chrome://extensions", false), null);
   assert.equal(resolveToolbarBadge(undefined, false), null);

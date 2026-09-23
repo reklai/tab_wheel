@@ -326,10 +326,10 @@ function isCollapsedGroupTab(tab: Tabs.Tab, collapsedTabGroupIds: ReadonlySet<nu
   return tab.groupId != null && collapsedTabGroupIds.has(tab.groupId);
 }
 
-// Ungrouped tabs (groupId -1, or undefined on browsers with no tabGroups
-// support) all normalize to the same implicit group, so a browser without
-// group support never has more than one group and the filter below is a
-// no-op there — a graceful degrade rather than a special case.
+// Ungrouped tabs (groupId -1, or undefined if the tabGroups API is ever
+// unavailable) all normalize to the same implicit group, so without group
+// support there is only one group and the filter below is a no-op — a
+// graceful degrade rather than a special case.
 function normalizeTabGroupId(groupId: number | undefined): number {
   return groupId ?? -1;
 }
@@ -346,7 +346,7 @@ function getEligibleTabs(
   return tabs
     .filter((tab) => tab.id != null
       && (!settings.skipPinnedTabs || tab.pinned !== true)
-      && (!settings.skipHiddenTabs || (tab.hidden !== true && !isCollapsedGroupTab(tab, collapsedTabGroupIds)))
+      && (!settings.skipHiddenTabs || !isCollapsedGroupTab(tab, collapsedTabGroupIds))
       && (!settings.skipRestrictedPages || !isRestrictedTab(tab))
       && (!settings.cycleWithinTabGroup
         || activeTabGroupId == null
@@ -667,34 +667,20 @@ export function createTabWheelDomain(options: {
           injectImmediately?: boolean;
         }): Promise<unknown>;
       };
-      tabs: typeof browser.tabs & {
-        executeScript?: (tabId: number, details: { file: string; runAt?: string; allFrames?: boolean }) => Promise<unknown>;
-      };
     };
 
+    if (!runtimeBrowser.scripting?.executeScript) return false;
     try {
-      if (runtimeBrowser.scripting?.executeScript) {
-        await runtimeBrowser.scripting.executeScript({
-          target: { tabId, ...(allFrames ? { allFrames: true } : {}) },
-          files: ["contentScript.js"],
-          // Restored documents may never reach the default document_idle phase.
-          injectImmediately: true,
-        });
-        return true;
-      }
-      if (runtimeBrowser.tabs.executeScript) {
-        await runtimeBrowser.tabs.executeScript(tabId, {
-          file: "contentScript.js",
-          runAt: "document_start",
-          ...(allFrames ? { allFrames: true } : {}),
-        });
-        return true;
-      }
+      await runtimeBrowser.scripting.executeScript({
+        target: { tabId, ...(allFrames ? { allFrames: true } : {}) },
+        files: ["contentScript.js"],
+        // Restored documents may never reach the default document_idle phase.
+        injectImmediately: true,
+      });
+      return true;
     } catch (_) {
       return false;
     }
-
-    return false;
   }
 
   async function injectContentScriptIntoTab(tab: Tabs.Tab): Promise<"injected" | "skipped" | "failed"> {
@@ -768,7 +754,7 @@ export function createTabWheelDomain(options: {
       const [activeTab] = await browser.tabs.query({ active: true, windowId: win.id }).catch(() => []);
       if (!activeTab || activeTab.id == null) return;
       // Prime the badge for every active tab (including restricted ones) each
-      // time the worker/event page (re)starts, before the content-script path
+      // time the service worker (re)starts, before the content-script path
       // below early-returns on restricted or discarded tabs.
       void applyToolbarBadgeForTab(activeTab).catch(() => {});
       if (isPageGestureRestrictedUrl(activeTab.url) || activeTab.discarded === true) return;
@@ -1761,8 +1747,8 @@ export function createTabWheelDomain(options: {
       await saveScrollMemory();
     });
 
-    browser.tabs.onUpdated.addListener((tabId: number, changeInfo: { url?: string; pinned?: boolean; hidden?: boolean; groupId?: number; status?: string }, updatedTab?: Tabs.Tab) => {
-      if (changeInfo.url || changeInfo.pinned != null || changeInfo.hidden != null || changeInfo.groupId != null) {
+    browser.tabs.onUpdated.addListener((tabId: number, changeInfo: { url?: string; pinned?: boolean; groupId?: number; status?: string }, updatedTab?: Tabs.Tab) => {
+      if (changeInfo.url || changeInfo.pinned != null || changeInfo.groupId != null) {
         invalidateWindowTabsCache(updatedTab?.windowId);
       }
       if (changeInfo.status === "complete") {

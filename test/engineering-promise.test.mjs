@@ -42,8 +42,7 @@ test("package scripts expose the full engineering guardrail chain", () => {
     "npm run verify:compat",
     "npm run verify:upgrade",
     "npm run verify:store",
-    "npm run build:firefox",
-    "npm run build:chrome",
+    "npm run build",
   ]) {
     assert.ok(scripts.ci.includes(command), `ci should include ${command}`);
   }

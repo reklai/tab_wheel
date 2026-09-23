@@ -86,7 +86,7 @@ test("onInstalled reinjects content scripts into already-open tabs on install an
   ]);
 });
 
-test("executeContentScriptInTab injects via the MV3 scripting API with an MV2 tabs.executeScript fallback", () => {
+test("executeContentScriptInTab injects via the MV3 scripting API", () => {
   const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
   const fnSource = domain.slice(
     domain.indexOf("async function executeContentScriptInTab"),
@@ -94,9 +94,9 @@ test("executeContentScriptInTab injects via the MV3 scripting API with an MV2 ta
   );
   assert.ok(fnSource.length > 0, "executeContentScriptInTab should be found in source");
 
-  // Protects: "works immediately after install without reloading tabs" on
-  // MV3 browsers (Chrome) — the scripting.executeScript path must exist and
-  // target the real content script bundle.
+  // Protects: "works immediately after install without reloading tabs" — the
+  // scripting.executeScript path must exist and target the real content
+  // script bundle.
   assert.match(fnSource, /runtimeBrowser\.scripting\?\.executeScript/);
   assert.match(fnSource, /await runtimeBrowser\.scripting\.executeScript\(\{/);
   assert.match(
@@ -106,16 +106,8 @@ test("executeContentScriptInTab injects via the MV3 scripting API with an MV2 ta
   assert.match(fnSource, /injectImmediately:\s*true/);
   assert.match(fnSource, /files:\s*\["contentScript\.js"\]/);
 
-  // Protects: the same promise on MV2 browsers (Firefox), where
-  // scripting.executeScript does not exist and tabs.executeScript is the
-  // only path that can inject into tabs opened before the extension loaded.
-  assert.match(fnSource, /if \(runtimeBrowser\.tabs\.executeScript\)/);
-  assert.match(fnSource, /await runtimeBrowser\.tabs\.executeScript\(tabId,\s*\{/);
-  assert.match(fnSource, /file:\s*"contentScript\.js"/);
-  assert.match(
-    fnSource,
-    /await runtimeBrowser\.tabs\.executeScript\(tabId,\s*\{[\s\S]*?\.\.\.\(allFrames\s*\?\s*\{\s*allFrames:\s*true\s*\}\s*:\s*\{\s*\}\)/,
-  );
+  // The MV2 tabs.executeScript fallback left with Firefox support.
+  assert.doesNotMatch(fnSource, /tabs\.executeScript/);
 
   const injectFnSource = domain.slice(
     domain.indexOf("async function injectContentScriptIntoTab"),

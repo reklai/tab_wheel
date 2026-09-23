@@ -6,11 +6,11 @@ import { resolve } from "node:path";
 const ROOT = process.cwd();
 const readText = (path) => readFileSync(resolve(ROOT, path), "utf8");
 
-test("badge adapter feature-detects both action namespaces and reuses the core decision", () => {
+test("badge adapter feature-detects the action namespace and reuses the core decision", () => {
   const adapter = readText("src/lib/backgroundRuntime/domains/toolbarBadge.ts");
 
   assert.match(adapter, /runtimeBrowser\.action/);
-  assert.match(adapter, /runtimeBrowser\.browserAction/);
+  assert.doesNotMatch(adapter, /browserAction/);
   assert.match(adapter, /import\s*\{\s*resolveToolbarBadge\s*\}\s*from\s*"\.\.\/\.\.\/core\/tabWheel\/restrictedPagesCore"/);
 
   // No duplicated URL logic: the adapter must lean on the pure decision, not

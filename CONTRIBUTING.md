@@ -9,13 +9,13 @@
 5. `npm run verify:compat`
 6. `npm run verify:upgrade`
 7. `npm run verify:store`
-8. `npm run build:firefox` or `npm run build:chrome`
+8. `npm run build`
 
 Contributor orientation: `README.md`
 
 ## Release Flow
 
-1. Keep `manifest_v2.json`, `manifest_v3.json`, `STORE.md`, and `PRIVACY.md` updated together whenever permissions, storage limits, or privacy claims change.
+1. Keep `esBuildConfig/manifest.json`, `STORE.md`, and `PRIVACY.md` updated together whenever permissions, storage limits, or privacy claims change.
 2. Run `npm run ci` before release; this includes `verify:compat`, `verify:upgrade`, and `verify:store`.
 3. Use `RELEASE.md` for reproducible packaging and submission artifacts.
 4. Use `STORE.md` and `PRIVACY.md` as the canonical text for AMO/Chrome submission fields.
@@ -68,7 +68,6 @@ Contributor orientation: `README.md`
 - Overlay CSS should consume shared `panelHost` tokens (`var(--ht-color-*)`) instead of hardcoded palette values.
 - Treat UI smoothness as a default requirement: avoid full-list rerenders, prefer rAF-throttled work, and keep compositor-friendly panel containers.
 - Keep hot-path guardrails explicit: update instrumentation and tests together when performance-sensitive panels change.
-- Preserve Firefox/Chrome parity when touching commands, permissions, or manifests.
 
 ## Pull Request Checklist
 
@@ -80,5 +79,5 @@ Contributor orientation: `README.md`
 - `npm run verify:compat` passes.
 - `npm run verify:upgrade` passes.
 - `npm run verify:store` passes.
-- `npm run build:firefox` and `npm run build:chrome` pass.
+- `npm run build` passes.
 - `README.md` and/or this file updated if contributor-facing release flow changed.

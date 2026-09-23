@@ -15,7 +15,6 @@ export function normalizePageUrl(url: string | undefined): string | null {
 }
 
 const KNOWN_BROWSER_STORE_RESTRICTED_HOSTS = new Set([
-  "addons.mozilla.org",
   "chromewebstore.google.com",
 ]);
 
@@ -40,8 +39,8 @@ export function isPageGestureRestrictedUrl(url: string | undefined): boolean {
   return !normalizePageUrl(url) || isKnownBrowserStoreRestrictedUrl(url);
 }
 
-// The badge wiring (reading the setting, calling browserAction.setBadgeText)
-// is a later task. This is only the pure decision: show "!" when the page is
+// The badge wiring (reading the setting, calling action.setBadgeText) lives
+// in toolbarBadge.ts. This is only the pure decision: show "!" when the page is
 // gesture-restricted and the user has opted into the badge.
 export function resolveToolbarBadge(
   pageUrl: string | undefined,

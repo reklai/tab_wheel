@@ -9,7 +9,6 @@ dist/
 
 # Generated release packages (historical tracked packages remain unaffected)
 /release/tabwheel-chrome-v*.zip
-/release/tabwheel-firefox-v*.xpi
 /release/tabwheel-source-v*.zip
 
 # Root-level build artifacts (real output is in dist/)

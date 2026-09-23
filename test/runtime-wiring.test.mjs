@@ -954,7 +954,7 @@ test("action status is not shown on a document that has already been hidden", ()
   );
 });
 
-test("a quiet store rating star sits in the header of the popup and settings page, Chrome only", () => {
+test("a quiet store rating star sits in the header of the popup and settings page", () => {
   const build = readText("esBuildConfig/build.mjs");
   const popup = readText("src/entryPoints/toolbarPopup/toolbarPopup.html");
   const options = readText("src/entryPoints/optionsPage/optionsPage.html");
@@ -963,8 +963,7 @@ test("a quiet store rating star sits in the header of the popup and settings pag
 
   // Passive by design: an icon-button anchor with no script, storage, or
   // dismiss logic, placed left of the header's existing icon button. The
-  // markup is substituted per target so the Firefox build, which has no
-  // store listing yet, renders only the existing button.
+  // markup is substituted at build time so the templates hold no store URL.
   assert.match(
     popup,
     /<div class="header-actions">\s*__STORE_RATE_LINK__\s*<button id="settingsBtn" class="icon-button"/,
@@ -978,7 +977,7 @@ test("a quiet store rating star sits in the header of the popup and settings pag
   }
   assert.match(
     build,
-    /const storeRateLink = target === "chrome"\s*\n?\s*\? '<a class="icon-button store-rate" href="https:\/\/chromewebstore\.google\.com\/detail\/[^"]*hibbakmdkclijigadchcinbbodmdmhcg\/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">★<\/a>'\s*\n?\s*: "";/,
+    /const storeRateLink = '<a class="icon-button store-rate" href="https:\/\/chromewebstore\.google\.com\/detail\/[^"]*hibbakmdkclijigadchcinbbodmdmhcg\/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">★<\/a>';/,
   );
   assert.match(build, /\.replaceAll\("__STORE_RATE_LINK__", storeRateLink\)/);
   for (const css of [popupCss, optionsCss]) {

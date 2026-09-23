@@ -15,16 +15,11 @@ function readJson(pathFromRoot) {
 
 const errors = [];
 
-const manifestV2 = readJson("esBuildConfig/manifest_v2.json");
-const manifestV3 = readJson("esBuildConfig/manifest_v3.json");
+const manifest = readJson("esBuildConfig/manifest.json");
 const packageJson = readJson("package.json");
 
 const store = readText("STORE.md");
 const privacy = readText("PRIVACY.md");
-
-if (manifestV2.description !== manifestV3.description) {
-  errors.push("Manifest descriptions must match between MV2 and MV3.");
-}
 
 const extensionNamesMatch = store.match(/## Extension Names\s+([\s\S]*?)\n## /);
 if (!extensionNamesMatch) {
@@ -34,11 +29,8 @@ if (!extensionNamesMatch) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  if (!extensionNames.some((line) => line.includes(`Firefox / Zen: ${manifestV2.name}`))) {
-    errors.push(`STORE.md Firefox / Zen name must match MV2 manifest (${manifestV2.name}).`);
-  }
-  if (!extensionNames.some((line) => line.includes(`Chrome: ${manifestV3.name}`))) {
-    errors.push(`STORE.md Chrome name must match MV3 manifest (${manifestV3.name}).`);
+  if (!extensionNames.some((line) => line.includes(`Chrome: ${manifest.name}`))) {
+    errors.push(`STORE.md Chrome name must match the manifest (${manifest.name}).`);
   }
 }
 
@@ -57,11 +49,11 @@ if (!summaryMatch) {
     errors.push(`STORE.md short summary must be <=132 chars (found ${summaryLine.length}).`);
   }
 }
-if (summaryLine && manifestV2.description !== summaryLine) {
-  errors.push("Manifest descriptions must match the STORE.md short summary.");
+if (summaryLine && manifest.description !== summaryLine) {
+  errors.push("The manifest description must match the STORE.md short summary.");
 }
-if (packageJson.description !== manifestV2.description) {
-  errors.push("package.json description must match the manifest descriptions.");
+if (packageJson.description !== manifest.description) {
+  errors.push("package.json description must match the manifest description.");
 }
 
 const requiredPermissionDocs = ["tabs", "storage", "scripting", "tabGroups", "<all_urls>"];
@@ -77,8 +69,8 @@ for (const permission of requiredPermissionDocs) {
 if (!store.includes("No data is sent to TabWheel")) {
   errors.push("STORE.md must state that no data is sent to TabWheel or developer-owned services.");
 }
-if (!store.includes("Works on Firefox, Chrome, and Zen Browser")) {
-  errors.push("STORE.md must mention Firefox/Chrome/Zen support.");
+if (!store.includes("Works on Google Chrome")) {
+  errors.push("STORE.md must state Chrome support.");
 }
 if (!privacy.includes("does not collect, transmit, or share")) {
   errors.push("PRIVACY.md summary must explicitly state no data collection/transmission.");
@@ -100,7 +92,6 @@ if (errors.length > 0) {
 }
 
 console.log("[verify:store] OK");
-console.log(`- Firefox/Zen name: ${manifestV2.name}`);
-console.log(`- Chrome name: ${manifestV3.name}`);
-console.log(`- Description length: ${manifestV2.description.length}`);
+console.log(`- Chrome name: ${manifest.name}`);
+console.log(`- Description length: ${manifest.description.length}`);
 console.log(`- Checked permissions docs: ${requiredPermissionDocs.length}`);

@@ -8,22 +8,11 @@ const root = resolve(__dirname, "..");
 const dist = resolve(root, "dist");
 const watching = process.argv.includes("--watch");
 
-const targetIdx = process.argv.indexOf("--target");
-const target = targetIdx !== -1 ? process.argv[targetIdx + 1] : "firefox";
-if (!["firefox", "chrome"].includes(target)) {
-  console.error(`[build] Unknown target "${target}". Use "firefox" or "chrome".`);
-  process.exit(1);
-}
-
-const manifestFile = target === "chrome" ? "manifest_v3.json" : "manifest_v2.json";
 const targetBrand = "Scroll Wheel Tab Switcher";
 // A passive rating star in the popup and settings page headers, styled like
-// the existing icon buttons. Chrome only until a Firefox listing exists; the
-// Firefox build renders nothing in its place.
-const storeRateLink = target === "chrome"
-  ? '<a class="icon-button store-rate" href="https://chromewebstore.google.com/detail/scroll-wheel-tab-switcher/hibbakmdkclijigadchcinbbodmdmhcg/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">★</a>'
-  : "";
-console.log(`[build] Target: ${target} (${manifestFile}, ${targetBrand})`);
+// the existing icon buttons, linking to the Chrome Web Store reviews page.
+const storeRateLink = '<a class="icon-button store-rate" href="https://chromewebstore.google.com/detail/scroll-wheel-tab-switcher/hibbakmdkclijigadchcinbbodmdmhcg/reviews" target="_blank" rel="noopener noreferrer" aria-label="Rate TabWheel on the Chrome Web Store" title="Rate TabWheel on the Chrome Web Store">★</a>';
+console.log(`[build] Chrome (Manifest V3, ${targetBrand})`);
 
 // Extension entry points run as standalone scripts, so keep bundles as IIFEs
 // instead of relying on module loading in content/background contexts.
@@ -43,10 +32,10 @@ const entryPoints = [
   { in: resolve(root, "src/entryPoints/onboarding/onboarding.ts"), out: "onboarding/onboarding" },
 ];
 
-// Manifests are target-specific, but HTML/CSS templates are shared and get the
-// browser-facing name substituted during the copy.
+// HTML/CSS templates get the browser-facing name and the rating link
+// substituted during the copy.
 const staticFiles = [
-  { from: resolve(__dirname, manifestFile), to: "manifest.json" },
+  { from: resolve(__dirname, "manifest.json"), to: "manifest.json" },
   { from: resolve(root, "src/entryPoints/toolbarPopup/toolbarPopup.html"), to: "toolbarPopup/toolbarPopup.html", branded: true },
   { from: resolve(root, "src/entryPoints/toolbarPopup/toolbarPopup.css"), to: "toolbarPopup/toolbarPopup.css", branded: true },
   { from: resolve(root, "src/entryPoints/optionsPage/optionsPage.html"), to: "optionsPage/optionsPage.html", branded: true },

@@ -9,11 +9,9 @@ const dist = resolve(root, "dist");
 const releaseDir = resolve(root, "release");
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const version = packageJson.version;
-const releaseArtifacts = [
-  resolve(releaseDir, `tabwheel-firefox-v${version}.xpi`),
-  resolve(releaseDir, `tabwheel-chrome-v${version}.zip`),
-  resolve(releaseDir, `tabwheel-source-v${version}.zip`),
-];
+const chromeArtifact = resolve(releaseDir, `tabwheel-chrome-v${version}.zip`);
+const sourceArtifact = resolve(releaseDir, `tabwheel-source-v${version}.zip`);
+const releaseArtifacts = [chromeArtifact, sourceArtifact];
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -64,16 +62,12 @@ function main() {
     rmSync(artifactPath, { force: true });
   }
 
-  run("npm", ["run", "build:firefox"]);
-  zipDirectory(dist, releaseArtifacts[0]);
+  run("npm", ["run", "build"]);
+  zipDirectory(dist, chromeArtifact);
 
-  run("npm", ["run", "build:chrome"]);
-  zipDirectory(dist, releaseArtifacts[1]);
-
-  archiveSource(releaseArtifacts[2]);
+  archiveSource(sourceArtifact);
 
   console.log("[release] Done");
-  console.log(`- release/tabwheel-firefox-v${version}.xpi`);
   console.log(`- release/tabwheel-chrome-v${version}.zip`);
   console.log(`- release/tabwheel-source-v${version}.zip`);
 }
