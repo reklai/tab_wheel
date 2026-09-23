@@ -9,7 +9,7 @@ import {
 } from "../../lib/common/contracts/tabWheel";
 import {
   isTabWheelModifier,
-  normalizeWheelDelta,
+  measureWheelInput,
   resolveWheelDirection,
   resolveWheelTriggerDistance,
 } from "../../lib/core/tabWheel/tabWheelCore";
@@ -383,7 +383,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     event.preventDefault();
     event.stopPropagation();
-    demoAccumulator += normalizeWheelDelta(event, demo.clientHeight, demo.clientWidth, false);
+    // Same measurement as the real gesture: trackpad inertia never counts and
+    // one mouse notch is one notch on every OS.
+    if ((event as WheelEvent & { momentum?: boolean }).momentum === true) return;
+    demoAccumulator += measureWheelInput(
+      event,
+      demo.clientHeight,
+      demo.clientWidth,
+      false,
+      window.devicePixelRatio,
+    ).deltaPx;
     const triggerDistance = resolveWheelTriggerDistance(80, settings.wheelSensitivity);
     if (Math.abs(demoAccumulator) < triggerDistance) return;
     const movement = resolveWheelDirection(demoAccumulator, settings.invertScroll) === "next" ? 1 : -1;

@@ -13,7 +13,7 @@ import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
 import { sleep } from "../common/utils/asyncFlow";
 import {
   isTabWheelModifier,
-  normalizeWheelDelta,
+  measureWheelInput,
   resolveAcceleratedWheelTriggerDistance,
   resolveWheelDirection,
   resolveWheelTriggerDistance,
@@ -80,6 +80,10 @@ const WHEEL_TRIGGER_THRESHOLD_PX = 80;
 // Keeping this window under that cadence is what stops clicky wheels paying an
 // arrival tax on every switch.
 const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;
+// A continuous wheel stream (trackpad, Magic Mouse) that goes quiet this long
+// has ended: lifting and re-placing fingers for the next swipe takes longer,
+// while the events inside one swipe, even a slow one, arrive far more often.
+const WHEEL_GESTURE_IDLE_MS = 250;
 // MV3 shuts the service worker down after ~30s idle, so the first switch after
 // a pause pays worker cold start (~50-300ms) on top of the switch itself, with
 // nothing waking the worker earlier than the switch message. Crossing the
@@ -322,6 +326,7 @@ export function initApp(): void {
   // trip the guard's ramp escape.
   let lastGestureMagnitudePx = 0;
   let lastVisibleAtMs = 0;
+  let lastWheelEventAt = 0;
   let lastWorkerPrewarmAt = 0;
   let lastWheelCycleAt = 0;
   let wheelBurstCount = 0;
@@ -998,11 +1003,12 @@ export function initApp(): void {
     // the isTrusted test) runs before any work, so an unmodified scroll never
     // pays normalization or a clock read.
     if (!isKeyboardWheelEvent(event)) return;
-    const wheelDelta = normalizeWheelDelta(
+    const { deltaPx: wheelDelta, isNotch } = measureWheelInput(
       event,
       window.innerHeight,
       window.innerWidth,
       settings.horizontalWheel,
+      window.devicePixelRatio,
     );
     if (wheelDelta === 0) return;
     const now = Date.now();
@@ -1032,6 +1038,32 @@ export function initApp(): void {
       lastWorkerPrewarmAt = now;
       void notifyTabWheelContentReady().catch(() => {});
     }
+    const previousWheelEventAt = lastWheelEventAt;
+    lastWheelEventAt = now;
+    // Chrome 151+ says outright which events are the platform's inertia after
+    // the fingers lift (macOS trackpads and Magic Mouse, and Chrome's own
+    // touchpad fling elsewhere). Those are never the user's input, so they are
+    // swallowed like the rest of the gesture and never counted: a trackpad
+    // swipe switches by finger travel alone. The fingers lifting also ends the
+    // swipe, so a partial distance it left behind is dropped rather than
+    // carried into the next swipe. Every other browser leaves the attribute
+    // undefined and relies on the momentum guard below.
+    if ((event as WheelEvent & { momentum?: boolean }).momentum === true) {
+      wheelAccumulator = 0;
+      lastGestureMagnitudePx = 0;
+      return;
+    }
+    // A notch is a deliberate detent: never a momentum tail, so it bypasses
+    // both guards below and ends any session still watching a stream.
+    if (isNotch) {
+      momentumGuardSession = null;
+    } else if (now - previousWheelEventAt > WHEEL_GESTURE_IDLE_MS) {
+      // A continuous stream that went quiet this long was a finished swipe.
+      // Starting the next one from zero is what makes the same swipe give the
+      // same result every time, instead of inheriting a stale partial
+      // distance from a swipe seconds or minutes ago.
+      wheelAccumulator = 0;
+    }
     // Cross-tab handoff: the gesture that switched tabs committed in the
     // previous document, whose guard session died with its visibility. The
     // rest of that tail is delivered here, to a tab with no session and no
@@ -1042,16 +1074,14 @@ export function initApp(): void {
     // The arrival guard is the last defense against a handed-off tail
     // switching again in the tab it lands in, and being wrong in that
     // direction costs an unintended switch, while being conservative costs at
-    // most the single notch that lands inside a 32ms window. So it judges on
-    // deltaMode and arrival timing only. Pixel mode is the only mode that
-    // seeds: line mode is detented by definition, and page mode is a synthetic
-    // multi-line jump — neither can be a momentum tail. Chrome reports clicky
-    // wheels in pixel mode, so those users can still pay one swallowed notch
-    // per switch when a notch happens to land inside the window; that is the
-    // disclosed residual of judging on timing alone.
+    // most one continuous delta inside a 32ms window. A recognized notch never
+    // seeds — a detent cannot be a momentum tail — so a clicky wheel pays
+    // nothing on arrival. Only a wheel whose notches the browser does not
+    // identify (see isWheelNotchEvent) can still lose one landing inside the
+    // window.
     if (
       !momentumGuardSession
-      && event.deltaMode === 0
+      && !isNotch
       && now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS
     ) {
       momentumGuardSession = createMomentumGuardSession(

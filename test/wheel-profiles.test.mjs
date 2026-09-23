@@ -36,13 +36,14 @@ function profileSettings(name) {
   return { ...BASE, wheelPreset: name, ...PROFILES[name] };
 }
 
-// Trigger distance is 80 / sensitivity, so at 48px per clicky notch: precise
-// (100px) needs three, the 80px profiles need two. This is the concrete,
-// user-felt difference between the presets.
-const EXPECTED_CLICKY_NOTCHES = { precise: 3, balanced: 2, fast: 2, custom: 2 };
+// A notch is floored at WHEEL_NOTCH_PX (100px) whatever the OS reports, and
+// every preset's trigger (80 / sensitivity, at most 100px for Precise) is
+// within one notch: one detent, one tab. Presets differ in cooldown and in how
+// far a trackpad travels; only a custom sensitivity below 0.8 asks for two.
+const EXPECTED_CLICKY_NOTCHES = { precise: 1, balanced: 1, fast: 1, custom: 1 };
 
 for (const name of Object.keys(PROFILES)) {
-  test(`${name}: a clicky wheel switches tabs after ${EXPECTED_CLICKY_NOTCHES[name]} notches`, async () => {
+  test(`${name}: a clicky wheel switches tabs after ${EXPECTED_CLICKY_NOTCHES[name]} notch`, async () => {
     const world = await createGestureWorld(profileSettings(name));
     try {
       const { notches, direction } = await world.notchesToFirstCycle(CLICKY);
@@ -94,14 +95,25 @@ for (const name of Object.keys(PROFILES)) {
   test(`${name}: a modifier wheel below the trigger is claimed but does not switch`, async () => {
     const world = await createGestureWorld(profileSettings(name));
     try {
-      const { suppressed, cycles } = await world.wheel({ deltaY: 3, deltaMode: 1, alt: true });
+      // A short trackpad slice: continuous pixel input with the precise echo.
+      const { suppressed, cycles } = await world.wheel({ deltaY: 12, deltaMode: 0, wheelDeltaY: -36, alt: true });
       assert.equal(suppressed, true, "the page must not also scroll during a gesture");
-      assert.deepEqual(cycles, [], "one clicky notch is below every profile's trigger");
+      assert.deepEqual(cycles, [], "a short trackpad slice is below every profile's trigger");
     } finally {
       world.cleanup();
     }
   });
 }
+
+test("a custom sensitivity below 0.8 asks for two notches per switch", async () => {
+  const world = await createGestureWorld({ ...profileSettings("custom"), wheelSensitivity: 0.5 });
+  try {
+    const { notches } = await world.notchesToFirstCycle(CLICKY);
+    assert.equal(notches, 2);
+  } finally {
+    world.cleanup();
+  }
+});
 
 test("the profile knobs in this test still match the source presets", () => {
   const contract = readFileSync(

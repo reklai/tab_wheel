@@ -34,8 +34,9 @@ WHEEL EXPERIENCE
 
 - Wheel cycling follows the visible tab strip from left to right.
 - Page-position restore takes you back to where you stopped reading.
+- One wheel notch switches one tab on Windows, Linux, and macOS alike.
+- On a trackpad or Magic Mouse, finger travel decides how many tabs you move, and the coasting after you lift your fingers never switches tabs.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
-- A momentum guard stops trackpad momentum-tail scrolling from firing extra unintended tab switches, including right after you land on a newly focused tab.
 - Cycling lands reliably on sleeping (unloaded) tabs and waits for them to wake before restoring your place.
 - Works immediately after install or update, even on tabs you already had open — no reload needed.
 - Optional filters can skip pinned or hidden/collapsed tabs.

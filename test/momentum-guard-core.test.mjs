@@ -67,7 +67,7 @@ test("a slow 5%-per-event tail stays blocked for its whole run", async () => {
   assert.ok(results.every((blocked) => blocked === true), "the shipped tuning released a real tail");
 });
 
-test("steady free-spin input re-arms within the steady event budget", async () => {
+test("steady free-spin input is released once the window can judge it", async () => {
   const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
   const tuning = await loadShippedTuning();
 
@@ -286,9 +286,11 @@ test("the guard costs no switches and no latency in the free-spin fast path", as
     // have zeroed the accumulator anyway.
     assert.ok(unguarded.commitTimes.length > 0, `${label} produced no commits to compare`);
     assert.deepEqual(guarded.commitTimes, unguarded.commitTimes, label);
+    // Only the warm-up before the window can judge is held after each commit.
+    const warmUpEvents = Math.ceil(tuning.minJudgeSpanMs / gapMs);
     assert.ok(
-      guarded.blockedDeltas <= tuning.steadyEventCount * guarded.commitTimes.length,
-      `${label} should settle within the steady event budget per commit`,
+      guarded.blockedDeltas <= warmUpEvents * guarded.commitTimes.length,
+      `${label} should settle within the judging warm-up per commit`,
     );
   }
 });
@@ -416,31 +418,80 @@ test("the arrival guard yields to deliberate input in the new tab", async () => 
   });
 
   assert.ok(commitTimes.length >= 1, "steady deliberate input must still switch tabs");
+  // Seed, a warm-up the length of the judging span, then the trigger distance.
   assert.ok(
-    commitTimes[0] <= 12 * (tuning.steadyEventCount + 2),
-    `first deliberate switch took ${commitTimes[0]}ms, longer than the steady budget`,
+    commitTimes[0] <= 12 + tuning.minJudgeSpanMs + 12,
+    `first deliberate switch took ${commitTimes[0]}ms, longer than the judging warm-up`,
   );
 });
 
-test("a 3%-per-event tail stays blocked under the shipped tuning", async () => {
-  // This is the design's thinnest margin and it is deliberate, so pin it: with
-  // steadyEventCount 4 the window spans 3 intervals, and a 3%/event tail shows
-  // 1 - 0.97^3 = 0.0873 net decay against a 0.08 steadyDecayFraction. Raising
-  // steadyDecayFraction above ~0.087, or dropping steadyEventCount to 3, would
-  // silently release slow real tails on wheel-tuned devices. If this test
-  // fails after a tuning change, that trade is what changed.
+test("momentum is judged per millisecond, so a 120Hz tail is blocked like a 60Hz one", async () => {
+  // The defect this replaced: decay judged over a count of events. Momentum
+  // loses a fixed fraction per millisecond (~0.2%/ms on macOS), so a 120Hz
+  // display delivers half the per-event decay of a 60Hz one, and the old
+  // four-event window read a ProMotion tail as steady input and released it.
   const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
   const tuning = await loadShippedTuning();
 
-  const windowIntervals = tuning.steadyEventCount - 1;
-  assert.ok(
-    1 - 0.97 ** windowIntervals > tuning.steadyDecayFraction,
-    "a 3%/event tail no longer clears the steady threshold",
-  );
+  for (const { label, gapMs } of [{ label: "60Hz", gapMs: 16.7 }, { label: "120Hz", gapMs: 8.3 }]) {
+    const session = createMomentumGuardSession(1000, 1, 40);
+    const results = Array.from({ length: 60 }, (_, index) => {
+      const atMs = 1000 + (index + 1) * gapMs;
+      return shouldBlockWheelDelta(session, 40 * 0.998 ** (atMs - 1000), atMs, tuning);
+    });
+    assert.ok(results.every((blocked) => blocked === true), `the ${label} tail was released`);
+  }
+});
 
-  const session = createMomentumGuardSession(1000, 1, 50);
-  const results = Array.from({ length: 30 }, (_, index) => 50 * 0.97 ** (index + 1))
-    .map((magnitude, index) => shouldBlockWheelDelta(session, magnitude, 1008 + index * 8, tuning));
+test("the decay bar sits well below real momentum and well above steady input", async () => {
+  // The margin that replaced the old razor-thin 3%/event pin: macOS sheds
+  // ~0.2%/ms, and the bar is 2.5x lower than that.
+  const tuning = await loadShippedTuning();
+  assert.ok(tuning.minTailDecayPerMs * 2.5 <= 0.002, "the bar crept up towards real momentum");
+  assert.ok(tuning.minTailDecayPerMs > 0, "steady input would be held as a tail");
+});
 
-  assert.ok(results.every((blocked) => blocked === true), "a 3%/event tail was released");
+test("a tail that follows steady finger motion is still blocked", async () => {
+  // The inconsistency users felt on trackpads: the finger is steady right up
+  // until it lifts, so a guard that released for good on the first steady
+  // window was gone by the time the momentum arrived, and the tail switched
+  // again. The session now watches the whole stream.
+  const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
+  const tuning = await loadShippedTuning();
+
+  const session = createMomentumGuardSession(1000, 1, 20);
+  let now = 1000;
+  const finger = [20, 21, 19, 20, 22, 20, 21, 20, 19, 21].map((magnitude) => {
+    now += 8;
+    return shouldBlockWheelDelta(session, magnitude, now, tuning);
+  });
+  assert.ok(finger.some((blocked) => blocked === false), "steady finger motion should pass");
+
+  const tail = Array.from({ length: 80 }, (_, index) => {
+    now += 8;
+    return { blocked: shouldBlockWheelDelta(session, 21 * 0.998 ** ((index + 1) * 8), now, tuning), index };
+  });
+  // Only the first window's worth of the tail can pass while it still holds
+  // the finger's last steady samples.
+  const leaked = tail.filter(({ blocked, index }) => !blocked && index * 8 > tuning.tailWindowMs);
+  assert.deepEqual(leaked, [], "the tail after steady finger motion was released");
+});
+
+test("a tail that follows a flick is still blocked", async () => {
+  // A flick ramps just before the fingers lift. That ramp used to disarm the
+  // guard permanently, handing it the whole momentum tail that follows.
+  const { createMomentumGuardSession, shouldBlockWheelDelta } = await loadCore();
+  const tuning = await loadShippedTuning();
+
+  const session = createMomentumGuardSession(1000, 1, 10);
+  let now = 1000;
+  for (const magnitude of [16, 26, 40]) {
+    now += 8;
+    assert.equal(shouldBlockWheelDelta(session, magnitude, now, tuning), false, "a flick is intentional");
+  }
+  const tail = Array.from({ length: 80 }, (_, index) => {
+    now += 8;
+    return shouldBlockWheelDelta(session, 40 * 0.998 ** ((index + 1) * 8), now, tuning);
+  });
+  assert.ok(tail.every((blocked) => blocked === true), "the tail after a flick was released");
 });

@@ -15,6 +15,12 @@ npm run ci
 npm run release:package
 ```
 
+## Unreleased
+
+- Made one wheel notch switch one tab on macOS. macOS scales a slow notch down to about 4 px (Chrome) or a single line (Firefox) and a fast spin far up, so a Mac mouse used to need a long run of slow notches for one switch and then jump several tabs on a quick spin. Notches are now recognized from what the browser already reports (Chrome's raw notch count, Firefox's whole-line deltas) and each one counts as at least a full 100 px step, so every preset switches one tab per notch, as it already did on Windows and Linux Chrome. Firefox line-mode notches elsewhere follow the same rule, so they no longer need two or three notches per switch; a custom sensitivity below 0.8 still asks for two.
+- Made trackpad and Magic Mouse switching consistent. A swipe now switches by finger travel alone: the inertia after the fingers lift is ignored outright on Chrome 151+, which marks those events, and a stronger momentum guard handles Firefox, Zen, and older Chrome. The guard judges decay per millisecond instead of per event (a 120 Hz ProMotion display's tail used to read as steady input), and it keeps watching the whole stream instead of standing down the first time it saw steady or rising finger motion, which is what let the tail after a normal swipe or a flick switch again. A swipe that falls short no longer banks its distance for the next one, so the same swipe gives the same result every time.
+- Recognized notches skip the post-switch arrival guard, so a clicky wheel no longer risks losing a notch that lands just after a switch.
+
 ## 4.1.0
 
 - Added three remappable modifier + mouse-button actions: Mute / unmute tab (toggles the active tab's audio), Go back, and Go forward (navigate the active tab's history). On Chrome, back and forward show a short status when the history has no entry in that direction; Firefox treats that case as a silent no-op.

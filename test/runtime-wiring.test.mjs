@@ -139,10 +139,11 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   const wheelHandlerSource = app.slice(app.indexOf("function wheelHandler"));
   assertOrdered(wheelHandlerSource, [
     "if (!isKeyboardWheelEvent(event)) return;",
-    "const wheelDelta = normalizeWheelDelta(",
+    "const { deltaPx: wheelDelta, isNotch } = measureWheelInput(",
     "if (wheelDelta === 0) return;",
     "const now = Date.now();",
     "suppressPageEvent(event);",
+    "if ((event as WheelEvent & { momentum?: boolean }).momentum === true) {",
     "createMomentumGuardSession(",
     "shouldBlockWheelDelta(",
     "wheelAccumulator += wheelDelta;",
@@ -151,6 +152,23 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   assert.match(app, /function isKeyboardWheelEvent\(event: WheelEvent\): boolean \{[\s\S]{0,200}event\.isTrusted/);
   assert.doesNotMatch(wheelHandlerSource, /if \(!event\.isTrusted\) return;/);
   assert.match(app, /momentumGuardSession\s*\n\s*&& shouldBlockWheelDelta\(/);
+
+  // Chrome's momentum flag: inertia is swallowed (suppressed above) but never
+  // counted, and it ends the swipe's partial distance.
+  assert.match(
+    wheelHandlerSource,
+    /momentum === true\) \{\s*\n\s*wheelAccumulator = 0;\s*\n\s*lastGestureMagnitudePx = 0;\s*\n\s*return;/,
+  );
+  // Notches are measured with the page's devicePixelRatio (Blink divides the
+  // legacy wheelDelta by it) and skip both tail guards; a continuous stream
+  // that went idle starts the next swipe from zero.
+  assert.match(wheelHandlerSource, /settings\.horizontalWheel,\s*\n\s*window\.devicePixelRatio,/);
+  assert.match(wheelHandlerSource, /if \(isNotch\) \{\s*\n\s*momentumGuardSession = null;/);
+  assert.match(app, /const WHEEL_GESTURE_IDLE_MS = 250;/);
+  assert.match(
+    wheelHandlerSource,
+    /now - previousWheelEventAt > WHEEL_GESTURE_IDLE_MS\) \{[\s\S]{0,400}wheelAccumulator = 0;/,
+  );
 
   // Nothing about the wheel is measured, recorded, or written anywhere: wheel
   // events are handled transiently for the gesture itself and then forgotten.
@@ -165,7 +183,7 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   );
 
   // The whole trigger: configured sensitivity, accelerated by the current
-  // burst. No multiplier, no notch adaptation, no per-device narrowing — a
+  // burst. No multiplier, no learned notch size, no per-device narrowing — a
   // preset's feel is exactly what the user picked.
   assert.match(app, /if \(Math\.abs\(wheelAccumulator\) < acceleratedDistance\) return;/);
   assertOrdered(app, [
@@ -201,14 +219,13 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   // a visibility gain seeds a session there instead of being accumulated.
   // The window must stay under a detented wheel's ~40ms cadence, or a clicky
   // wheel pays a swallowed notch on every switch — and every gesture switch is
-  // a cross-tab handoff. Only pixel mode (deltaMode 0) seeds: line mode is
-  // detented by definition and page mode is a synthetic jump, so neither can
-  // be a momentum tail.
+  // a cross-tab handoff. A recognized notch never seeds: a detent cannot be a
+  // momentum tail.
   assert.match(app, /const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;/);
   assert.match(app, /lastVisibleAtMs = Date\.now\(\);/);
   assert.match(
     app,
-    /!momentumGuardSession\s*\n\s*&& event\.deltaMode === 0\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
+    /!momentumGuardSession\s*\n\s*&& !isNotch\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
   );
   assert.match(app, /wheelDelta > 0 \? 1 : -1,\s*\n\s*Math\.abs\(wheelDelta\),/);
 

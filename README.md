@@ -10,6 +10,8 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Cycles in visible left-to-right tab-strip order.
 - Restores the root page position when you return to a tab and URL.
 - Offers Precise, Balanced, Fast, and Custom wheel feel.
+- Switches one tab per wheel notch on every OS, including macOS, where the system scales a slow notch down to a few pixels.
+- Switches by finger travel on a trackpad or Magic Mouse: a short swipe moves one tab, a longer swipe moves more, and each swipe starts fresh. The inertia after you lift your fingers never switches tabs. Chrome 151+ marks those inertia events directly; in Firefox and older Chrome a momentum guard recognizes them by their smooth decay, including right after you land on the newly focused tab.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
 - Opens the browser's New Tab page beside the current tab with modifier + left click.

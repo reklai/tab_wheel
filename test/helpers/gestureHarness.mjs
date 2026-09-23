@@ -87,6 +87,11 @@ function installDom() {
       this.deltaX = opts.deltaX ?? 0;
       this.deltaY = opts.deltaY ?? 0;
       this.deltaMode = opts.deltaMode ?? 0;
+      // Legacy Chromium/Gecko notch report and Chrome 151+'s momentum flag;
+      // left undefined unless a profile supplies them, like a browser without.
+      if (opts.wheelDeltaX !== undefined) this.wheelDeltaX = opts.wheelDeltaX;
+      if (opts.wheelDeltaY !== undefined) this.wheelDeltaY = opts.wheelDeltaY;
+      if (opts.momentum !== undefined) this.momentum = opts.momentum;
     }
   }
 
@@ -127,6 +132,7 @@ function installDom() {
   const windowMock = {
     innerWidth: 1280,
     innerHeight: 800,
+    devicePixelRatio: 1,
     scrollX: 0,
     scrollY: 0,
     top: null,
@@ -182,7 +188,7 @@ function installDom() {
     }
   }
 
-  return { dispatch, dispatchDocument, restore, MockEditable, listeners, clock };
+  return { dispatch, dispatchDocument, restore, MockEditable, listeners, clock, windowMock };
 }
 
 async function loadBundle() {
@@ -261,9 +267,9 @@ export async function createGestureWorld(settings = {}) {
 
   // One modifier + wheel notch. Returns whether the page event was suppressed
   // and the cycle directions that fired (drained since the previous call).
-  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, alt = true, ctrl = false, meta = false, shift = false, advanceMs = 0 } = {}) {
+  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, wheelDeltaY, wheelDeltaX, momentum, alt = true, ctrl = false, meta = false, shift = false, advanceMs = 0 } = {}) {
     if (advanceMs) bump(advanceMs);
-    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, alt, ctrl, meta, shift });
+    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, wheelDeltaY, wheelDeltaX, momentum, alt, ctrl, meta, shift });
     await flushAsyncWork();
     const cycles = drainMessages()
       .filter((message) => message.type === "TABWHEEL_CYCLE")
@@ -321,6 +327,7 @@ export async function createGestureWorld(settings = {}) {
     dispatchDocument: dom.dispatchDocument,
     wheel,
     notchesToFirstCycle,
+    setDevicePixelRatio: (ratio) => { dom.windowMock.devicePixelRatio = ratio; },
     drag,
     advance: bump,
     drainActions,
