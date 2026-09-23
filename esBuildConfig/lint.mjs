@@ -14,9 +14,6 @@ const BANNED_UI_PACKAGES = [
   "@angular/core",
 ];
 
-const OVERLAY_TS_FILES = [];
-const OVERLAY_CSS_FILES = [];
-
 const DISALLOWED_IDENTIFIER_PATTERNS = [
   {
     pattern: /\b(?:const|let|var)\s+msg\b/g,
@@ -168,46 +165,6 @@ function checkLayerBoundaries() {
   }
 }
 
-function checkOverlayContracts() {
-  for (const file of OVERLAY_TS_FILES) {
-    const source = readText(file);
-    if (!source.includes("createPanelHost(")) {
-      errors.push(`${file} must create overlays through createPanelHost().`);
-    }
-    if (!source.includes("getBaseStyles()")) {
-      errors.push(`${file} must compose styles from getBaseStyles().`);
-    }
-    if (!source.includes("registerPanelCleanup(")) {
-      errors.push(`${file} must register panel cleanup to avoid listener leaks.`);
-    }
-  }
-}
-
-function checkUiGlitchBaseline() {
-  for (const file of OVERLAY_CSS_FILES) {
-    const css = readText(file);
-    if (!css.includes("backface-visibility: hidden")) {
-      errors.push(`${file} must set backface-visibility: hidden on its panel container.`);
-    }
-    if (!css.includes("will-change: transform")) {
-      errors.push(`${file} must set will-change: transform on its panel container.`);
-    }
-    if (!css.includes("contain: layout style paint")) {
-      errors.push(`${file} must set contain: layout style paint on its panel container.`);
-    }
-    if (!css.includes("overscroll-behavior: contain")) {
-      errors.push(`${file} must set overscroll-behavior: contain on its panel container.`);
-    }
-    if (!css.includes("@media (max-width:")) {
-      errors.push(`${file} must include a responsive @media (max-width: ...) rule.`);
-    }
-    if (!css.includes("var(--ht-color-")) {
-      errors.push(`${file} must consume shared panelHost design tokens (var(--ht-color-*)).`);
-    }
-  }
-
-}
-
 function checkContributorDocs() {
   const contributing = readText("CONTRIBUTING.md");
 
@@ -284,8 +241,6 @@ function checkNamingConsistency() {
 checkPackageDependencies();
 checkSourceImports();
 checkLayerBoundaries();
-checkOverlayContracts();
-checkUiGlitchBaseline();
 checkContributorDocs();
 checkPathNamingConventions();
 checkFunctionNamingConventions();
@@ -300,6 +255,4 @@ if (errors.length > 0) {
 }
 
 console.log("[lint] OK");
-console.log(`- Checked overlay modules: ${OVERLAY_TS_FILES.length}`);
-console.log(`- Checked overlay styles: ${OVERLAY_CSS_FILES.length}`);
 console.log(`- Banned UI packages: ${BANNED_UI_PACKAGES.length}`);
