@@ -26,9 +26,6 @@ export type BackgroundRuntimeMessage =
     source: TabWheelCycleSource;
     windowId?: number;
   }
-  // Reinjects the content script into the current tab and reports whether it
-  // is ready.
-  | { type: "TABWHEEL_REFRESH_CURRENT_TAB"; windowId?: number }
   | { type: "TABWHEEL_GET_OVERVIEW"; windowId?: number }
   | { type: "TABWHEEL_OPEN_NATIVE_NEW_TAB"; windowId?: number }
   | { type: "TABWHEEL_ACTIVATE_MOST_RECENT_TAB"; windowId?: number }

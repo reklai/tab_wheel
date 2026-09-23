@@ -17,11 +17,6 @@ interface ToolbarBadgeApi {
   setBadgeBackgroundColor?(details: { color: string; tabId?: number }): Promise<void>;
 }
 
-// Tabs currently showing the badge, so clearAllToolbarBadges knows which tabs
-// to clear. Best-effort only: the service worker can shut down and lose
-// this Set, while the badge text persists per tab in the browser UI. The next
-// activation or update of a tab re-applies its badge from scratch.
-const badgedTabIds = new Set<number>();
 let badgeBackgroundColorApplied = false;
 
 /** Returns the toolbar-icon badge API, or null when the browser lacks it. */
@@ -64,38 +59,18 @@ export async function updateTabToolbarBadge(
     await ensureBadgeBackgroundColor(api);
     try {
       await api.setBadgeText({ text: badge.text, tabId });
-      badgedTabIds.add(tabId);
     } catch (_) {
       // Tab likely closed mid-update; nothing further to reconcile.
     }
     return;
   }
 
-  // Always issue the clear call, even for a tab missing from badgedTabIds. The
-  // Set is wiped on every idle restart of the service worker, so gating on
-  // membership would strand a stale "!" on a tab badged before the restart.
+  // Always issue the clear call rather than remembering which tabs were
+  // badged: the service worker can restart at any time, and anything held in
+  // memory would be lost, stranding a stale "!" on a tab badged before it.
   try {
     await api.setBadgeText({ text: "", tabId });
   } catch (_) {
-    // Tab likely closed mid-update; still forget it below.
-  } finally {
-    badgedTabIds.delete(tabId);
+    // Tab likely closed mid-update; nothing further to reconcile.
   }
-}
-
-/** Drops a closed tab from tracking. No browser call: the tab is already gone. */
-export function forgetToolbarBadgeTab(tabId: number): void {
-  badgedTabIds.delete(tabId);
-}
-
-/** Clears the badge from every tracked tab and empties the tracking Set. */
-export async function clearAllToolbarBadges(): Promise<void> {
-  const api = getToolbarBadgeApi();
-  const tabIds = Array.from(badgedTabIds);
-  badgedTabIds.clear();
-  if (!api) return;
-  await Promise.all(tabIds.map((tabId) =>
-    api.setBadgeText({ text: "", tabId }).catch(() => {
-      // Tab is gone; dropping it from the tracking Set above is enough.
-    })));
 }

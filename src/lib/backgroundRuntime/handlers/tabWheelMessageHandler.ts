@@ -38,9 +38,6 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_CYCLE":
         return await domain.cycle(message.direction, message.source, sender.tab, message.windowId);
 
-      case "TABWHEEL_REFRESH_CURRENT_TAB":
-        return await domain.refreshCurrentTab(sender.tab, message.windowId ?? sender.tab?.windowId);
-
       case "TABWHEEL_GET_OVERVIEW":
         return await domain.getOverview(sender.tab, message.windowId ?? sender.tab?.windowId);
 

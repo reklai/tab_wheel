@@ -56,10 +56,7 @@ import {
   createWriteChain,
   sleep,
 } from "../../common/utils/asyncFlow";
-import {
-  forgetToolbarBadgeTab,
-  updateTabToolbarBadge,
-} from "./toolbarBadge";
+import { updateTabToolbarBadge } from "./toolbarBadge";
 
 /** Saved scroll positions, keyed by stringified tab id (see tabKey). */
 type ScrollMemoryByTabId = Record<string, TabWheelScrollMemoryEntry>;
@@ -183,7 +180,6 @@ export interface TabWheelDomain {
   moveCurrentTab(direction: TabWheelMoveDirection, tab?: Tabs.Tab, gestureId?: string): Promise<TabWheelMoveResult>;
   endTabDrag(gestureId: string, tab?: Tabs.Tab): Promise<TabWheelActionResult>;
   waitForTabDrag(tab?: Tabs.Tab): Promise<void>;
-  refreshCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelRefreshResult>;
   resetState(): Promise<TabWheelActionResult>;
   saveScrollPosition(tabId: number, windowId: number, url: string | undefined, scroll: ScrollData): Promise<TabWheelActionResult>;
   markContentScriptReady(tab?: Tabs.Tab): TabWheelActionResult;
@@ -1825,76 +1821,6 @@ export function createTabWheelDomain(options: {
     );
   }
 
-  /**
-   * Re-injects the content script into the active tab and waits for it to
-   * answer. A tab that refuses injection but already has a working script
-   * still counts as success.
-   */
-  async function refreshCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelRefreshResult> {
-    await ensureLoaded();
-    const activeTab = await resolveActiveTab(tab, windowId);
-    if (!activeTab?.id || activeTab.windowId == null) {
-      return {
-        ok: false,
-        reason: "Couldn't find the current tab",
-        contentScriptStatus: "unavailable",
-      };
-    }
-
-    if (isPageGestureRestrictedUrl(activeTab.url)) {
-      markContentScriptUnavailable(activeTab);
-      return {
-        ok: false,
-        reason: "TabWheel cannot run on this page.",
-        overview: await getOverview(activeTab, activeTab.windowId),
-        contentScriptStatus: "unavailable",
-      };
-    }
-
-    const wasReady = await pingContentScript(activeTab);
-    const injection = await injectContentScriptIntoTab(activeTab);
-    if (injection !== "injected") {
-      const overview = await getOverview(activeTab, activeTab.windowId);
-      if (wasReady || overview.contentScriptStatus === "ready") {
-        return {
-          ok: true,
-          overview,
-          contentScriptStatus: overview.contentScriptStatus,
-          injected: false,
-        };
-      }
-      markContentScriptUnavailable(activeTab);
-      return {
-        ok: false,
-        reason: "TabWheel cannot run on this page.",
-        overview,
-        contentScriptStatus: overview.contentScriptStatus,
-        injected: false,
-      };
-    }
-
-    const currentTab = await browser.tabs.get(activeTab.id).catch(() => activeTab);
-    const isReady = await waitForContentScriptReady(currentTab);
-    const overview = await getOverview(currentTab, activeTab.windowId);
-    if (!isReady || overview.contentScriptStatus !== "ready") {
-      markContentScriptUnavailable(currentTab);
-      return {
-        ok: false,
-        reason: "Couldn't refresh TabWheel on this page",
-        overview,
-        contentScriptStatus: overview.contentScriptStatus,
-        injected: true,
-      };
-    }
-
-    return {
-      ok: true,
-      overview,
-      contentScriptStatus: "ready",
-      injected: true,
-    };
-  }
-
   // One-shot actions on the active tab that leave the tab strip untouched, so
   // they neither invalidate the window-tabs cache nor touch recent-tab order.
   async function toggleMuteCurrentTab(
@@ -2065,7 +1991,6 @@ export function createTabWheelDomain(options: {
       neighborPreprobedUntilByTabId.delete(tabId);
       scrollRestoreTokensByTabId.delete(tabId);
       clearDiscardedWakeHoldForTab(tabId);
-      forgetToolbarBadgeTab(tabId);
       for (const [windowId, activeTabId] of activeTabIdsByWindowId) {
         if (activeTabId === tabId) activeTabIdsByWindowId.delete(windowId);
       }
@@ -2210,7 +2135,6 @@ export function createTabWheelDomain(options: {
     moveCurrentTab,
     endTabDrag,
     waitForTabDrag,
-    refreshCurrentTab,
     resetState,
     saveScrollPosition,
     markContentScriptReady,

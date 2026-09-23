@@ -150,14 +150,6 @@ interface TabWheelMoveResult extends TabWheelActionResult {
   index?: number;
 }
 
-/** The reply to a Refresh request for the current tab. */
-interface TabWheelRefreshResult extends TabWheelActionResult {
-  overview?: TabWheelOverview;
-  contentScriptStatus: TabWheelContentScriptStatus;
-  /** Whether a content script was injected by this refresh. */
-  injected?: boolean;
-}
-
 /** What the popup shows about the current window. */
 interface TabWheelOverview {
   /** The active tab's position among the tabs a gesture can reach (0 if none). */

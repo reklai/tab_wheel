@@ -16,15 +16,11 @@
 
 import { sendRuntimeMessage, sendRuntimeMessageWithRetry, RuntimeRetryPolicy } from "./runtimeClient";
 
-/** Reads the active tab's position and whether TabWheel is live on that page. */
-export function getTabWheelOverview(windowId?: number): Promise<TabWheelOverview> {
-  return sendRuntimeMessage<TabWheelOverview>({ type: "TABWHEEL_GET_OVERVIEW", windowId });
-}
-
 /**
- * Like getTabWheelOverview, but retries while the worker wakes. The router lets
- * overview failures reject (instead of returning a failure result) so this
- * retry can tell a sleeping worker from a real empty state.
+ * Reads the active tab's position and whether TabWheel is live on that page,
+ * retrying while the worker wakes. The router lets overview failures reject
+ * (instead of returning a failure result) so this retry can tell a sleeping
+ * worker from a real empty state.
  */
 export function getTabWheelOverviewWithRetry(
   windowId?: number,
@@ -61,14 +57,6 @@ export function cycleTabWheel(
     type: "TABWHEEL_CYCLE",
     direction,
     source,
-    windowId,
-  });
-}
-
-/** Re-checks (and re-injects if needed) the content script in the active tab. */
-export function refreshCurrentTabWheel(windowId?: number): Promise<TabWheelRefreshResult> {
-  return sendRuntimeMessage<TabWheelRefreshResult>({
-    type: "TABWHEEL_REFRESH_CURRENT_TAB",
     windowId,
   });
 }

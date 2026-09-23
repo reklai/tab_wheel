@@ -58,36 +58,24 @@ test("badge background color guard actually gates the call, in source order", ()
   assert.ok(flagSetIndex > guardCheckIndex && flagSetIndex < setColorCallIndex);
 });
 
-test("the badge-clear branch is never gated on Set membership (worker restarts must not strand a stale badge)", () => {
+test("the badge-clear branch is never gated on remembered state (worker restarts must not strand a stale badge)", () => {
   const adapter = readText("src/lib/backgroundRuntime/domains/toolbarBadge.ts");
 
   const updateBody = adapter.slice(adapter.indexOf("export async function updateTabToolbarBadge"));
   const clearBranch = updateBody.slice(updateBody.indexOf("if (badge) {"));
 
-  // Regression lock: the clear call must run unconditionally once badge is
-  // null — no `if (!badgedTabIds.has(tabId)) return;` (or equivalent
-  // membership check) short-circuiting it before setBadgeText clears.
-  assert.doesNotMatch(clearBranch, /badgedTabIds\.has\(tabId\)/);
+  // The clear call runs unconditionally once badge is null. Nothing in memory
+  // may decide whether it happens: the worker can restart and forget it.
   assert.match(clearBranch, /await api\.setBadgeText\(\{ text: "", tabId \}\);/);
-  // The Set write for the clear path is a `delete` (bookkeeping), not a
-  // gate on whether the browser call happens.
-  assert.match(clearBranch, /badgedTabIds\.delete\(tabId\)/);
+  assert.doesNotMatch(adapter, /new Set</);
 });
 
-test("clearAllToolbarBadges clears every tracked tab and tolerates gone tabs", () => {
-  const adapter = readText("src/lib/backgroundRuntime/domains/toolbarBadge.ts");
-
-  const clearAllBody = adapter.slice(adapter.indexOf("export async function clearAllToolbarBadges"));
-  assert.match(clearAllBody, /badgedTabIds\.clear\(\)/);
-  assert.match(clearAllBody, /\.catch\(/);
-});
-
-test("tabWheelDomain wires badge updates into onActivated, onUpdated, worker start, and tab removal", () => {
+test("tabWheelDomain wires badge updates into onActivated, onUpdated, and worker start", () => {
   const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
 
   assert.match(
     domain,
-    /import\s*\{\s*forgetToolbarBadgeTab,\s*updateTabToolbarBadge,\s*\}\s*from\s*"\.\/toolbarBadge"/,
+    /import\s*\{\s*updateTabToolbarBadge\s*\}\s*from\s*"\.\/toolbarBadge"/,
   );
 
   const onActivatedStart = domain.indexOf("browser.tabs.onActivated.addListener");
@@ -102,7 +90,7 @@ test("tabWheelDomain wires badge updates into onActivated, onUpdated, worker sta
   const onRemovedBody = domain.slice(onRemovedStart, onUpdatedStart);
   const onUpdatedBody = domain.slice(onUpdatedStart, tabGroupsApiRegisterStart);
   assert.ok(onRemovedStart >= 0 && onUpdatedStart > onRemovedStart && tabGroupsApiRegisterStart > onUpdatedStart);
-  assert.match(onRemovedBody, /forgetToolbarBadgeTab\(tabId\)/);
+  assert.doesNotMatch(onRemovedBody, /ToolbarBadge/);
   assert.match(onUpdatedBody, /changeInfo\.url\s*\|\|\s*changeInfo\.status === "complete"/);
   assert.match(onUpdatedBody, /applyToolbarBadgeForTab\(updatedTab\)/);
 

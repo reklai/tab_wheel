@@ -520,7 +520,7 @@ test("click actions use adjacent native tabs and exact same-window recent histor
 
   const recentSource = domain.slice(
     domain.indexOf("function getRecentCandidateTabs("),
-    domain.indexOf("async function refreshCurrentTab("),
+    domain.indexOf("async function toggleMuteCurrentTab("),
   );
   assert.match(recentSource, /recentTabIdsByWindowId\[windowKey\(windowId\)\]/);
   assert.match(recentSource, /\.filter\(\(tabId\) => tabId !== activeTabId\)/);
@@ -537,7 +537,7 @@ test("click actions use adjacent native tabs and exact same-window recent histor
 
   const duplicateSource = domain.slice(
     domain.indexOf("async function duplicateTab("),
-    domain.indexOf("async function refreshCurrentTab("),
+    domain.indexOf("async function toggleMuteCurrentTab("),
   );
   assert.match(duplicateSource, /browser\.tabs\.duplicate\(activeTab\.id\)/);
   assert.match(duplicateSource, /browser\.tabs\.update\(duplicatedTab\.id, \{ active: true \}\)/);
@@ -548,7 +548,7 @@ test("tab dragging moves the initiating active tab within structural boundaries"
   const domain = readText("src/lib/backgroundRuntime/domains/tabWheelDomain.ts");
   const moveSource = domain.slice(
     domain.indexOf("async function moveCurrentTabUnlocked("),
-    domain.indexOf("async function refreshCurrentTab("),
+    domain.indexOf("async function toggleMuteCurrentTab("),
   );
 
   assert.match(types, /type TabWheelMoveDirection = "left" \| "right"/);

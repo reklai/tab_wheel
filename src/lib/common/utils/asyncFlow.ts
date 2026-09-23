@@ -54,37 +54,6 @@ export interface KeyedTaskQueue {
   run<T>(key: number, task: () => Promise<T>): Promise<T>;
 }
 
-/** A debounced call; `cancel()` drops a pending call. */
-export interface DebouncedFunction<A extends unknown[]> {
-  (...args: A): void;
-  cancel(): void;
-}
-
-/**
- * Delays calling `fn` until `delayMs` ms pass with no further call; the last
- * call's arguments win.
- */
-export function createDebouncedCallback<A extends unknown[]>(
-  fn: (...args: A) => void,
-  delayMs: number,
-): DebouncedFunction<A> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const debounced = (...args: A): void => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      fn(...args);
-    }, delayMs);
-  };
-  debounced.cancel = (): void => {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  };
-  return debounced;
-}
-
 /**
  * Runs tasks one at a time per key (the background keys by window id), in
  * call order, while tasks for different keys run concurrently. A failed task
