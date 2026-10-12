@@ -101,7 +101,7 @@ test("content script claims configured click actions and leaves Off unclaimed", 
   assert.match(app, /isMouseClaimReleaseEvent\(/);
   assert.match(
     app,
-    /if \(event\.type === "pointerdown" \|\| Date\.now\(\) > claim\.expiresAt\)/,
+    /if \(isMousePressStart\(event\) \|\| Date\.now\(\) > claim\.expiresAt\)/,
   );
   assert.match(
     app,
@@ -139,7 +139,7 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   const wheelHandlerSource = app.slice(app.indexOf("function wheelHandler"));
   assertOrdered(wheelHandlerSource, [
     "if (!isKeyboardWheelEvent(event)) return;",
-    "const { deltaPx: wheelDelta, isNotch } = measureWheelInput(",
+    "const { deltaPx: wheelDelta, isNotch, isWheelSlice } = measureWheelInput(",
     "if (wheelDelta === 0) return;",
     "const now = wheelEventTimeMs(event);",
     "suppressPageEvent(event);",

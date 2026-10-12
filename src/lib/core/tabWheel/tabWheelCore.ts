@@ -144,14 +144,24 @@ export function measureWheelAxes(
  * far short of the distance that switches a tab.
  */
 export const SWIPE_AXIS_LOCK_PX = 10;
+/**
+ * After the lock is set, travel is judged in stretches of this many px (both
+ * axes added together). A stretch that ran mostly on the other axis moves the
+ * lock there.
+ */
+export const SWIPE_AXIS_RELOCK_PX = 24;
+/** How many times further the other axis must go in a stretch to take the lock. */
+export const SWIPE_AXIS_RELOCK_RATIO = 2;
 
 /**
  * Which axis a continuous swipe is read on. Fingers never move in a perfectly
  * straight line, so reading each event on whichever axis moved further lets a
  * diagonal swipe count some events vertically and some horizontally; when the
  * two point opposite ways (down and to the left) the swipe cancels itself. A
- * swipe is instead read on one axis from start to finish: the axis that
- * covered more ground once SWIPE_AXIS_LOCK_PX has been travelled.
+ * swipe is instead read on one axis: the axis that covered more ground once
+ * SWIPE_AXIS_LOCK_PX has been travelled. The lock only moves when the fingers
+ * plainly run along the other axis (see SWIPE_AXIS_RELOCK_PX), so a swipe
+ * whose first few px leaned the wrong way is not lost for its whole length.
  */
 export interface SwipeAxisLock {
   /** The locked axis, or null while the swipe has not travelled far enough. */
@@ -159,19 +169,33 @@ export interface SwipeAxisLock {
   /** Unsigned distance seen on each axis so far, in px. */
   travelXPx: number;
   travelYPx: number;
+  /** Unsigned distance on each axis in the current stretch since the lock. */
+  stretchXPx: number;
+  stretchYPx: number;
 }
 
 /** A lock for a swipe that has not started. Also used to reset one in place. */
 export function createSwipeAxisLock(): SwipeAxisLock {
-  return { axis: null, travelXPx: 0, travelYPx: 0 };
+  return { axis: null, travelXPx: 0, travelYPx: 0, stretchXPx: 0, stretchYPx: 0 };
 }
 
 /**
  * The axis to read one event of a swipe on, updating `lock`. Until the lock
- * is set this is the axis leading so far, with vertical winning a tie.
+ * is set this is the axis leading so far, with vertical winning a tie. Once
+ * set it is the locked axis, which a stretch run on the other axis can move.
  */
 export function resolveSwipeAxis(lock: SwipeAxisLock, axes: WheelAxesPx): "x" | "y" {
-  if (lock.axis) return lock.axis;
+  if (lock.axis) {
+    lock.stretchXPx += Math.abs(axes.x);
+    lock.stretchYPx += Math.abs(axes.y);
+    if (lock.stretchXPx + lock.stretchYPx < SWIPE_AXIS_RELOCK_PX) return lock.axis;
+    const lockedPx = lock.axis === "x" ? lock.stretchXPx : lock.stretchYPx;
+    const otherPx = lock.axis === "x" ? lock.stretchYPx : lock.stretchXPx;
+    if (otherPx >= lockedPx * SWIPE_AXIS_RELOCK_RATIO) lock.axis = lock.axis === "x" ? "y" : "x";
+    lock.stretchXPx = 0;
+    lock.stretchYPx = 0;
+    return lock.axis;
+  }
   lock.travelXPx += Math.abs(axes.x);
   lock.travelYPx += Math.abs(axes.y);
   const leading = lock.travelXPx > lock.travelYPx ? "x" : "y";
@@ -220,7 +244,20 @@ export interface WheelInput {
    * deliberate input, so it bypasses the momentum guard.
    */
   isNotch: boolean;
+  /**
+   * True for part of a detent from a wheel that reports less than a whole
+   * notch per event (hi-res and smooth-scrolling wheels). It is wheel input,
+   * so it is paced by the wheel's trigger and cooldown, not counted as swipe
+   * travel; unlike a notch it is not floored and does not bypass the guards.
+   */
+  isWheelSlice: boolean;
 }
+
+/**
+ * What kind of device one wheel event came from: a whole detent of a notched
+ * wheel, part of a detent ("slice"), or a continuous swipe.
+ */
+export type WheelEventKind = "notch" | "slice" | "swipe";
 
 // True when a recovered tick count is a whole number of notches, at least one.
 function isWholeTickCount(ticks: number): boolean {
@@ -248,12 +285,28 @@ export function isWheelNotchEvent(
   axis: "x" | "y",
   devicePixelRatio: number,
 ): boolean {
+  return classifyWheelEvent(event, axis, devicePixelRatio) === "notch";
+}
+
+/**
+ * Sorts one event into notch, slice, or swipe by the rules described on
+ * isWheelNotchEvent. A slice is what is left when the legacy wheelDelta is
+ * present, is not a trackpad's echo of deltaY, and is not a whole number of
+ * notches: a wheel reporting a fraction of a detent (a hi-res wheel sends a
+ * quarter notch as wheelDelta 30). An event with no usable wheelDelta is a
+ * swipe.
+ */
+export function classifyWheelEvent(
+  event: WheelNotchEvent,
+  axis: "x" | "y",
+  devicePixelRatio: number,
+): WheelEventKind {
   const delta = axis === "x" ? event.deltaX : event.deltaY;
-  if (!Number.isFinite(delta) || delta === 0) return false;
-  if (event.deltaMode !== 0) return true;
+  if (!Number.isFinite(delta) || delta === 0) return "swipe";
+  if (event.deltaMode !== 0) return "notch";
   const legacyDelta = axis === "x" ? event.wheelDeltaX : event.wheelDeltaY;
   if (typeof legacyDelta !== "number" || !Number.isFinite(legacyDelta) || legacyDelta === 0) {
-    return false;
+    return "swipe";
   }
   const legacyMagnitude = Math.abs(legacyDelta);
   // A trackpad echo can land on a whole tick count by chance, so it has to be
@@ -262,13 +315,15 @@ export function isWheelNotchEvent(
     Math.abs(legacyMagnitude - PRECISE_WHEEL_DELTA_RATIO * Math.abs(delta))
     <= PRECISE_ECHO_TOLERANCE
   ) {
-    return false;
+    return "swipe";
   }
   // Undo Chrome's division by devicePixelRatio to recover the raw tick count.
   const pixelRatio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0
     ? devicePixelRatio
     : 1;
-  return isWholeTickCount(legacyMagnitude * pixelRatio / LEGACY_WHEEL_DELTA_PER_TICK);
+  return isWholeTickCount(legacyMagnitude * pixelRatio / LEGACY_WHEEL_DELTA_PER_TICK)
+    ? "notch"
+    : "slice";
 }
 
 /**
@@ -285,11 +340,15 @@ export function measureWheelInput(
   devicePixelRatio: number,
 ): WheelInput {
   const { axis, deltaPx } = resolveWheelAxis(event, pageHeight, pageWidth, horizontalWheel);
-  if (deltaPx === 0 || !Number.isFinite(deltaPx)) return { deltaPx: 0, isNotch: false };
-  if (!isWheelNotchEvent(event, axis, devicePixelRatio)) return { deltaPx, isNotch: false };
+  if (deltaPx === 0 || !Number.isFinite(deltaPx)) {
+    return { deltaPx: 0, isNotch: false, isWheelSlice: false };
+  }
+  const kind = classifyWheelEvent(event, axis, devicePixelRatio);
+  if (kind !== "notch") return { deltaPx, isNotch: false, isWheelSlice: kind === "slice" };
   return {
     deltaPx: Math.sign(deltaPx) * Math.max(Math.abs(deltaPx), WHEEL_NOTCH_PX),
     isNotch: true,
+    isWheelSlice: false,
   };
 }
 

@@ -445,3 +445,61 @@ test("a long deliberate trackpad swipe still moves several tabs", async () => {
     assert.ok(cycles >= 3, `a 450px swipe switched only ${cycles} tabs`);
   });
 });
+
+// A Windows hi-res wheel: one detent arrives as four events of a quarter
+// notch each (25px, wheelDelta 30), which is neither a whole notch nor a
+// trackpad's echo.
+function hiResDetent(direction = 1) {
+  return Array.from({ length: 4 }, () => ({
+    deltaMode: 0,
+    deltaY: 25 * direction,
+    wheelDeltaY: -30 * direction,
+    advanceMs: 4,
+  }));
+}
+
+test("a hi-res wheel switches one tab per detent, not by swipe travel", async () => {
+  await withWorld(async (world) => {
+    for (let detent = 0; detent < 3; detent += 1) {
+      world.advance(400);
+      assert.equal(await countCycles(world, hiResDetent()), 1, `detent ${detent + 1}`);
+    }
+  });
+});
+
+test("a hi-res wheel spun quickly is paced by the cooldown", async () => {
+  await withWorld(async (world) => {
+    const spin = Array.from({ length: 10 }, () => hiResDetent()).flat();
+    assert.equal(await countCycles(world, spin), 1, "ten detents in 160ms is one switch at Balanced");
+  });
+});
+
+test("a notch does not start from what a swipe or a carry left behind", async () => {
+  // A 45px partial swipe one way, then one notch the other way much later.
+  await withWorld(async (world) => {
+    assert.equal(await countCycles(world, steadySwipe(45, 5)), 0);
+    world.advance(30000);
+    const notch = { deltaMode: 0, deltaY: -100, wheelDeltaY: 120 };
+    assert.equal(await countCycles(world, [notch]), 1, "one notch, one tab");
+  });
+  await withWorld(async (world) => {
+    world.setVisibility("hidden");
+    world.setVisibility("visible");
+    world.drainMessages();
+    world.deliverMessage({ type: "TABWHEEL_SWIPE_CARRY", remainderPx: 45, axis: "y" });
+    world.advance(30000);
+    const notch = { deltaMode: 0, deltaY: -100, wheelDeltaY: 120 };
+    assert.equal(await countCycles(world, [notch]), 1, "one notch, one tab");
+  });
+});
+
+test("a vertical swipe that starts leaning sideways still switches tabs", async () => {
+  await withWorld(async (world) => {
+    const lean = [
+      { deltaMode: 0, deltaX: 6, deltaY: 2, wheelDeltaX: -18, wheelDeltaY: -6, momentum: false, advanceMs: 8 },
+      { deltaMode: 0, deltaX: 5, deltaY: 4, wheelDeltaX: -15, wheelDeltaY: -12, momentum: false, advanceMs: 8 },
+    ];
+    const cycles = await countCycles(world, [...lean, ...steadySwipe(300, 10)]);
+    assert.ok(cycles >= 5, `300px of vertical travel switched only ${cycles} tabs`);
+  });
+});

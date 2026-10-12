@@ -125,7 +125,48 @@ test("a swipe is read on the axis that leads once it has travelled far enough to
   assert.equal(core.resolveSwipeAxis(lock, { x: 1, y: 6 }), "y");
   assert.equal(lock.axis, "y");
   // Locked: a later sideways-leaning event is still read vertically.
-  assert.equal(core.resolveSwipeAxis(lock, { x: 30, y: 2 }), "y");
+  assert.equal(core.resolveSwipeAxis(lock, { x: 8, y: 2 }), "y");
+});
+
+test("a swipe locked to the wrong axis is re-read once it plainly runs on the other", async () => {
+  const core = await loadCore();
+  const lock = core.createSwipeAxisLock();
+
+  // A vertical swipe whose first two events lean sideways locks to x.
+  core.resolveSwipeAxis(lock, { x: 6, y: 2 });
+  core.resolveSwipeAxis(lock, { x: 5, y: 4 });
+  assert.equal(lock.axis, "x");
+  // Pure vertical travel moves the lock within one 24px stretch.
+  assert.equal(core.resolveSwipeAxis(lock, { x: 0, y: 12 }), "x");
+  assert.equal(core.resolveSwipeAxis(lock, { x: 0, y: 12 }), "y");
+  assert.equal(lock.axis, "y");
+});
+
+test("a diagonal swipe keeps the axis it locked", async () => {
+  const core = await loadCore();
+  const lock = core.createSwipeAxisLock();
+
+  core.resolveSwipeAxis(lock, { x: 2, y: 12 });
+  assert.equal(lock.axis, "y");
+  // The other axis leads, but by less than 2 to 1: not a change of direction.
+  for (let event = 0; event < 20; event += 1) {
+    assert.equal(core.resolveSwipeAxis(lock, { x: -9, y: 6 }), "y");
+  }
+});
+
+test("a wheel event is sorted into notch, slice, or swipe", async () => {
+  const core = await loadCore();
+
+  // A whole detent, a quarter detent of a hi-res wheel, and a trackpad echo.
+  assert.equal(core.classifyWheelEvent({ deltaMode: 0, deltaY: 100, wheelDeltaY: -120 }, "y", 1), "notch");
+  assert.equal(core.classifyWheelEvent({ deltaMode: 0, deltaY: 25, wheelDeltaY: -30 }, "y", 1), "slice");
+  assert.equal(core.classifyWheelEvent({ deltaMode: 0, deltaY: 25, wheelDeltaY: -75 }, "y", 1), "swipe");
+  // No legacy wheelDelta to judge by: a swipe.
+  assert.equal(core.classifyWheelEvent({ deltaMode: 0, deltaY: 25 }, "y", 1), "swipe");
+  assert.deepEqual(
+    core.measureWheelInput({ deltaMode: 0, deltaX: 0, deltaY: 25, wheelDeltaY: -30 }, 800, 1200, true, 1),
+    { deltaPx: 25, isNotch: false, isWheelSlice: true },
+  );
 });
 
 test("both wheel axes are measured in the same units as the gesture", async () => {

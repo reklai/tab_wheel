@@ -555,8 +555,10 @@ export function initApp(): void {
   let lastVisibleAtMs = Number.NEGATIVE_INFINITY;
   // Time of the previous gesture wheel event, for detecting an idle stream.
   let lastWheelEventAt = Number.NEGATIVE_INFINITY;
-  // Time of the last continuous (non-notch) delta counted toward a swipe.
+  // Time of the last swipe delta (trackpad, Magic Mouse) counted toward a step.
   let lastSwipeEventAt = Number.NEGATIVE_INFINITY;
+  // Whether wheelAccumulator holds swipe travel (true) or wheel travel.
+  let accumulatorHoldsSwipe = false;
   // Shared by the wheel and keydown pre-warms, so they rate-limit together.
   let lastWorkerPrewarmAt = Number.NEGATIVE_INFINITY;
   // Time of the last switch (cooldown and burst clock) and the burst level.
@@ -819,9 +821,22 @@ export function initApp(): void {
   }
 
   /**
+   * True for the pointerdown of a real mouse press. Only that proves a new
+   * press has begun; a pointerdown a page script dispatched, or one from a
+   * touch or pen contact, says nothing about the mouse button being tracked.
+   */
+  function isMousePressStart(event: MouseEvent): event is PointerEvent {
+    return event.type === "pointerdown"
+      && event.isTrusted
+      && typeof PointerEvent !== "undefined"
+      && event instanceof PointerEvent
+      && event.pointerType === "mouse";
+  }
+
+  /**
    * Swallows events that belong to a claimed button's interaction and returns
    * true if it did. The claim ends at its completion event, at expiresAt, or
-   * at the next pointerdown, whichever comes first, so it never eats a later
+   * at the next mouse press, whichever comes first, so it never eats a later
    * interaction (including a keyboard-made click or context menu, which has
    * no pointerdown). A claim left while the button was still held has no
    * deadline until the release arrives.
@@ -829,7 +844,7 @@ export function initApp(): void {
   function handleCarriedMouseClaim(event: MouseEvent): boolean {
     const claim = window.__tabWheelMouseClaim;
     if (!claim) return false;
-    if (event.type === "pointerdown" || Date.now() > claim.expiresAt) {
+    if (isMousePressStart(event) || Date.now() > claim.expiresAt) {
       delete window.__tabWheelMouseClaim;
       return false;
     }
@@ -1312,12 +1327,7 @@ export function initApp(): void {
     // otherwise the press proves the old click is over, so we stop waiting
     // for its completion and tear it down once idle. A drag whose button is
     // still held here missed its release and is cancelled.
-    if (
-      event.type === "pointerdown"
-      && typeof PointerEvent !== "undefined"
-      && event instanceof PointerEvent
-      && event.pointerType === "mouse"
-    ) {
+    if (isMousePressStart(event)) {
       const existingDrag = tabDragGesture;
       if (existingDrag?.released) {
         if (existingDrag.moveInFlight || nextTabDragMove(existingDrag) !== null) {
@@ -1342,10 +1352,11 @@ export function initApp(): void {
     if (handleActiveTabDragMouseEvent(event)) {
       return;
     }
-    // A pointerdown is always a new press (a second button pressed during a
-    // hold fires only mousedown). Any session still open belongs to a press
-    // whose closing event never came, and must not claim this one unjudged.
-    if (event.type === "pointerdown") resetMouseGestureSession();
+    // A mouse pointerdown is always a new press (a second button pressed
+    // during a hold fires only mousedown). Any session still open belongs to
+    // a press whose closing event never came, and must not claim this one
+    // unjudged.
+    if (isMousePressStart(event)) resetMouseGestureSession();
 
     const activeSession = getActiveMouseGestureSession(event);
     if (activeSession) {
@@ -1472,6 +1483,8 @@ export function initApp(): void {
     // A carry is the part of a step the old tab had left, so it is always
     // under one step. Anything more is not carried: a carry must never switch
     // tabs on its own.
+    if (!accumulatorHoldsSwipe) wheelAccumulator = 0;
+    accumulatorHoldsSwipe = true;
     wheelAccumulator += remainderPx % stepPx;
     if (!swipeAxisLock.axis && (axis === "x" || axis === "y")) swipeAxisLock.axis = axis;
     runSwipeSteps(now);
@@ -1509,9 +1522,10 @@ export function initApp(): void {
     if (retireIfOrphaned()) return;
     // Measurement also classifies the event. A notch is recognized per event
     // from Chrome's legacy wheelDelta (whole 120-unit ticks, divided by
-    // devicePixelRatio) and floored to 100px; anything else is a slice of a
-    // continuous stream (trackpad, Magic Mouse, hi-res wheel).
-    const { deltaPx: wheelDelta, isNotch } = measureWheelInput(
+    // devicePixelRatio) and floored to 100px. A wheel slice is part of a
+    // detent from a hi-res or smooth-scrolling wheel. Anything else is a
+    // swipe on a continuous device (trackpad, Magic Mouse).
+    const { deltaPx: wheelDelta, isNotch, isWheelSlice } = measureWheelInput(
       event,
       window.innerHeight,
       window.innerWidth,
@@ -1519,6 +1533,7 @@ export function initApp(): void {
       window.devicePixelRatio,
     );
     if (wheelDelta === 0) return;
+    const isSwipe = !isNotch && !isWheelSlice;
     const now = wheelEventTimeMs(event);
     // From here on the event belongs to the gesture: the page never scrolls
     // on it, even when a guard below drops the delta.
@@ -1570,12 +1585,24 @@ export function initApp(): void {
       wheelAccumulator = 0;
       swipeAxisLock = createSwipeAxisLock();
     }
-    // A continuous swipe is read on one axis for its whole length (see
-    // SwipeAxisLock); a notch keeps the axis its own event moved on.
+    // Swipe travel and wheel travel are counted by different rules, so one
+    // never pays toward the other: a wheel notch does not start from what a
+    // swipe (or a carry) left behind, however long ago, and the reverse.
+    if (isSwipe !== accumulatorHoldsSwipe) {
+      wheelAccumulator = 0;
+      accumulatorHoldsSwipe = isSwipe;
+    }
+    // A swipe is read on one axis at a time (see SwipeAxisLock); a wheel
+    // keeps the axis its own event moved on.
     let gestureDelta = wheelDelta;
-    if (!isNotch && settings.horizontalWheel) {
+    if (isSwipe && settings.horizontalWheel) {
       const axes = measureWheelAxes(event, window.innerHeight, window.innerWidth);
-      gestureDelta = axes[resolveSwipeAxis(swipeAxisLock, axes)];
+      const lockedAxis = swipeAxisLock.axis;
+      const axis = resolveSwipeAxis(swipeAxisLock, axes);
+      // The lock moved: the swipe turned, or its first few px misled the
+      // lock. What was counted on the old axis is not travel on the new one.
+      if (lockedAxis && axis !== lockedAxis) wheelAccumulator = 0;
+      gestureDelta = axes[axis];
       if (gestureDelta === 0) return;
     }
     // Arrival guard. The gesture that switched to this tab committed in the
@@ -1616,10 +1643,10 @@ export function initApp(): void {
     wheelAccumulator += gestureDelta;
     // Blocked deltas return above, so a tail can never seed the next session.
     lastGestureMagnitudePx = Math.abs(gestureDelta);
-    // Continuous devices switch by travel alone, at a distance derived from
-    // the sensitivity setting; the trigger, cooldown, and acceleration below
-    // belong to notched wheels.
-    if (!isNotch) {
+    // Swipes switch by travel alone, at a distance derived from the
+    // sensitivity setting; the trigger, cooldown, and acceleration below
+    // belong to wheels, whole notches and slices alike.
+    if (isSwipe) {
       lastSwipeEventAt = now;
       runSwipeSteps(now);
       return;
@@ -1663,6 +1690,7 @@ export function initApp(): void {
   /** Forgets the wheel gesture in progress, including its guard session. */
   function resetWheelGestureState(): void {
     wheelAccumulator = 0;
+    accumulatorHoldsSwipe = false;
     lastGestureMagnitudePx = 0;
     lastWheelCycleAt = Number.NEGATIVE_INFINITY;
     wheelBurstCount = 0;

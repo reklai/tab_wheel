@@ -141,6 +141,25 @@ test("a press whose click never came cannot claim the next, unmodified click", a
   }
 });
 
+test("a pointerdown that is not a real mouse press does not end the click in progress", async () => {
+  // A page script's synthetic pointerdown, and a touch contact, mid-press.
+  for (const stray of [{ isTrusted: false }, { pointerType: "touch", pointerId: 9 }]) {
+    const world = await createGestureWorld(settingsWith("leftClickAction", "muteTab"));
+    try {
+      const leaked = [];
+      for (const { type } of browserEventSequence(0, {})) {
+        if (type === "pointerup") world.dispatch("pointerdown", { button: 0, ...stray });
+        if (!world.dispatch(type, { button: 0, alt: true }).defaultPrevented) leaked.push(type);
+      }
+      await flushAsyncWork();
+      assert.deepEqual(world.drainActions(), ["TABWHEEL_TOGGLE_MUTE"], JSON.stringify(stray));
+      assert.deepEqual(leaked, [], JSON.stringify(stray));
+    } finally {
+      world.cleanup();
+    }
+  }
+});
+
 test("a keyboard-made click or context menu after an action reaches the page", async () => {
   // Enter on a button, implicit form submission, and the Menu key all fire
   // trusted click/contextmenu events with no pointerdown before them.
