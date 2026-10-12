@@ -1444,8 +1444,10 @@ export function initApp(): void {
         now,
       );
     }
-    // A clump worth more than the cap: the excess is dropped, not queued.
-    wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(Math.abs(wheelAccumulator), stepPx);
+    // A clump worth more than the cap: the whole steps left over are dropped,
+    // not queued. Only the part of a step survives, so the next delta cannot
+    // fire a switch the cap just refused.
+    wheelAccumulator %= stepPx;
   }
 
   /**
@@ -1467,8 +1469,11 @@ export function initApp(): void {
     // for a new swipe that resets the distance.
     lastWheelEventAt = Math.max(lastWheelEventAt, now);
     lastSwipeEventAt = Math.max(lastSwipeEventAt, now);
-    wheelAccumulator += Math.sign(remainderPx) * Math.min(Math.abs(remainderPx), stepPx);
-    if (!swipeAxisLock.axis && axis) swipeAxisLock.axis = axis;
+    // A carry is the part of a step the old tab had left, so it is always
+    // under one step. Anything more is not carried: a carry must never switch
+    // tabs on its own.
+    wheelAccumulator += remainderPx % stepPx;
+    if (!swipeAxisLock.axis && (axis === "x" || axis === "y")) swipeAxisLock.axis = axis;
     runSwipeSteps(now);
   }
 

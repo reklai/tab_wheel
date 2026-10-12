@@ -1882,6 +1882,9 @@ export function createTabWheelDomain(options: {
     axis: "x" | "y" | null,
   ): Promise<TabWheelActionResult> {
     if (tab?.id == null || tab.windowId == null || !Number.isFinite(remainderPx)) return { ok: false };
+    // The message comes from a content script, so the axis is checked here
+    // rather than trusted to match its type.
+    if (axis !== "x" && axis !== "y" && axis !== null) return { ok: false };
     const activeTab = await queryActiveTab(tab.windowId);
     // Still active means the tab was hidden some other way (minimized window,
     // another app in front); there is no next tab to carry the swipe into.

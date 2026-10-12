@@ -236,3 +236,19 @@ test("a swipe hand-off goes nowhere when the sender is still the active tab", as
   assert.deepEqual(await world.domain.handOffSwipe(world.tabsById.get(1), Number.NaN, "y"), { ok: false });
   assert.deepEqual(sent, []);
 });
+
+test("a swipe hand-off with an axis that is not x, y or null is not relayed", async () => {
+  const sent = [];
+  const world = await createActionWorld({
+    tabs: [
+      { id: 1, windowId: 5, index: 0, active: false, url: "https://page.test/a" },
+      { id: 2, windowId: 5, index: 1, active: true, url: "https://page.test/b" },
+    ],
+    goBack: async () => {},
+    goForward: async () => {},
+    sendMessage: async (tabId, message) => { sent.push({ tabId, message }); },
+  });
+
+  assert.deepEqual(await world.domain.handOffSwipe(world.tabsById.get(1), 42, "z"), { ok: false });
+  assert.deepEqual(sent, []);
+});

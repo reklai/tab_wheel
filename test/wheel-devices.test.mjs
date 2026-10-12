@@ -343,6 +343,33 @@ test("a clump of queued input cannot fly through the tab strip", async () => {
   await withWorld(async (world) => {
     const { cycles } = await world.wheel({ alt: true, ...trackpadEvent(900), momentum: false });
     assert.equal(cycles.length, 3, "one event switches at most three tabs");
+    // The travel past the cap is gone, not held back as a step ready to fire.
+    const next = await world.wheel({ alt: true, ...trackpadEvent(1), momentum: false, advanceMs: 8 });
+    assert.equal(next.cycles.length, 0, "the next delta does not fire a fourth switch");
+  });
+});
+
+test("a carry never switches tabs on its own", async () => {
+  for (const remainderPx of [50, 120, -50]) {
+    await withWorld(async (world) => {
+      world.setVisibility("hidden");
+      world.setVisibility("visible");
+      world.drainMessages();
+      world.deliverMessage({ type: "TABWHEEL_SWIPE_CARRY", remainderPx, axis: "y" });
+      const cycled = world.drainMessages().some((message) => message.type === "TABWHEEL_CYCLE");
+      assert.equal(cycled, false, `a ${remainderPx}px carry`);
+    });
+  }
+});
+
+test("a carry with an axis that is not x or y leaves the swipe working", async () => {
+  await withWorld(async (world) => {
+    world.setVisibility("hidden");
+    world.setVisibility("visible");
+    world.drainMessages();
+    world.deliverMessage({ type: "TABWHEEL_SWIPE_CARRY", remainderPx: 30, axis: "z" });
+    assert.equal(await countCycles(world, steadySwipe(16, 8)), 0, "30px carried plus 16px is under one step");
+    assert.equal(await countCycles(world, steadySwipe(16, 8)), 1, "62px in all crosses one 50px step");
   });
 });
 
