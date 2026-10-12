@@ -39,7 +39,12 @@ export interface TabWheelMouseGestureSession {
   policy: TabWheelMouseGesturePolicy;
   /** Set once the action has run, so a press runs it at most once. */
   hasRun: boolean;
-  /** When the press arrived, in ms (Date.now()). */
+  /** Set once the button's release has arrived. */
+  hasReleased: boolean;
+  /**
+   * When the press arrived, in ms (Date.now()); moved up to the release when
+   * that arrives, so the claim is timed from the last event of the hold.
+   */
   startedAt: number;
 }
 
@@ -73,6 +78,8 @@ export const TABWHEEL_CLICK_ACTIONS: readonly TabWheelClickAction[] = [
   "recentTab",      // Most recent tab
   "muteTab",        // Mute / unmute tab
   "openSettings",   // Open settings
+  "pinTab",         // Pin / unpin tab
+  "reloadTab",      // Reload tab
   "none",           // Off (always last)
 ];
 
@@ -146,7 +153,7 @@ export function createMouseGestureSession(
   policy: TabWheelMouseGesturePolicy,
   startedAt: number,
 ): TabWheelMouseGestureSession {
-  return { policy, hasRun: false, startedAt };
+  return { policy, hasRun: false, hasReleased: false, startedAt };
 }
 
 /** True once more than `claimMs` has passed since the press. */
@@ -156,6 +163,20 @@ export function isMouseGestureSessionExpired(
   claimMs = MOUSE_GESTURE_CLAIM_MS,
 ): boolean {
   return now - session.startedAt > claimMs;
+}
+
+/**
+ * True when `event` is the release of the button `session` claimed. A release
+ * always belongs to the press before it, however long the button was held, so
+ * the content script restarts the session's clock on it instead of letting a
+ * slow click expire and hand its release and click to the page.
+ */
+export function isMouseGestureSessionReleaseEvent(
+  session: TabWheelMouseGestureSession,
+  event: TabWheelMouseGestureEvent,
+): boolean {
+  return (event.type === "pointerup" || event.type === "mouseup")
+    && event.button === session.policy.button;
 }
 
 /**
@@ -171,9 +192,21 @@ export function isMouseGestureEventForSession(
     : event.button === session.policy.button;
 }
 
+// A left press that the browser turned into a context menu. On macOS,
+// Control + left click fires contextmenu on the press and never fires click,
+// so with Control as the gesture modifier contextmenu is the only event the
+// action can run on.
+function isContextMenuInPlaceOfClick(
+  session: TabWheelMouseGestureSession,
+  eventType: string,
+): boolean {
+  return session.policy.button === 0 && eventType === "contextmenu";
+}
+
 /**
- * True for the one event that runs a click session's action: its run phase,
- * the first time it arrives. Drag sessions never run here.
+ * True for the one event that runs a click session's action: its run phase
+ * (or the contextmenu that replaced a left click), the first time it arrives.
+ * Drag sessions never run here.
  */
 export function shouldRunMouseGestureSession(
   session: TabWheelMouseGestureSession,
@@ -181,19 +214,20 @@ export function shouldRunMouseGestureSession(
 ): boolean {
   return session.policy.interaction === "click"
     && !session.hasRun
-    && eventType === session.policy.runPhase;
+    && (eventType === session.policy.runPhase || isContextMenuInPlaceOfClick(session, eventType));
 }
 
 /**
- * True when `eventType` ends a click session. A right-button session also ends
- * on click or auxclick, so a press whose contextmenu never arrived is not left
- * claimed.
+ * True when `eventType` ends a click session: the event its action runs on.
+ * A right-button session must outlive its auxclick, because Windows fires
+ * contextmenu after the release (pointerup, mouseup, auxclick, contextmenu)
+ * where macOS and Linux fire it on the press. A press whose run event never
+ * arrives is dropped by the session's expiry instead.
  */
 export function shouldFinishMouseGestureSession(
   session: TabWheelMouseGestureSession,
   eventType: string,
 ): boolean {
   if (session.policy.interaction !== "click") return false;
-  if (eventType === session.policy.runPhase) return true;
-  return session.policy.button === 2 && (eventType === "click" || eventType === "auxclick");
+  return eventType === session.policy.runPhase || isContextMenuInPlaceOfClick(session, eventType);
 }

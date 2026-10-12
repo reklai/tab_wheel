@@ -101,7 +101,7 @@ test("content script claims configured click actions and leaves Off unclaimed", 
   assert.match(app, /isMouseClaimReleaseEvent\(/);
   assert.match(
     app,
-    /if \(isMouseClaimReleaseEvent\(event\) \|\| isMouseClaimCompletionEvent\(claim\.button,\s*event\)\)/,
+    /if \(event\.type === "pointerdown" \|\| Date\.now\(\) > claim\.expiresAt\)/,
   );
   assert.match(
     app,
@@ -141,29 +141,31 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
     "if (!isKeyboardWheelEvent(event)) return;",
     "const { deltaPx: wheelDelta, isNotch } = measureWheelInput(",
     "if (wheelDelta === 0) return;",
-    "const now = Date.now();",
+    "const now = wheelEventTimeMs(event);",
     "suppressPageEvent(event);",
-    "if ((event as WheelEvent & { momentum?: boolean }).momentum === true) {",
+    "if (inertiaFlag === true) {",
     "createMomentumGuardSession(",
     "shouldBlockWheelDelta(",
-    "wheelAccumulator += wheelDelta;",
+    "wheelAccumulator += gestureDelta;",
   ]);
   // isTrusted is checked once, inside the chord predicate — not again here.
   assert.match(app, /function isKeyboardWheelEvent\(event: WheelEvent\): boolean \{[\s\S]{0,200}event\.isTrusted/);
   assert.doesNotMatch(wheelHandlerSource, /if \(!event\.isTrusted\) return;/);
-  assert.match(app, /momentumGuardSession\s*\n\s*&& shouldBlockWheelDelta\(/);
+  assert.match(app, /momentumGuardSession\s*\n\s*&& !browserFlagsInertia\s*\n\s*&& shouldBlockWheelDelta\(/);
 
   // Chrome's momentum flag: inertia is swallowed (suppressed above) but never
   // counted, and it ends the swipe's partial distance.
   assert.match(
     wheelHandlerSource,
-    /momentum === true\) \{\s*\n\s*wheelAccumulator = 0;\s*\n\s*lastGestureMagnitudePx = 0;\s*\n\s*return;/,
+    /inertiaFlag === true\) \{\s*\n\s*wheelAccumulator = 0;\s*\n\s*lastGestureMagnitudePx = 0;\s*\n\s*swipeAxisLock = createSwipeAxisLock\(\);\s*\n\s*return;/,
   );
   // Notches are measured with the page's devicePixelRatio (Blink divides the
   // legacy wheelDelta by it) and skip both tail guards; a continuous stream
   // that went idle starts the next swipe from zero.
   assert.match(wheelHandlerSource, /settings\.horizontalWheel,\s*\n\s*window\.devicePixelRatio,/);
-  assert.match(wheelHandlerSource, /if \(isNotch\) \{\s*\n\s*momentumGuardSession = null;/);
+  // A browser that flags inertia has no use for either guess-based guard.
+  assert.match(wheelHandlerSource, /const browserFlagsInertia = typeof inertiaFlag === "boolean";/);
+  assert.match(wheelHandlerSource, /if \(isNotch \|\| browserFlagsInertia\) \{\s*\n\s*momentumGuardSession = null;/);
   assert.match(app, /const WHEEL_GESTURE_IDLE_MS = 250;/);
   assert.match(
     wheelHandlerSource,
@@ -179,7 +181,7 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   // constant that lives beside it in the core module.
   assert.match(
     app,
-    /shouldBlockWheelDelta\(\s*\n\s*momentumGuardSession,\s*\n\s*wheelDelta,\s*\n\s*now,\s*\n\s*DEFAULT_MOMENTUM_GUARD_TUNING,\s*\n\s*\)/,
+    /shouldBlockWheelDelta\(\s*\n\s*momentumGuardSession,\s*\n\s*gestureDelta,\s*\n\s*now,\s*\n\s*DEFAULT_MOMENTUM_GUARD_TUNING,\s*\n\s*\)/,
   );
 
   // The whole trigger: configured sensitivity, accelerated by the current
@@ -210,8 +212,8 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   // and a blocked delta can never seed it because it returns before this.
   assert.match(app, /momentumGuardSession = createMomentumGuardSession\(now, deltaDirection, lastGestureMagnitudePx\);/);
   assertOrdered(app, [
-    "wheelAccumulator += wheelDelta;",
-    "lastGestureMagnitudePx = Math.abs(wheelDelta);",
+    "wheelAccumulator += gestureDelta;",
+    "lastGestureMagnitudePx = Math.abs(gestureDelta);",
   ]);
 
   // Arrival guard: a session dies with the committing tab's visibility, so the
@@ -222,12 +224,12 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   // a cross-tab handoff. A recognized notch never seeds: a detent cannot be a
   // momentum tail.
   assert.match(app, /const WHEEL_ARRIVAL_GUARD_WINDOW_MS = 32;/);
-  assert.match(app, /lastVisibleAtMs = Date\.now\(\);/);
+  assert.match(app, /lastVisibleAtMs = performance\.now\(\);/);
   assert.match(
     app,
-    /!momentumGuardSession\s*\n\s*&& !isNotch\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
+    /!momentumGuardSession\s*\n\s*&& !isNotch\s*\n\s*&& !browserFlagsInertia\s*\n\s*&& now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS/,
   );
-  assert.match(app, /wheelDelta > 0 \? 1 : -1,\s*\n\s*Math\.abs\(wheelDelta\),/);
+  assert.match(app, /gestureDelta > 0 \? 1 : -1,\s*\n\s*Math\.abs\(gestureDelta\),/);
 
   // Every existing reset path drops the guard session with the gesture state.
   assert.match(app, /function resetWheelGestureState\(\): void \{[^}]*lastGestureMagnitudePx = 0;[^}]*momentumGuardSession = null;/);
@@ -249,7 +251,7 @@ test("the momentum guard and the arrival guard are wired into the gesture path",
   // it drops the gesture state and the now-useless guard session.
   assert.match(
     app,
-    /function visibilityHandler\(\): void \{[\s\S]{0,400}lastVisibleAtMs = Date\.now\(\);[\s\S]{0,300}resetWheelGestureState\(\);/,
+    /function visibilityHandler\(\): void \{[\s\S]{0,400}lastVisibleAtMs = performance\.now\(\);[\s\S]{0,700}handOffTabWheelSwipe\(wheelAccumulator, swipeAxisLock\.axis\)[\s\S]{0,100}resetWheelGestureState\(\);/,
   );
 });
 
@@ -308,7 +310,7 @@ test("the gesture path pre-warms the MV3 worker on a rate limit, off the accumul
     "void notifyTabWheelContentReady()",
     "createMomentumGuardSession(",
     "shouldBlockWheelDelta(",
-    "wheelAccumulator += wheelDelta;",
+    "wheelAccumulator += gestureDelta;",
   ]);
 });
 
@@ -917,6 +919,8 @@ test("mute, back, and forward are wired from the content script through to the d
     ["muteTab", "TABWHEEL_TOGGLE_MUTE", "toggleMuteCurrentTabWheelTab", "toggleMuteCurrentTab"],
     ["goBack", "TABWHEEL_GO_BACK", "goBackInCurrentTabWheelTab", "goBackInCurrentTab"],
     ["goForward", "TABWHEEL_GO_FORWARD", "goForwardInCurrentTabWheelTab", "goForwardInCurrentTab"],
+    ["pinTab", "TABWHEEL_TOGGLE_PIN", "togglePinCurrentTabWheelTab", "togglePinCurrentTab"],
+    ["reloadTab", "TABWHEEL_RELOAD_TAB", "reloadCurrentTabWheelTab", "reloadCurrentTab"],
   ];
   for (const [action, messageType, apiFn, domainFn] of wiring) {
     assert.match(contract, new RegExp(`type: "${messageType}"; windowId\\?: number`));

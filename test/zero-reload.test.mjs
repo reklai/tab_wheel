@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createGestureWorld } from "./helpers/gestureHarness.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -307,4 +308,36 @@ test("initApp begins execution with the re-injection guard so double injection n
   // cleanup hook first, before any listener is attached, is what stops
   // wheel/middle-click/scroll listeners from stacking and double-firing.
   assert.match(bodyAfterOpenBrace.trimStart(), /^window\.__tabWheelCleanup\?\.\(\);/);
+});
+
+test("an orphaned content script retires instead of swallowing gestures it can no longer act on", async () => {
+  // Disabling, uninstalling, or reloading the extension leaves its script
+  // running in every open page. If it kept claiming gestures the tab would be
+  // dead to TabWheel until reloaded, even for a live copy injected afterwards.
+  const world = await createGestureWorld({ leftClickAction: "nativeNewTab" });
+  try {
+    world.orphan();
+    const wheel = await world.wheel({ deltaY: 120, deltaMode: 0, alt: true });
+    assert.equal(wheel.suppressed, false, "the orphan must let the wheel through");
+    assert.deepEqual(wheel.cycles, []);
+    assert.equal(globalThis.window.__tabWheelCleanup, undefined, "the orphan removed itself");
+    const click = await world.performClick(0);
+    assert.deepEqual(click.actions, []);
+    assert.deepEqual(click.leaked, ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
+  } finally {
+    world.cleanup();
+  }
+});
+
+test("an orphaned content script retires on a click gesture too", async () => {
+  const world = await createGestureWorld({ leftClickAction: "nativeNewTab" });
+  try {
+    world.orphan();
+    const click = await world.performClick(0);
+    assert.deepEqual(click.actions, []);
+    assert.deepEqual(click.leaked, ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
+    assert.equal(globalThis.window.__tabWheelCleanup, undefined);
+  } finally {
+    world.cleanup();
+  }
 });

@@ -14,18 +14,21 @@ let importSerial = 0;
 
 // The real ordered event streams a browser dispatches to the window for a
 // completed button interaction. Primary and middle end on their terminal
-// click; secondary (right) fires contextmenu on press (Linux/macOS) or on
-// release (Windows), so both orderings are modelled.
-export function browserEventSequence(button, { double = false, contextOn = "press" } = {}) {
+// click; secondary (right) fires contextmenu on press (Linux/macOS) or after
+// the whole release, auxclick included (Windows), so both orderings are
+// modelled. macControlClick is Control + left click on macOS: contextmenu on
+// the press and no click at all.
+export function browserEventSequence(button, { double = false, contextOn = "press", macControlClick = false } = {}) {
   const down = [{ type: "pointerdown" }, { type: "mousedown" }];
   const up = [{ type: "pointerup" }, { type: "mouseup" }];
+  if (button === 0 && macControlClick) return [...down, { type: "contextmenu" }, ...up];
   if (button === 0) {
     const single = [...down, ...up, { type: "click" }];
     if (!double) return single;
     return [...single, ...down, ...up, { type: "click" }, { type: "dblclick" }];
   }
   if (button === 1) return [...down, ...up, { type: "auxclick" }];
-  if (contextOn === "release") return [...down, ...up, { type: "contextmenu" }, { type: "auxclick" }];
+  if (contextOn === "release") return [...down, ...up, { type: "auxclick" }, { type: "contextmenu" }];
   return [...down, { type: "contextmenu" }, ...up, { type: "auxclick" }];
 }
 
@@ -67,6 +70,9 @@ function installDom() {
       this.metaKey = !!opts.meta;
       this.shiftKey = !!opts.shift;
       this.isTrusted = opts.isTrusted !== false;
+      // When the input happened: the simulated clock, unless a test delivers
+      // the event late and passes the earlier hardware time.
+      this.timeStamp = opts.timeStamp ?? clock.now;
       this.target = opts.target ?? null;
       this.pointerType = opts.pointerType ?? "mouse";
       this.pointerId = opts.pointerId ?? 1;
@@ -128,6 +134,9 @@ function installDom() {
   const clock = { now: 1_000_000 };
   const realDateNow = Date.now;
   Date.now = () => clock.now;
+  // performance.now() and Date.now() share the simulated clock.
+  const realPerformanceNow = performance.now;
+  performance.now = () => clock.now;
 
   const windowMock = {
     innerWidth: 1280,
@@ -182,6 +191,7 @@ function installDom() {
 
   function restore() {
     Date.now = realDateNow;
+    performance.now = realPerformanceNow;
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globalThis[key];
       else globalThis[key] = value;
@@ -223,8 +233,12 @@ export async function flushAsyncWork() {
 // settings is a partial TabWheelSettings; loadTabWheelSettings normalizes it.
 export async function createGestureWorld(settings = {}) {
   const sentMessages = [];
+  // The content script's listener for messages from the background.
+  const messageListeners = [];
   globalThis.__tabWheelGestureBrowserMock = {
     runtime: {
+      // Present while the extension is alive; deleted to simulate an orphan.
+      id: "tabwheel-test",
       sendMessage: async (message) => {
         sentMessages.push(message);
         // A tab move reports it actually moved so the drain advances like the
@@ -232,7 +246,10 @@ export async function createGestureWorld(settings = {}) {
         if (message.type === "TABWHEEL_MOVE_CURRENT_TAB") return { ok: true, moved: true };
         return { ok: true };
       },
-      onMessage: { addListener() {}, removeListener() {} },
+      onMessage: {
+        addListener: (fn) => { messageListeners.push(fn); },
+        removeListener: (fn) => { messageListeners.splice(messageListeners.indexOf(fn), 1); },
+      },
     },
     storage: {
       local: {
@@ -267,9 +284,9 @@ export async function createGestureWorld(settings = {}) {
 
   // One modifier + wheel notch. Returns whether the page event was suppressed
   // and the cycle directions that fired (drained since the previous call).
-  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, wheelDeltaY, wheelDeltaX, momentum, alt = true, ctrl = false, meta = false, shift = false, advanceMs = 0 } = {}) {
+  async function wheel({ deltaY = 0, deltaX = 0, deltaMode = 1, wheelDeltaY, wheelDeltaX, momentum, alt = true, ctrl = false, meta = false, shift = false, advanceMs = 0, timeStamp } = {}) {
     if (advanceMs) bump(advanceMs);
-    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, wheelDeltaY, wheelDeltaX, momentum, alt, ctrl, meta, shift });
+    const event = dom.dispatch("wheel", { deltaY, deltaX, deltaMode, wheelDeltaY, wheelDeltaX, momentum, alt, ctrl, meta, shift, timeStamp });
     await flushAsyncWork();
     const cycles = drainMessages()
       .filter((message) => message.type === "TABWHEEL_CYCLE")
@@ -311,8 +328,8 @@ export async function createGestureWorld(settings = {}) {
   }
 
   // Replay a full button interaction and report what the page would have seen.
-  async function performClick(button, { alt = true, ctrl = false, meta = false, shift = false, double = false, contextOn = "press", target = null } = {}) {
-    const events = browserEventSequence(button, { double, contextOn });
+  async function performClick(button, { alt = true, ctrl = false, meta = false, shift = false, double = false, contextOn = "press", macControlClick = false, target = null } = {}) {
+    const events = browserEventSequence(button, { double, contextOn, macControlClick });
     const leaked = [];
     for (const { type } of events) {
       const event = dom.dispatch(type, { button: buttonForType(type, button), alt, ctrl, meta, shift, target });
@@ -329,7 +346,17 @@ export async function createGestureWorld(settings = {}) {
     notchesToFirstCycle,
     setDevicePixelRatio: (ratio) => { dom.windowMock.devicePixelRatio = ratio; },
     drag,
+    // A message from the background to this tab's content script.
+    deliverMessage: (message) => { for (const fn of messageListeners.slice()) fn(message); },
+    // Hide or show the tab, as a switch away from or to it does.
+    setVisibility: (state) => {
+      globalThis.document.visibilityState = state;
+      dom.dispatchDocument("visibilitychange");
+    },
+    // The extension was disabled, uninstalled, or reloaded under this page.
+    orphan: () => { delete globalThis.__tabWheelGestureBrowserMock.runtime.id; },
     advance: bump,
+    now: () => dom.clock.now,
     drainActions,
     drainMessages,
     performClick,
@@ -346,5 +373,6 @@ export async function createGestureWorld(settings = {}) {
 // non-primary sequence carries that button.
 function buttonForType(type, button) {
   if (type === "click" || type === "dblclick") return 0;
+  if (type === "contextmenu" && button !== 2) return 0;
   return button;
 }

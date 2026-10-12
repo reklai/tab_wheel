@@ -99,6 +99,40 @@ test("right-click sessions accept compatibility contextmenu button values", asyn
   assert.equal(core.shouldRunMouseGestureSession(session, "contextmenu"), true);
 });
 
+test("a right-click session outlives its auxclick and ends on contextmenu", async () => {
+  const core = await loadCore();
+  const policies = core.buildMouseGesturePolicies(
+    core.DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
+  );
+  const session = core.createMouseGestureSession(
+    core.resolveMouseGesturePolicy(2, policies),
+    100,
+  );
+
+  // Windows fires auxclick before contextmenu.
+  assert.equal(core.shouldFinishMouseGestureSession(session, "auxclick"), false);
+  assert.equal(core.shouldFinishMouseGestureSession(session, "contextmenu"), true);
+});
+
+test("a left-click session runs on a contextmenu that replaced its click", async () => {
+  const core = await loadCore();
+  const policies = core.buildMouseGesturePolicies(
+    core.DEFAULT_TABWHEEL_CLICK_ACTION_SETTINGS,
+  );
+  const left = core.createMouseGestureSession(core.resolveMouseGesturePolicy(0, policies), 100);
+
+  assert.equal(core.shouldRunMouseGestureSession(left, "contextmenu"), true);
+  assert.equal(core.shouldFinishMouseGestureSession(left, "contextmenu"), true);
+
+  const middle = core.createMouseGestureSession(
+    core.resolveMouseGesturePolicy(1, core.buildMouseGesturePolicies({
+      leftClickAction: "none", middleClickAction: "recentTab", rightClickAction: "none",
+    })),
+    100,
+  );
+  assert.equal(core.shouldRunMouseGestureSession(middle, "contextmenu"), false);
+});
+
 test("gesture claims expire", async () => {
   const core = await loadCore();
   const policies = core.buildMouseGesturePolicies(
@@ -134,9 +168,9 @@ test("the click action list still offers every action, including the newer ones"
 
   for (const action of [
     "nativeNewTab", "recentTab", "closeToRecent", "duplicateTab", "dragCurrentTab",
-    "openSettings", "muteTab", "goBack", "goForward", "none",
+    "openSettings", "muteTab", "goBack", "goForward", "pinTab", "reloadTab", "none",
   ]) {
     assert.ok(actions.includes(action), `${action} is offered`);
   }
-  assert.equal(actions.length, 10);
+  assert.equal(actions.length, 12);
 });

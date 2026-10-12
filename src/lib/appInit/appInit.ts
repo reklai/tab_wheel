@@ -41,9 +41,13 @@ import { NOTICE_ENTER_MS, NOTICE_EXIT_MS, noticeDisplayMs, prefersReducedMotion 
 import { ContentRuntimeMessage } from "../common/contracts/runtimeMessages";
 import { sleep } from "../common/utils/asyncFlow";
 import {
+  createSwipeAxisLock,
   isTabWheelModifier,
+  measureWheelAxes,
   measureWheelInput,
   resolveAcceleratedWheelTriggerDistance,
+  resolveSwipeAxis,
+  resolveSwipeStepPx,
   resolveWheelDirection,
   resolveWheelTriggerDistance,
 } from "../core/tabWheel/tabWheelCore";
@@ -58,6 +62,7 @@ import {
   createMouseGestureSession,
   isMouseGestureEventForSession,
   isMouseGestureSessionExpired,
+  isMouseGestureSessionReleaseEvent,
   isMouseGestureSessionStartEvent,
   MOUSE_GESTURE_CLAIM_MS,
   resolveMouseGesturePolicy,
@@ -81,12 +86,15 @@ import {
   endTabWheelDragGesture,
   goBackInCurrentTabWheelTab,
   goForwardInCurrentTabWheelTab,
+  handOffTabWheelSwipe,
   moveCurrentTabWheelTab,
   notifyTabWheelContentReady,
   openNativeNewTabWheelTab,
   openTabWheelOptions,
+  reloadCurrentTabWheelTab,
   saveTabWheelScrollPosition,
   toggleMuteCurrentTabWheelTab,
+  togglePinCurrentTabWheelTab,
 } from "../adapters/runtime/tabWheelApi";
 
 declare global {
@@ -95,8 +103,9 @@ declare global {
     __tabWheelCleanup?: () => void;
     /**
      * A button whose remaining events (release, click, contextmenu) must still
-     * be swallowed; expiresAt is a Date.now() deadline. It lives on window, not
-     * in initApp's closure, so a re-injection that lands mid-click inherits it.
+     * be swallowed; expiresAt is a Date.now() deadline, or Infinity while the
+     * button is still held. It lives on window, not in initApp's closure, so a
+     * re-injection that lands mid-click inherits it.
      */
     __tabWheelMouseClaim?: {
       button: number;
@@ -152,6 +161,25 @@ const MODIFIER_PREWARM_KEYS = { alt: "Alt", ctrl: "Control", meta: "Meta" } as c
  * acceleration on, each burst step shortens the trigger distance.
  */
 const WHEEL_ACCELERATION_WINDOW_MS = 700;
+/**
+ * Most switches one wheel event can cause on a continuous device. One event
+ * normally covers a fraction of a step; several steps in one means the page
+ * delivered a clump of queued input, and this keeps a clump from flying
+ * through the tab strip.
+ */
+const MAX_SWIPE_STEPS_PER_EVENT = 3;
+/**
+ * A swipe counts as still under way when its last event is at most this old
+ * as its tab is hidden. Only then is its unspent distance handed to the next
+ * tab; an older remainder is a swipe that already ended.
+ */
+const SWIPE_HANDOFF_MAX_AGE_MS = 150;
+/**
+ * How long after becoming visible a tab accepts a carried remainder. The
+ * hand-off takes two message hops through the background, a few ms when the
+ * worker is awake; anything slower than this belongs to a swipe long over.
+ */
+const SWIPE_CARRY_WINDOW_MS = 400;
 /** Shown when the message to the background itself fails, not the action. */
 const ACTION_UNREACHABLE_STATUS =
   "TabWheel couldn't reach the browser. Use Refresh extension in the popup.";
@@ -440,6 +468,46 @@ function suppressPageEvent(event: Event): void {
   event.stopImmediatePropagation();
 }
 
+/**
+ * An event timestamp further than this from the moment it is handled is not
+ * trusted. Queued input on a busy page arrives tens or hundreds of ms late;
+ * a larger difference means the platform's input clock and performance.now()
+ * have drifted apart (they can after the machine sleeps), and mixing the two
+ * would misjudge every guard that compares them.
+ */
+const WHEEL_EVENT_TIME_MAX_SKEW_MS = 1000;
+
+/**
+ * When the wheel moved, in ms on the performance.now() timeline. The event's
+ * own timestamp is taken when the input happened, not when this handler got
+ * to run, so a busy page that delivers queued wheel events late or in a clump
+ * does not distort the gaps the momentum guard, idle reset, and cooldown
+ * measure. It is also monotonic, unlike Date.now(). Falls back to the
+ * handling time when the timestamp is missing or implausible.
+ */
+function wheelEventTimeMs(event: WheelEvent): number {
+  const handledAt = performance.now();
+  const happenedAt = event.timeStamp;
+  return Number.isFinite(happenedAt)
+    && happenedAt > 0
+    && Math.abs(handledAt - happenedAt) <= WHEEL_EVENT_TIME_MAX_SKEW_MS
+    ? happenedAt
+    : handledAt;
+}
+
+/**
+ * False once this script's extension is gone from under it: disabled,
+ * uninstalled, or reloaded. The page keeps running the orphaned script and its
+ * listeners, but nothing it sends can reach a background any more.
+ */
+function isExtensionContextAlive(): boolean {
+  try {
+    return Boolean(browser.runtime?.id);
+  } catch (_) {
+    return false;
+  }
+}
+
 /** True in the top-level document. If window.top cannot be read, assume a subframe. */
 function isTopFrame(): boolean {
   try {
@@ -480,19 +548,28 @@ export function initApp(): void {
   // from the magnitude the gesture ended on, which is also why it can never
   // trip the guard's ramp escape.
   let lastGestureMagnitudePx = 0;
+  // The wheel clocks below are on the performance.now() timeline, the one
+  // wheelEventTimeMs reads, and start at "never" rather than 0: that timeline
+  // begins at 0 when the page loads, so 0 would read as "just now".
   // When this document last became visible; the arrival guard's clock.
-  let lastVisibleAtMs = 0;
+  let lastVisibleAtMs = Number.NEGATIVE_INFINITY;
   // Time of the previous gesture wheel event, for detecting an idle stream.
-  let lastWheelEventAt = 0;
+  let lastWheelEventAt = Number.NEGATIVE_INFINITY;
+  // Time of the last continuous (non-notch) delta counted toward a swipe.
+  let lastSwipeEventAt = Number.NEGATIVE_INFINITY;
   // Shared by the wheel and keydown pre-warms, so they rate-limit together.
-  let lastWorkerPrewarmAt = 0;
+  let lastWorkerPrewarmAt = Number.NEGATIVE_INFINITY;
   // Time of the last switch (cooldown and burst clock) and the burst level.
-  let lastWheelCycleAt = 0;
+  let lastWheelCycleAt = Number.NEGATIVE_INFINITY;
   let wheelBurstCount = 0;
   let mouseGesturePolicies = buildMouseGesturePolicies(settings);
   let mouseGestureSession: TabWheelMouseGestureSession | null = null;
   let tabDragGesture: ActiveTabDragGesture | null = null;
   let momentumGuardSession: MomentumGuardSession | null = null;
+  // The axis the continuous swipe in progress is read on.
+  let swipeAxisLock = createSwipeAxisLock();
+  // This injection's own cleanup, assigned once the listeners are registered.
+  let teardown: () => void = () => {};
 
   // Settings count as loaded even if the read fails, so gestures still work
   // with the defaults.
@@ -668,7 +745,22 @@ export function initApp(): void {
     if (!areSettingsLoaded || !event.isTrusted) return null;
     if (!isTabWheelModifier(event, settings.gestureModifier, settings.gestureWithShift)) return null;
     if (!settings.allowGesturesInEditableFields && isEditableTarget(event.target)) return null;
-    return resolveMouseGesturePolicy(event.button, mouseGesturePolicies);
+    const policy = resolveMouseGesturePolicy(event.button, mouseGesturePolicies);
+    if (policy && retireIfOrphaned()) return null;
+    return policy;
+  }
+
+  /**
+   * Checked when a gesture is about to be claimed. An orphaned script can no
+   * longer act on a gesture, and swallowing it anyway would leave the tab dead
+   * to TabWheel: the event would never reach the page, nor a live copy of the
+   * extension injected after this one. So the orphan removes itself and lets
+   * the event through. Returns true if it did.
+   */
+  function retireIfOrphaned(): boolean {
+    if (isExtensionContextAlive()) return false;
+    teardown();
+    return true;
   }
 
   function resetMouseGestureSession(): void {
@@ -684,7 +776,9 @@ export function initApp(): void {
     if (session.completionReceived) return;
     window.__tabWheelMouseClaim = {
       button: session.button,
-      expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
+      expiresAt: session.released
+        ? Date.now() + MOUSE_GESTURE_CLAIM_MS
+        : Number.POSITIVE_INFINITY,
     };
   }
 
@@ -704,7 +798,9 @@ export function initApp(): void {
     if (button === undefined) return;
     window.__tabWheelMouseClaim = {
       button,
-      expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
+      expiresAt: mouseGestureSession?.hasReleased
+        ? Date.now() + MOUSE_GESTURE_CLAIM_MS
+        : Number.POSITIVE_INFINITY,
     };
   }
 
@@ -724,32 +820,28 @@ export function initApp(): void {
 
   /**
    * Swallows events that belong to a claimed button's interaction and returns
-   * true if it did. Release and completion events are always swallowed, and
-   * the completion clears the claim; other events only until expiresAt. A new
-   * pointerdown clears the claim first, so it never eats the next interaction.
+   * true if it did. The claim ends at its completion event, at expiresAt, or
+   * at the next pointerdown, whichever comes first, so it never eats a later
+   * interaction (including a keyboard-made click or context menu, which has
+   * no pointerdown). A claim left while the button was still held has no
+   * deadline until the release arrives.
    */
   function handleCarriedMouseClaim(event: MouseEvent): boolean {
     const claim = window.__tabWheelMouseClaim;
     if (!claim) return false;
-    if (event.type === "pointerdown") {
+    if (event.type === "pointerdown" || Date.now() > claim.expiresAt) {
       delete window.__tabWheelMouseClaim;
       return false;
     }
     const matchesButton = event.button === claim.button
       || (claim.button === 2 && event.type === "contextmenu");
     if (!matchesButton) return false;
-    if (isMouseClaimReleaseEvent(event) || isMouseClaimCompletionEvent(claim.button, event)) {
-      suppressPageEvent(event);
-      if (isMouseClaimCompletionEvent(claim.button, event)) {
-        delete window.__tabWheelMouseClaim;
-      }
-      return true;
-    }
-    if (Date.now() > claim.expiresAt) {
-      delete window.__tabWheelMouseClaim;
-      return false;
-    }
     suppressPageEvent(event);
+    if (isMouseClaimCompletionEvent(claim.button, event)) {
+      delete window.__tabWheelMouseClaim;
+    } else if (isMouseClaimReleaseEvent(event) && claim.expiresAt === Number.POSITIVE_INFINITY) {
+      claim.expiresAt = Date.now() + MOUSE_GESTURE_CLAIM_MS;
+    }
     return true;
   }
 
@@ -1080,10 +1172,18 @@ export function initApp(): void {
     return true;
   }
 
-  /** The click session this event belongs to, dropping one that has expired. */
+  /**
+   * The click session this event belongs to, dropping one that has expired.
+   * The session's own release never expires it: a button held longer than the
+   * claim is still the same click, so the release restarts the clock and the
+   * click that follows runs the action.
+   */
   function getActiveMouseGestureSession(event: MouseEvent): TabWheelMouseGestureSession | null {
     if (!mouseGestureSession) return null;
-    if (isMouseGestureSessionExpired(mouseGestureSession, Date.now())) {
+    if (isMouseGestureSessionReleaseEvent(mouseGestureSession, event)) {
+      mouseGestureSession.hasReleased = true;
+      mouseGestureSession.startedAt = Date.now();
+    } else if (isMouseGestureSessionExpired(mouseGestureSession, Date.now())) {
       resetMouseGestureSession();
       return null;
     }
@@ -1147,22 +1247,40 @@ export function initApp(): void {
       case "goForward":
         await runActionWithStatus(goForwardInCurrentTabWheelTab);
         return;
+      case "pinTab":
+        await runActionWithStatus(togglePinCurrentTabWheelTab);
+        return;
+      case "reloadTab":
+        await runActionWithStatus(reloadCurrentTabWheelTab);
+        return;
     }
   }
 
-  /** Runs a click session's action, at most once per session. */
-  function runMouseGestureSession(session: TabWheelMouseGestureSession): void {
+  /**
+   * Runs a click session's action, at most once per session. eventType is
+   * the event it runs on.
+   */
+  function runMouseGestureSession(
+    session: TabWheelMouseGestureSession,
+    eventType: string,
+  ): void {
     if (session.hasRun) return;
     session.hasRun = true;
-    // A right-click action runs on contextmenu, which is not the last event of
-    // the interaction: pointerup, mouseup, and auxclick still follow. Claim the
-    // button so those trailing events are swallowed instead of reaching the
-    // page. Left and middle actions run on their terminal event, so their claim
-    // just lapses; a fresh pointerdown always clears it.
-    window.__tabWheelMouseClaim = {
-      button: session.policy.button,
-      expiresAt: Date.now() + MOUSE_GESTURE_CLAIM_MS,
-    };
+    // An action that runs on contextmenu may not be on the last event of the
+    // interaction: where the menu opens on the press (macOS, Linux), pointerup,
+    // mouseup, and auxclick still follow. Claim the button so those trailing
+    // events are swallowed instead of reaching the page. click and auxclick
+    // are terminal, so they leave no claim behind to eat a later event. While
+    // the button is still held the claim has no deadline: it starts counting
+    // at the release, however long the hold.
+    if (eventType === "contextmenu") {
+      window.__tabWheelMouseClaim = {
+        button: session.policy.button,
+        expiresAt: session.hasReleased
+          ? Date.now() + MOUSE_GESTURE_CLAIM_MS
+          : Number.POSITIVE_INFINITY,
+      };
+    }
     // A released drag is still moving the tab; running another tab action now
     // would act on a tab in mid-move, so this click is swallowed and dropped.
     if (
@@ -1224,12 +1342,16 @@ export function initApp(): void {
     if (handleActiveTabDragMouseEvent(event)) {
       return;
     }
+    // A pointerdown is always a new press (a second button pressed during a
+    // hold fires only mousedown). Any session still open belongs to a press
+    // whose closing event never came, and must not claim this one unjudged.
+    if (event.type === "pointerdown") resetMouseGestureSession();
 
     const activeSession = getActiveMouseGestureSession(event);
     if (activeSession) {
       suppressPageEvent(event);
       if (shouldRunMouseGestureSession(activeSession, event.type)) {
-        runMouseGestureSession(activeSession);
+        runMouseGestureSession(activeSession, event.type);
       }
       if (shouldFinishMouseGestureSession(activeSession, event.type)) {
         resetMouseGestureSession();
@@ -1282,6 +1404,16 @@ export function initApp(): void {
     // The cooldown is the user's setting as is. normalizeTabWheelSettings has
     // already clamped it to [MIN_WHEEL_COOLDOWN_MS, MAX_WHEEL_COOLDOWN_MS].
     if (now - lastWheelCycleAt < settings.wheelCooldownMs) return false;
+    commitWheelCycle(direction, deltaDirection, now);
+    return true;
+  }
+
+  /** Switches one tab in direction now, with no cooldown check. */
+  function commitWheelCycle(
+    direction: "prev" | "next",
+    deltaDirection: 1 | -1,
+    now: number,
+  ): void {
     wheelBurstCount = computeNextBurstCount(now);
     lastWheelCycleAt = now;
     // The guard tracks raw delta sign, not the mapped prev/next direction, so
@@ -1290,7 +1422,54 @@ export function initApp(): void {
     // the commit is judged against a real envelope instead of being swallowed.
     momentumGuardSession = createMomentumGuardSession(now, deltaDirection, lastGestureMagnitudePx);
     void cycleTabWheel(direction, "gesture").catch(() => {});
-    return true;
+  }
+
+  /**
+   * The switching rule for continuous devices (trackpad, Magic Mouse): one
+   * tab for every swipe step of finger travel, the remainder kept for the
+   * next step. Unlike a wheel there is no cooldown and nothing is discarded,
+   * so the same travel gives the same number of tabs at any speed. The
+   * background applies each switch to whichever tab is active by then, so
+   * several steps sent before the first one lands still walk one tab each.
+   */
+  function runSwipeSteps(now: number): void {
+    const stepPx = resolveSwipeStepPx(settings.wheelSensitivity);
+    for (let steps = 0; steps < MAX_SWIPE_STEPS_PER_EVENT; steps += 1) {
+      if (Math.abs(wheelAccumulator) < stepPx) return;
+      const deltaDirection = wheelAccumulator > 0 ? 1 : -1;
+      wheelAccumulator -= deltaDirection * stepPx;
+      commitWheelCycle(
+        resolveWheelDirection(deltaDirection, settings.invertScroll),
+        deltaDirection,
+        now,
+      );
+    }
+    // A clump worth more than the cap: the excess is dropped, not queued.
+    wheelAccumulator = Math.sign(wheelAccumulator) * Math.min(Math.abs(wheelAccumulator), stepPx);
+  }
+
+  /**
+   * Takes over the unspent distance of the swipe that switched to this tab
+   * (top frame only). Ignored unless this tab only just became visible.
+   */
+  function acceptSwipeCarry(remainderPx: number, axis: "x" | "y" | null): void {
+    const now = performance.now();
+    if (
+      !areSettingsLoaded
+      || document.visibilityState === "hidden"
+      || now - lastVisibleAtMs > SWIPE_CARRY_WINDOW_MS
+      || !Number.isFinite(remainderPx)
+    ) return;
+    const stepPx = resolveSwipeStepPx(settings.wheelSensitivity);
+    // If the swipe's first delta here came before the carry, the swipe is
+    // already running and the carry joins it. Otherwise the carry starts it,
+    // and marking the stream active keeps the first delta from being taken
+    // for a new swipe that resets the distance.
+    lastWheelEventAt = Math.max(lastWheelEventAt, now);
+    lastSwipeEventAt = Math.max(lastSwipeEventAt, now);
+    wheelAccumulator += Math.sign(remainderPx) * Math.min(Math.abs(remainderPx), stepPx);
+    if (!swipeAxisLock.axis && axis) swipeAxisLock.axis = axis;
+    runSwipeSteps(now);
   }
 
   /**
@@ -1303,7 +1482,7 @@ export function initApp(): void {
   function modifierKeydownPrewarmHandler(event: KeyboardEvent): void {
     if (!event.isTrusted) return;
     if (event.key !== MODIFIER_PREWARM_KEYS[settings.gestureModifier]) return;
-    const now = Date.now();
+    const now = performance.now();
     if (isTopFrameContext && now - lastWorkerPrewarmAt >= WORKER_PREWARM_INTERVAL_MS) {
       lastWorkerPrewarmAt = now;
       void notifyTabWheelContentReady().catch(() => {});
@@ -1322,6 +1501,7 @@ export function initApp(): void {
     // check (which also covers isTrusted) comes first and an unmodified
     // scroll exits before measurement or a clock read.
     if (!isKeyboardWheelEvent(event)) return;
+    if (retireIfOrphaned()) return;
     // Measurement also classifies the event. A notch is recognized per event
     // from Chrome's legacy wheelDelta (whole 120-unit ticks, divided by
     // devicePixelRatio) and floored to 100px; anything else is a slice of a
@@ -1334,7 +1514,7 @@ export function initApp(): void {
       window.devicePixelRatio,
     );
     if (wheelDelta === 0) return;
-    const now = Date.now();
+    const now = wheelEventTimeMs(event);
     // From here on the event belongs to the gesture: the page never scrolls
     // on it, even when a guard below drops the delta.
     suppressPageEvent(event);
@@ -1359,21 +1539,39 @@ export function initApp(): void {
     // fingers also ends the swipe, so any partial distance is dropped. Where
     // the flag is undefined (older Chrome), the momentum guard below does
     // this job.
-    if ((event as WheelEvent & { momentum?: boolean }).momentum === true) {
+    const inertiaFlag = (event as WheelEvent & { momentum?: boolean }).momentum;
+    if (inertiaFlag === true) {
       wheelAccumulator = 0;
       lastGestureMagnitudePx = 0;
+      swipeAxisLock = createSwipeAxisLock();
       return;
     }
+    // A browser that flags inertia has just said this delta is not inertia,
+    // so it is the user's own motion: fingers easing off at the end of a
+    // swipe, or still moving as the next tab appears. The two guards below
+    // only guess at what the flag states outright, and their guess blocks
+    // exactly that motion, so they are skipped wherever the flag exists.
+    const browserFlagsInertia = typeof inertiaFlag === "boolean";
     // A notch is a deliberate detent: never a momentum tail, so it bypasses
     // both guards below and ends any session still watching a stream.
-    if (isNotch) {
+    if (isNotch || browserFlagsInertia) {
       momentumGuardSession = null;
-    } else if (now - previousWheelEventAt > WHEEL_GESTURE_IDLE_MS) {
+    }
+    if (!isNotch && now - previousWheelEventAt > WHEEL_GESTURE_IDLE_MS) {
       // A continuous stream that went quiet this long was a finished swipe.
       // Starting the next one from zero is what makes the same swipe give the
       // same result every time, instead of inheriting a stale partial
       // distance from a swipe seconds or minutes ago.
       wheelAccumulator = 0;
+      swipeAxisLock = createSwipeAxisLock();
+    }
+    // A continuous swipe is read on one axis for its whole length (see
+    // SwipeAxisLock); a notch keeps the axis its own event moved on.
+    let gestureDelta = wheelDelta;
+    if (!isNotch && settings.horizontalWheel) {
+      const axes = measureWheelAxes(event, window.innerHeight, window.innerWidth);
+      gestureDelta = axes[resolveSwipeAxis(swipeAxisLock, axes)];
+      if (gestureDelta === 0) return;
     }
     // Arrival guard. The gesture that switched to this tab committed in the
     // previous document, whose guard session died with its visibility, and
@@ -1388,29 +1586,39 @@ export function initApp(): void {
     if (
       !momentumGuardSession
       && !isNotch
+      && !browserFlagsInertia
       && now - lastVisibleAtMs <= WHEEL_ARRIVAL_GUARD_WINDOW_MS
     ) {
       momentumGuardSession = createMomentumGuardSession(
         now,
-        wheelDelta > 0 ? 1 : -1,
-        Math.abs(wheelDelta),
+        gestureDelta > 0 ? 1 : -1,
+        Math.abs(gestureDelta),
       );
       return;
     }
     if (
       momentumGuardSession
+      && !browserFlagsInertia
       && shouldBlockWheelDelta(
         momentumGuardSession,
-        wheelDelta,
+        gestureDelta,
         now,
         DEFAULT_MOMENTUM_GUARD_TUNING,
       )
     ) {
       return;
     }
-    wheelAccumulator += wheelDelta;
+    wheelAccumulator += gestureDelta;
     // Blocked deltas return above, so a tail can never seed the next session.
-    lastGestureMagnitudePx = Math.abs(wheelDelta);
+    lastGestureMagnitudePx = Math.abs(gestureDelta);
+    // Continuous devices switch by travel alone, at a distance derived from
+    // the sensitivity setting; the trigger, cooldown, and acceleration below
+    // belong to notched wheels.
+    if (!isNotch) {
+      lastSwipeEventAt = now;
+      runSwipeSteps(now);
+      return;
+    }
     const baseDistance = resolveWheelTriggerDistance(
       WHEEL_TRIGGER_THRESHOLD_PX,
       settings.wheelSensitivity,
@@ -1451,9 +1659,10 @@ export function initApp(): void {
   function resetWheelGestureState(): void {
     wheelAccumulator = 0;
     lastGestureMagnitudePx = 0;
-    lastWheelCycleAt = 0;
+    lastWheelCycleAt = Number.NEGATIVE_INFINITY;
     wheelBurstCount = 0;
     momentumGuardSession = null;
+    swipeAxisLock = createSwipeAxisLock();
   }
 
   /**
@@ -1500,6 +1709,9 @@ export function initApp(): void {
       case "SET_SCROLL":
         void restoreWindowScroll(receivedMessage);
         return Promise.resolve({ ok: true });
+      case "TABWHEEL_SWIPE_CARRY":
+        acceptSwipeCarry(receivedMessage.remainderPx, receivedMessage.axis);
+        return Promise.resolve({ ok: true });
     }
   }
 
@@ -1512,13 +1724,27 @@ export function initApp(): void {
       // A tab activated by a wheel switch starts receiving the tail of the
       // gesture that activated it. Remember when it arrived so the wheel path
       // can tell that tail apart from a fresh gesture.
-      lastVisibleAtMs = Date.now();
+      lastVisibleAtMs = performance.now();
       return;
     }
     cancelScrollRestore();
+    // A swipe still moving as this tab is hidden continues in the next one.
+    // Pass on what it had counted toward the next step.
+    if (
+      wheelAccumulator !== 0
+      && performance.now() - lastSwipeEventAt <= SWIPE_HANDOFF_MAX_AGE_MS
+    ) {
+      void handOffTabWheelSwipe(wheelAccumulator, swipeAxisLock.axis).catch(() => {});
+    }
     resetWheelGestureState();
     resetMouseGestureSession();
     cancelUnreleasedTabDragGesture();
+    // A held button's release may never reach a hidden tab, so a claim still
+    // waiting for one gets a deadline instead of waiting here indefinitely.
+    const claim = window.__tabWheelMouseClaim;
+    if (claim?.expiresAt === Number.POSITIVE_INFINITY) {
+      claim.expiresAt = Date.now() + MOUSE_GESTURE_CLAIM_MS;
+    }
     if (isTopFrameContext) flushScrollSnapshot();
   }
 
@@ -1571,7 +1797,8 @@ export function initApp(): void {
   // Undoes everything above for the next injection. A claim is left first so
   // an interaction cut short by re-injection stays swallowed, and a released
   // drag is not cancelled so it can finish settling the tab.
-  window.__tabWheelCleanup = () => {
+  teardown = () => {
+    if (window.__tabWheelCleanup === teardown) window.__tabWheelCleanup = undefined;
     rememberMouseClaimForReinjection();
     window.removeEventListener("pointerdown", mouseGestureHandler, true);
     window.removeEventListener("pointermove", tabDragPointerMoveHandler, true);
@@ -1588,13 +1815,19 @@ export function initApp(): void {
     window.removeEventListener("keydown", modifierKeydownPrewarmHandler, true);
     window.removeEventListener("wheel", wheelHandler, true);
     document.removeEventListener("visibilitychange", visibilityHandler);
-    browser.storage.onChanged.removeListener(storageChangedHandler);
     if (isTopFrameContext) {
       window.removeEventListener("scroll", scheduleScrollSnapshot, true);
       window.removeEventListener("pagehide", pageHideHandler);
       window.removeEventListener("pageshow", pageShowHandler);
       window.removeEventListener("beforeunload", pageHideHandler);
-      browser.runtime.onMessage.removeListener(messageHandler);
+    }
+    // Extension APIs can throw once the extension context is gone, and an
+    // orphaned script running this must still finish tearing down.
+    try {
+      browser.storage.onChanged.removeListener(storageChangedHandler);
+      if (isTopFrameContext) browser.runtime.onMessage.removeListener(messageHandler);
+    } catch (_) {
+      // Nothing left to detach from.
     }
     cancelScrollRestore();
     resetMouseGestureSession();
@@ -1603,6 +1836,7 @@ export function initApp(): void {
     if (statusTimer) window.clearTimeout(statusTimer);
     document.getElementById(STATUS_ID)?.remove();
   };
+  window.__tabWheelCleanup = teardown;
 
   // Tell the background this tab can take gestures and answer pings. Top
   // frame only, since only the top frame registers the message listener.

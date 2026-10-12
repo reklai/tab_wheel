@@ -123,6 +123,37 @@ export function goForwardInCurrentTabWheelTab(windowId?: number): Promise<TabWhe
 }
 
 /**
+ * Hands a swipe's unspent distance to the tab that just replaced this one, so
+ * a swipe that continues across a switch loses nothing at the seam.
+ */
+export function handOffTabWheelSwipe(
+  remainderPx: number,
+  axis: "x" | "y" | null,
+): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_SWIPE_HANDOFF",
+    remainderPx,
+    axis,
+  });
+}
+
+/** Pins or unpins the current tab. */
+export function togglePinCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_TOGGLE_PIN",
+    windowId,
+  });
+}
+
+/** Reloads the current tab; same unload caveat as going back. */
+export function reloadCurrentTabWheelTab(windowId?: number): Promise<TabWheelActionResult> {
+  return sendRuntimeMessage<TabWheelActionResult>({
+    type: "TABWHEEL_RELOAD_TAB",
+    windowId,
+  });
+}
+
+/**
  * Moves the sender tab one slot during a drag. `gestureId` must match the id
  * passed to beginTabWheelDragGesture, or the move is refused as timed out.
  */

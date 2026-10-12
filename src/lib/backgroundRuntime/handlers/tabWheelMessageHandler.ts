@@ -62,6 +62,15 @@ export function createTabWheelMessageHandler(
       case "TABWHEEL_GO_FORWARD":
         return await domain.goForwardInCurrentTab(sender.tab, message.windowId);
 
+      case "TABWHEEL_SWIPE_HANDOFF":
+        return await domain.handOffSwipe(sender.tab, message.remainderPx, message.axis);
+
+      case "TABWHEEL_TOGGLE_PIN":
+        return await domain.togglePinCurrentTab(sender.tab, message.windowId);
+
+      case "TABWHEEL_RELOAD_TAB":
+        return await domain.reloadCurrentTab(sender.tab, message.windowId);
+
       case "TABWHEEL_BEGIN_TAB_DRAG":
         return await domain.beginTabDrag(message.gestureId, sender.tab);
 

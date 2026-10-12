@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createGestureWorld, browserEventSequence } from "./helpers/gestureHarness.mjs";
+import { createGestureWorld, browserEventSequence, flushAsyncWork } from "./helpers/gestureHarness.mjs";
 
 // The full contract for a modifier + mouse-button click action, exercised
 // against the real content-script pipeline. A mapped button must fire its
@@ -15,6 +15,8 @@ const MESSAGE_FOR_ACTION = {
   muteTab: "TABWHEEL_TOGGLE_MUTE",
   goBack: "TABWHEEL_GO_BACK",
   goForward: "TABWHEEL_GO_FORWARD",
+  pinTab: "TABWHEEL_TOGGLE_PIN",
+  reloadTab: "TABWHEEL_RELOAD_TAB",
   openSettings: "TABWHEEL_OPEN_OPTIONS",
 };
 
@@ -76,14 +78,86 @@ for (const { name, button, key } of BUTTONS) {
   });
 }
 
-test("right click on Windows (context menu on release) also leaks nothing", async () => {
-  const world = await createGestureWorld(settingsWith("rightClickAction", "muteTab"));
+for (const action of CLICK_ACTIONS) {
+  test(`right click mapped to ${action} fires once and leaks nothing on Windows (context menu after auxclick)`, async () => {
+    const world = await createGestureWorld(settingsWith("rightClickAction", action));
+    try {
+      const { actions, leaked } = await world.performClick(2, { contextOn: "release" });
+      assert.deepEqual(actions, [MESSAGE_FOR_ACTION[action]]);
+      assert.deepEqual(leaked, [], "release-ordered right click should suppress every event too");
+    } finally {
+      world.cleanup();
+    }
+  });
+}
+
+test("Control + left click on macOS runs on its contextmenu, since no click follows", async () => {
+  const world = await createGestureWorld({
+    ...settingsWith("leftClickAction", "nativeNewTab"),
+    gestureModifier: "ctrl",
+  });
   try {
-    const { actions, leaked } = await world.performClick(2, { contextOn: "release" });
-    assert.deepEqual(actions, ["TABWHEEL_TOGGLE_MUTE"]);
-    assert.deepEqual(leaked, [], "release-ordered right click should suppress every event too");
+    const { actions, leaked } = await world.performClick(0, { alt: false, ctrl: true, macControlClick: true });
+    assert.deepEqual(actions, ["TABWHEEL_OPEN_NATIVE_NEW_TAB"]);
+    assert.deepEqual(leaked, [], "the context menu and the release must be suppressed");
   } finally {
     world.cleanup();
+  }
+});
+
+test("a click held longer than the claim still runs once and leaks nothing", async () => {
+  for (const { button, key } of BUTTONS) {
+    for (const contextOn of ["press", "release"]) {
+      const world = await createGestureWorld(settingsWith(key, "muteTab"));
+      try {
+        const leaked = [];
+        for (const { type } of browserEventSequence(button, { contextOn })) {
+          if (type === "pointerup") world.advance(2500);
+          const eventButton = type === "click" ? 0 : button;
+          if (!world.dispatch(type, { button: eventButton, alt: true }).defaultPrevented) leaked.push(type);
+        }
+        await flushAsyncWork();
+        assert.deepEqual(world.drainActions(), ["TABWHEEL_TOGGLE_MUTE"], `button ${button}, context on ${contextOn}`);
+        assert.deepEqual(leaked, [], `button ${button}, context on ${contextOn}`);
+      } finally {
+        world.cleanup();
+      }
+    }
+  }
+});
+
+test("a press whose click never came cannot claim the next, unmodified click", async () => {
+  const world = await createGestureWorld(settingsWith("leftClickAction", "closeToRecent"));
+  try {
+    // Alt + press, then the release is lost (focus change, native drag).
+    world.dispatch("pointerdown", { button: 0, alt: true });
+    world.dispatch("mousedown", { button: 0, alt: true });
+    world.advance(300);
+    const plain = await world.performClick(0, { alt: false });
+    assert.deepEqual(plain.actions, [], "a plain click must never close the tab");
+    assert.deepEqual(plain.leaked, ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
+  } finally {
+    world.cleanup();
+  }
+});
+
+test("a keyboard-made click or context menu after an action reaches the page", async () => {
+  // Enter on a button, implicit form submission, and the Menu key all fire
+  // trusted click/contextmenu events with no pointerdown before them.
+  for (const [key, button, type] of [
+    ["leftClickAction", 0, "click"],
+    ["rightClickAction", 2, "contextmenu"],
+  ]) {
+    const world = await createGestureWorld(settingsWith(key, "muteTab"));
+    try {
+      await world.performClick(button);
+      world.advance(1000);
+      const keyboardEvent = world.dispatch(type, { button: 0 });
+      assert.equal(keyboardEvent.defaultPrevented, false, `${type} must stay native`);
+      assert.deepEqual(world.drainActions(), []);
+    } finally {
+      world.cleanup();
+    }
   }
 });
 
@@ -131,6 +205,25 @@ test("after an action the claim never bleeds into the next interaction", async (
     const plain = await world.performClick(0, { alt: false });
     assert.deepEqual(plain.actions, []);
     assert.deepEqual(plain.leaked, ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]);
+  } finally {
+    world.cleanup();
+  }
+});
+
+test("a right-click action that switches tabs mid-press leaves no lasting claim on the hidden tab", async () => {
+  const world = await createGestureWorld(settingsWith("rightClickAction", "recentTab"));
+  try {
+    // The action runs on the press-time contextmenu and the tab is hidden
+    // before the release, which this document then never sees.
+    world.dispatch("pointerdown", { button: 2, alt: true });
+    world.dispatch("contextmenu", { button: 2, alt: true });
+    globalThis.document.visibilityState = "hidden";
+    world.dispatchDocument("visibilitychange");
+    globalThis.document.visibilityState = "visible";
+    world.dispatchDocument("visibilitychange");
+    world.advance(1000);
+    const keyboardMenu = world.dispatch("contextmenu", { button: 0 });
+    assert.equal(keyboardMenu.defaultPrevented, false, "the Menu key must still open the context menu");
   } finally {
     world.cleanup();
   }

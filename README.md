@@ -9,18 +9,20 @@ TabWheel provides fast, private, mouse-first tab control, with focused modifier-
 - Switches tabs with `Alt / Option + wheel` by default.
 - Cycles in visible left-to-right tab-strip order.
 - Restores the root page position when you return to a tab and URL.
-- Offers Precise, Balanced, Fast, and Custom wheel feel.
+- Offers Precise, Balanced, Fast, and Custom wheel feel. Sensitivity applies to wheels and trackpads alike; Cooldown and Acceleration apply to notched wheels.
 - Switches one tab per wheel notch on every OS, including macOS, where the system scales a slow notch down to a few pixels.
-- Switches by finger travel on a trackpad or Magic Mouse: a short swipe moves one tab, a longer swipe moves more, and each swipe starts fresh. The inertia after you lift your fingers never switches tabs. Chrome 151+ marks those inertia events directly; on older Chrome a momentum guard recognizes them by their smooth decay, including right after you land on the newly focused tab.
+- Switches by finger travel on a trackpad or Magic Mouse: one tab for every fixed distance your fingers cover (about 50 px at the default sensitivity, scaled by the Sensitivity setting), so the same swipe moves the same number of tabs at any speed and each swipe starts fresh. The inertia after you lift your fingers never switches tabs. Chrome 151+ marks those inertia events directly; on older Chrome a momentum guard recognizes them by their smooth decay, including right after you land on the newly focused tab.
+- Carries a swipe across the tab switch it causes, so no finger travel is lost when the next tab takes over.
 - Can skip collapsed/hidden tabs or pinned tabs.
 - Supports `Ctrl / Control` and `Meta / Command` as alternative modifiers.
 - Opens the browser's New Tab page beside the current tab with modifier + left click.
 - Drags the current tab with modifier + middle click (hold and drag horizontally).
 - Closes the current tab and returns to the previous tab with modifier + right click.
-- Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, or Off.
+- Lets every mouse button be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, Pin / unpin tab, Reload tab, or Off.
 - Drag current tab lets you hold the configured button and drag horizontally to move the active tab one slot at a time, without changing its pinned or group membership. The Drag speed setting controls how far you drag per slot (about 96 px by default).
 - Provides popup Previous/Next buttons when a protected browser page blocks content scripts.
 - Shows a toolbar badge on recognized browser-restricted URLs, such as `chrome://`, `about:`, and extension stores.
+- Steps aside cleanly when it is disabled, removed, or replaced: the old copy's page script removes itself, so open tabs never stop responding.
 - Stores settings, onboarding state, recent-tab order, and scroll positions locally.
 
 Setting a physical button to Off leaves its native modifier-click behavior completely untouched. Enabled combinations suppress page-delivered defaults such as opening or downloading links and showing context menus. OS shortcuts, browser-chrome shortcuts, and protected pages cannot be intercepted.
@@ -91,8 +93,8 @@ npm run release:package
 
 This creates:
 
-- `release/tabwheel-chrome-v4.2.0.zip` (upload to the Chrome Web Store)
-- `release/tabwheel-source-v4.2.0.zip`
+- `release/tabwheel-chrome-v4.5.0.zip` (upload to the Chrome Web Store)
+- `release/tabwheel-source-v4.5.0.zip`
 
 ## Project structure
 

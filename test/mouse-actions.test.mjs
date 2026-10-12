@@ -9,7 +9,7 @@ import {
 // Behavioral coverage for the one-shot mouse actions that act on the active
 // tab without touching the tab strip: mute toggle and history navigation.
 // Runs the real bundled domain against a mutable mock browser window.
-async function createActionWorld({ tabs, goBack, goForward }) {
+async function createActionWorld({ tabs, goBack, goForward, sendMessage }) {
   const passiveEvent = () => createListenerEvent();
   const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
   const updates = [];
@@ -38,13 +38,21 @@ async function createActionWorld({ tabs, goBack, goForward }) {
       query: async (query) => [...tabsById.values()].filter((tab) =>
         (query.windowId == null || tab.windowId === query.windowId)
         && (query.active == null || tab.active === query.active)),
-      sendMessage: async () => ({ scrollX: 0, scrollY: 0 }),
+      sendMessage: async (tabId, message) => {
+        if (sendMessage) await sendMessage(tabId, message);
+        return { scrollX: 0, scrollY: 0 };
+      },
       update: async (tabId, props) => {
         const tab = tabsById.get(tabId);
         if (tab?.refuseUpdate) throw new Error("Tab cannot be updated");
         updates.push({ tabId, ...props });
         if ("muted" in props) tab.mutedInfo = { muted: props.muted };
+        if ("pinned" in props) tab.pinned = props.pinned;
         return tab;
+      },
+      reload: async (tabId) => {
+        if (tabsById.get(tabId)?.refuseUpdate) throw new Error("Tab cannot be reloaded");
+        navigations.push({ direction: "reload", tabId });
       },
       goBack: async (tabId) => {
         navigations.push({ direction: "back", tabId });
@@ -158,4 +166,73 @@ test("mute reports a soft failure when the browser refuses the update", async ()
   const result = await world.domain.toggleMuteCurrentTab(world.tabsById.get(1));
 
   assert.deepEqual(result, { ok: false, reason: "This tab can't be muted" });
+});
+
+test("pin toggles the active tab's pinned state each time it runs", async () => {
+  const world = await createActionWorld({ tabs: [activeTab()], goBack: async () => {}, goForward: async () => {} });
+
+  const first = await world.domain.togglePinCurrentTab(world.tabsById.get(1));
+  const second = await world.domain.togglePinCurrentTab(world.tabsById.get(1));
+
+  assert.deepEqual(first, { ok: true, tabId: 1 });
+  assert.deepEqual(second, { ok: true, tabId: 1 });
+  assert.deepEqual(world.updates, [
+    { tabId: 1, pinned: true },
+    { tabId: 1, pinned: false },
+  ]);
+});
+
+test("reload reloads the active tab", async () => {
+  const world = await createActionWorld({ tabs: [activeTab()], goBack: async () => {}, goForward: async () => {} });
+
+  const result = await world.domain.reloadCurrentTab(world.tabsById.get(1));
+
+  assert.deepEqual(result, { ok: true, tabId: 1 });
+  assert.deepEqual(world.navigations, [{ direction: "reload", tabId: 1 }]);
+});
+
+test("pin and reload report a soft failure when the browser refuses", async () => {
+  const world = await createActionWorld({ tabs: [activeTab()], goBack: async () => {}, goForward: async () => {} });
+  world.tabsById.get(1).refuseUpdate = true;
+
+  assert.deepEqual(
+    await world.domain.togglePinCurrentTab(world.tabsById.get(1)),
+    { ok: false, reason: "This tab can't be pinned" },
+  );
+  assert.deepEqual(
+    await world.domain.reloadCurrentTab(world.tabsById.get(1)),
+    { ok: false, reason: "Couldn't reload this tab" },
+  );
+});
+
+test("a swipe hand-off is relayed to the tab now active in the sender's window", async () => {
+  const sent = [];
+  const world = await createActionWorld({
+    tabs: [
+      { id: 1, windowId: 5, index: 0, active: false, url: "https://page.test/a" },
+      { id: 2, windowId: 5, index: 1, active: true, url: "https://page.test/b" },
+    ],
+    goBack: async () => {},
+    goForward: async () => {},
+    sendMessage: async (tabId, message) => { sent.push({ tabId, message }); },
+  });
+
+  const result = await world.domain.handOffSwipe(world.tabsById.get(1), 42, "y");
+
+  assert.deepEqual(result, { ok: true, tabId: 2 });
+  assert.deepEqual(sent, [{ tabId: 2, message: { type: "TABWHEEL_SWIPE_CARRY", remainderPx: 42, axis: "y" } }]);
+});
+
+test("a swipe hand-off goes nowhere when the sender is still the active tab", async () => {
+  const sent = [];
+  const world = await createActionWorld({
+    tabs: [activeTab()],
+    goBack: async () => {},
+    goForward: async () => {},
+    sendMessage: async (tabId, message) => { sent.push({ tabId, message }); },
+  });
+
+  assert.deepEqual(await world.domain.handOffSwipe(world.tabsById.get(1), 42, "y"), { ok: true });
+  assert.deepEqual(await world.domain.handOffSwipe(world.tabsById.get(1), Number.NaN, "y"), { ok: false });
+  assert.deepEqual(sent, []);
 });

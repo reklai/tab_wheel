@@ -32,7 +32,9 @@ export const TABWHEEL_MODIFIER_KEYS: readonly TabWheelModifierKey[] = ["alt", "c
 /** Every wheel preset; "custom" is any combination no named preset matches. */
 export const TABWHEEL_PRESETS: readonly TabWheelPreset[] = ["precise", "balanced", "fast", "custom"];
 // Ranges of the two sensitivity multipliers; higher is faster for both.
-// wheelSensitivity: the wheel travels 80px / sensitivity per switch.
+// wheelSensitivity: a notched wheel travels 80px / sensitivity per switch,
+// and a trackpad swipe's distance per switch is derived from it too (see
+// resolveSwipeStepPx in tabWheelCore.ts).
 // tabDragSensitivity ("Drag speed"): the pointer travels 96px / sensitivity
 // per slot (see tabDragCore.ts).
 export const MIN_WHEEL_SENSITIVITY = 0.5;
@@ -302,6 +304,8 @@ export function formatTabWheelClickAction(action: TabWheelClickAction): string {
     case "muteTab": return "Mute / unmute tab";
     case "goBack": return "Go back";
     case "goForward": return "Go forward";
+    case "pinTab": return "Pin / unpin tab";
+    case "reloadTab": return "Reload tab";
     case "none": return "Off";
   }
 }

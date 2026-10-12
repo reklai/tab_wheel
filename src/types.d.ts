@@ -58,6 +58,8 @@ type TabWheelClickAction =
   | "muteTab"
   | "goBack"
   | "goForward"
+  | "pinTab"
+  | "reloadTab"
   | "none";
 /** Whether the tab has a live content script that can take gestures. */
 type TabWheelContentScriptStatus = "ready" | "unavailable";
@@ -106,7 +108,10 @@ interface TabWheelSettings {
   /** Cycle only among tabs in the current tab's group. */
   cycleWithinTabGroup: boolean;
   wheelPreset: TabWheelPreset;
-  /** Wheel multiplier; the wheel travels 80px / this per switch. */
+  /**
+   * Wheel multiplier; a notched wheel travels 80px / this per switch. A
+   * trackpad swipe's distance per switch scales with it too.
+   */
   wheelSensitivity: number;
   /** Least time, in ms, between two wheel switches. */
   wheelCooldownMs: number;

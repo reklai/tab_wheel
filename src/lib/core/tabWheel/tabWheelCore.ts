@@ -119,6 +119,66 @@ function resolveWheelAxis(
     : { axis: "y", deltaPx: normalizedY };
 }
 
+/** One wheel event's distance on each axis, in px. */
+export interface WheelAxesPx {
+  x: number;
+  y: number;
+}
+
+/** Both axes of one wheel event in px, using the same units as resolveWheelAxis. */
+export function measureWheelAxes(
+  event: Pick<WheelEvent, "deltaMode" | "deltaX" | "deltaY">,
+  pageHeight: number,
+  pageWidth: number,
+): WheelAxesPx {
+  const multiplierX = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? pageWidth : 1;
+  const multiplierY = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? pageHeight : 1;
+  const x = event.deltaX * multiplierX;
+  const y = event.deltaY * multiplierY;
+  return { x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0 };
+}
+
+/**
+ * How far, in px, a swipe must travel on its leading axis before that axis is
+ * locked in. A few events' worth: enough to see past the first noisy deltas,
+ * far short of the distance that switches a tab.
+ */
+export const SWIPE_AXIS_LOCK_PX = 10;
+
+/**
+ * Which axis a continuous swipe is read on. Fingers never move in a perfectly
+ * straight line, so reading each event on whichever axis moved further lets a
+ * diagonal swipe count some events vertically and some horizontally; when the
+ * two point opposite ways (down and to the left) the swipe cancels itself. A
+ * swipe is instead read on one axis from start to finish: the axis that
+ * covered more ground once SWIPE_AXIS_LOCK_PX has been travelled.
+ */
+export interface SwipeAxisLock {
+  /** The locked axis, or null while the swipe has not travelled far enough. */
+  axis: "x" | "y" | null;
+  /** Unsigned distance seen on each axis so far, in px. */
+  travelXPx: number;
+  travelYPx: number;
+}
+
+/** A lock for a swipe that has not started. Also used to reset one in place. */
+export function createSwipeAxisLock(): SwipeAxisLock {
+  return { axis: null, travelXPx: 0, travelYPx: 0 };
+}
+
+/**
+ * The axis to read one event of a swipe on, updating `lock`. Until the lock
+ * is set this is the axis leading so far, with vertical winning a tie.
+ */
+export function resolveSwipeAxis(lock: SwipeAxisLock, axes: WheelAxesPx): "x" | "y" {
+  if (lock.axis) return lock.axis;
+  lock.travelXPx += Math.abs(axes.x);
+  lock.travelYPx += Math.abs(axes.y);
+  const leading = lock.travelXPx > lock.travelYPx ? "x" : "y";
+  if (Math.max(lock.travelXPx, lock.travelYPx) >= SWIPE_AXIS_LOCK_PX) lock.axis = leading;
+  return leading;
+}
+
 /**
  * The minimum distance, in px, that one recognized notch of a detented wheel
  * contributes. How many pixels a notch reports is an OS choice: ~100-120px on
@@ -244,6 +304,30 @@ export function resolveWheelTriggerDistance(
 ): number {
   const safeSensitivity = Number.isFinite(sensitivity) && sensitivity > 0 ? sensitivity : 1;
   return Math.max(1, baseThresholdPx / safeSensitivity);
+}
+
+/** Finger travel per switch, in px, before any sensitivity is applied. */
+export const SWIPE_STEP_PX = 100;
+/**
+ * How much more sensitive a swipe is than SWIPE_STEP_PX at the same setting.
+ * At the default sensitivity of 1 this makes a tab cost 50px of travel.
+ */
+export const SWIPE_SENSITIVITY_BOOST = 2;
+
+/**
+ * How far, in px, fingers travel per tab on a continuous device (trackpad,
+ * Magic Mouse): SWIPE_STEP_PX / (wheelSensitivity x SWIPE_SENSITIVITY_BOOST).
+ * It is derived from the one Sensitivity setting, so a preset that makes the
+ * wheel quicker makes swipes quicker with it. A swipe switches one tab each
+ * time it covers this distance and keeps the remainder, so the same travel
+ * gives the same number of tabs at any speed. A non-positive or non-finite
+ * sensitivity counts as 1.
+ */
+export function resolveSwipeStepPx(wheelSensitivity: number): number {
+  const safeSensitivity = Number.isFinite(wheelSensitivity) && wheelSensitivity > 0
+    ? wheelSensitivity
+    : 1;
+  return SWIPE_STEP_PX / (safeSensitivity * SWIPE_SENSITIVITY_BOOST);
 }
 
 // Wheel acceleration: each quick switch in a burst takes 6px off the trigger,

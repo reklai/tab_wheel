@@ -43,6 +43,21 @@ test("mute, back, and forward use their canonical user-facing names", async () =
   assert.equal(contract.formatTabWheelClickAction("muteTab"), "Mute / unmute tab");
   assert.equal(contract.formatTabWheelClickAction("goBack"), "Go back");
   assert.equal(contract.formatTabWheelClickAction("goForward"), "Go forward");
+  assert.equal(contract.formatTabWheelClickAction("pinTab"), "Pin / unpin tab");
+  assert.equal(contract.formatTabWheelClickAction("reloadTab"), "Reload tab");
+});
+
+test("saved pin and reload mappings survive normalization", async () => {
+  const contract = await loadSettingsContract();
+
+  const settings = contract.normalizeTabWheelSettings({
+    leftClickAction: "reloadTab",
+    middleClickAction: "pinTab",
+    rightClickAction: "none",
+  });
+
+  assert.equal(settings.leftClickAction, "reloadTab");
+  assert.equal(settings.middleClickAction, "pinTab");
 });
 
 test("saved mute, back, and forward mappings survive normalization", async () => {
@@ -71,6 +86,8 @@ test("the mouse-action list is alphabetical by label, with Off pinned last", asy
 
 test("drag sensitivity is clamped to its range and defaults to 1", async () => {
   const contract = await loadSettingsContract();
+  // The short-lived separate trackpad setting is gone; a stored value is dropped.
+  assert.equal("trackpadSensitivity" in contract.normalizeTabWheelSettings({ trackpadSensitivity: 2 }), false);
   assert.equal(contract.normalizeTabWheelSettings({}).tabDragSensitivity, 1);
   assert.equal(contract.normalizeTabWheelSettings({ tabDragSensitivity: 9 }).tabDragSensitivity, contract.MAX_TAB_DRAG_SENSITIVITY);
   assert.equal(contract.normalizeTabWheelSettings({ tabDragSensitivity: 0 }).tabDragSensitivity, contract.MIN_TAB_DRAG_SENSITIVITY);

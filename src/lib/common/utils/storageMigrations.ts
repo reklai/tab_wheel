@@ -195,6 +195,8 @@ const TABWHEEL_CLICK_ACTION_VALUES = [
   "muteTab",
   "goBack",
   "goForward",
+  "pinTab",
+  "reloadTab",
   "none",
 ];
 

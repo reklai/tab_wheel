@@ -8,7 +8,9 @@ export type ContentRuntimeMessage =
   // Liveness check: only a tab with a live content script answers.
   | { type: "TABWHEEL_PING" }
   | { type: "GET_SCROLL" }
-  | ({ type: "SET_SCROLL" } & ScrollData);
+  | ({ type: "SET_SCROLL" } & ScrollData)
+  // The unspent distance of a swipe that just switched to this tab.
+  | { type: "TABWHEEL_SWIPE_CARRY"; remainderPx: number; axis: "x" | "y" | null };
 
 /**
  * Messages the content script and extension pages send to the background.
@@ -34,6 +36,11 @@ export type BackgroundRuntimeMessage =
   | { type: "TABWHEEL_TOGGLE_MUTE"; windowId?: number }
   | { type: "TABWHEEL_GO_BACK"; windowId?: number }
   | { type: "TABWHEEL_GO_FORWARD"; windowId?: number }
+  // A swipe was still under way when its tab was hidden; the background
+  // passes its unspent distance on to the tab now active in that window.
+  | { type: "TABWHEEL_SWIPE_HANDOFF"; remainderPx: number; axis: "x" | "y" | null }
+  | { type: "TABWHEEL_TOGGLE_PIN"; windowId?: number }
+  | { type: "TABWHEEL_RELOAD_TAB"; windowId?: number }
   // One drag is one gestureId from begin to end, so a late move from a drag
   // that already ended is rejected instead of moving the tab.
   | { type: "TABWHEEL_BEGIN_TAB_DRAG"; gestureId: string }

@@ -132,6 +132,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       muteTab: "Mute or unmute this tab's audio.",
       goBack: "Go back one page in this tab.",
       goForward: "Go forward one page in this tab.",
+      pinTab: "Pin or unpin this tab.",
+      reloadTab: "Reload this tab.",
       none: "Off leaves this mouse combination browser-native.",
     };
     actionSelects.forEach((select, index) => {
@@ -231,6 +233,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       muteTab: ["♪", "Tab muted", "Click again to unmute."],
       goBack: ["←", "Went back", "This tab shows the previous page."],
       goForward: ["→", "Went forward", "This tab shows the next page."],
+      pinTab: ["⚲", "Tab pinned", "Click again to unpin."],
+      reloadTab: ["↻", "Tab reloaded", "This tab loads its page again."],
       none: ["○", "Browser-native behavior", "TabWheel does not claim this mouse combination."],
     };
     const [icon, title, description] = descriptions[action];
@@ -260,6 +264,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       simAddress.textContent = "Current page · muted";
     } else if (action === "goBack" || action === "goForward") {
       simAddress.textContent = action === "goBack" ? "Previous page" : "Next page";
+    } else if (action === "pinTab") {
+      simAddress.textContent = "Current page · pinned";
+    } else if (action === "reloadTab") {
+      simAddress.textContent = "Current page · reloaded";
     }
 
     clickDemoStatus.textContent = `${formatTabWheelClickAction(action)} — ${description}`;

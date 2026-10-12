@@ -176,6 +176,9 @@ export interface TabWheelDomain {
   toggleMuteCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   goBackInCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   goForwardInCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
+  togglePinCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
+  handOffSwipe(tab: Tabs.Tab | undefined, remainderPx: number, axis: "x" | "y" | null): Promise<TabWheelActionResult>;
+  reloadCurrentTab(tab?: Tabs.Tab, windowId?: number): Promise<TabWheelActionResult>;
   beginTabDrag(gestureId: string, tab?: Tabs.Tab): Promise<TabWheelActionResult>;
   moveCurrentTab(direction: TabWheelMoveDirection, tab?: Tabs.Tab, gestureId?: string): Promise<TabWheelMoveResult>;
   endTabDrag(gestureId: string, tab?: Tabs.Tab): Promise<TabWheelActionResult>;
@@ -1866,6 +1869,63 @@ export function createTabWheelDomain(options: {
   }
 
   /**
+   * Relays a swipe's unspent distance from the tab that was just hidden to
+   * the tab now active in its window. Each tab's content script counts wheel
+   * distance on its own, so without this every switch would drop whatever the
+   * old tab had counted toward the next one. Deliberately outside the window
+   * queue and best-effort: it must arrive while the swipe is still moving,
+   * and a lost carry only costs part of one step.
+   */
+  async function handOffSwipe(
+    tab: Tabs.Tab | undefined,
+    remainderPx: number,
+    axis: "x" | "y" | null,
+  ): Promise<TabWheelActionResult> {
+    if (tab?.id == null || tab.windowId == null || !Number.isFinite(remainderPx)) return { ok: false };
+    const activeTab = await queryActiveTab(tab.windowId);
+    // Still active means the tab was hidden some other way (minimized window,
+    // another app in front); there is no next tab to carry the swipe into.
+    if (!activeTab?.id || activeTab.id === tab.id) return { ok: true };
+    await browser.tabs
+      .sendMessage(activeTab.id, { type: "TABWHEEL_SWIPE_CARRY", remainderPx, axis })
+      .catch(() => {});
+    return { ok: true, tabId: activeTab.id };
+  }
+
+  // Pinning moves the tab into (or out of) the pinned section at the start of
+  // the strip, so unlike mute it changes tab order and the cache must go.
+  async function togglePinCurrentTab(
+    tab?: Tabs.Tab,
+    windowId?: number,
+  ): Promise<TabWheelActionResult> {
+    return await runSerializedWindowTask(tab, windowId, async () => {
+      await ensureLoaded();
+      const activeTab = await resolveActiveTab(tab, windowId);
+      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "Couldn't find the current tab" };
+      const updatedTab = await browser.tabs
+        .update(activeTab.id, { pinned: activeTab.pinned !== true })
+        .catch(() => null);
+      invalidateWindowTabsCache(activeTab.windowId);
+      if (!updatedTab) return { ok: false, reason: "This tab can't be pinned" };
+      return { ok: true, tabId: activeTab.id };
+    });
+  }
+
+  async function reloadCurrentTab(
+    tab?: Tabs.Tab,
+    windowId?: number,
+  ): Promise<TabWheelActionResult> {
+    return await runSerializedWindowTask(tab, windowId, async () => {
+      await ensureLoaded();
+      const activeTab = await resolveActiveTab(tab, windowId);
+      if (!activeTab?.id || activeTab.windowId == null) return { ok: false, reason: "Couldn't find the current tab" };
+      const didReload = await browser.tabs.reload(activeTab.id).then(() => true).catch(() => false);
+      if (!didReload) return { ok: false, reason: "Couldn't reload this tab" };
+      return { ok: true, tabId: activeTab.id };
+    });
+  }
+
+  /**
    * Stores a scroll position reported by a page. Unchanged reports are dropped
    * without a write, since pages report whenever scrolling settles.
    */
@@ -2131,6 +2191,9 @@ export function createTabWheelDomain(options: {
     toggleMuteCurrentTab,
     goBackInCurrentTab,
     goForwardInCurrentTab,
+    togglePinCurrentTab,
+    handOffSwipe,
+    reloadCurrentTab,
     beginTabDrag,
     moveCurrentTab,
     endTabDrag,

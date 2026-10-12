@@ -15,7 +15,8 @@ const BASE = {
 
 const NEW_TAB = "TABWHEEL_OPEN_NATIVE_NEW_TAB";
 const FULL_LEFT_SEQUENCE = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
-const COARSE = { deltaY: 120, deltaMode: 0 };
+// One notch as Chrome reports it: pixel mode, with the legacy tick count.
+const COARSE = { deltaY: 120, deltaMode: 0, wheelDeltaY: -120 };
 
 function world(extra) {
   return createGestureWorld({ ...BASE, gestureModifier: "alt", gestureWithShift: false, invertScroll: false, ...extra });
@@ -106,14 +107,14 @@ test("require Shift on: a modifier + Shift wheel switches, the modifier alone do
 test("inverted scroll: wheel down moves to the previous tab, wheel up to the next", async () => {
   const w = await world({ invertScroll: true });
   try {
-    const down = await w.wheel({ deltaY: 120, deltaMode: 0, alt: true });
+    const down = await w.wheel({ ...COARSE, alt: true });
     assert.deepEqual(down.cycles, ["prev"], "with inverted scroll, down means previous");
   } finally {
     w.cleanup();
   }
   const up = await world({ invertScroll: true });
   try {
-    const result = await up.wheel({ deltaY: -120, deltaMode: 0, alt: true });
+    const result = await up.wheel({ deltaY: -120, deltaMode: 0, wheelDeltaY: 120, alt: true });
     assert.deepEqual(result.cycles, ["next"], "with inverted scroll, up means next");
   } finally {
     up.cleanup();
@@ -123,7 +124,7 @@ test("inverted scroll: wheel down moves to the previous tab, wheel up to the nex
 test("normal scroll: wheel down moves to the next tab", async () => {
   const w = await world({ invertScroll: false });
   try {
-    const down = await w.wheel({ deltaY: 120, deltaMode: 0, alt: true });
+    const down = await w.wheel({ ...COARSE, alt: true });
     assert.deepEqual(down.cycles, ["next"]);
   } finally {
     w.cleanup();
