@@ -46,10 +46,10 @@ test("store and package metadata use the approved mouse-first summary", () => {
 
 test("store release copy describes the current release", () => {
   const store = readText("STORE.md");
-  const whatsNew = store.match(/WHAT'S NEW IN 4\.2\.0\s+([^\n]+)/)?.[1] || "";
+  const whatsNew = store.match(/WHAT'S NEW IN 4\.5\.0\s+([^\n]+)/)?.[1] || "";
 
-  assert.match(whatsNew, /One wheel notch now switches one tab on macOS/);
-  assert.match(whatsNew, /coasting after you lift your fingers never switches/);
+  assert.match(whatsNew, /one tab for every fixed distance your fingers travel/);
+  assert.match(whatsNew, /Reload tab and Pin \/ unpin tab/);
   assert.match(whatsNew, /Defaults are unchanged/);
   assert.doesNotMatch(whatsNew, /wheel-ready/i);
   // Middle-click default remains documented in CURRENT DEFAULTS, not only Whats New.

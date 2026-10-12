@@ -19,7 +19,7 @@ test("the Chrome manifest ships the V4 product", () => {
   const pkg = readJson("package.json");
 
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(pkg.version, "4.2.0");
+  assert.equal(pkg.version, "4.5.0");
   assert.equal(manifest.version, pkg.version);
   assert.equal(manifest.name, "Scroll Wheel Tab Switcher");
   assert.equal(manifest.action.default_title, manifest.name);

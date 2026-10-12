@@ -14,6 +14,21 @@ npm run ci
 npm run release:package
 ```
 
+## 4.5.0
+
+- Added two remappable modifier + mouse-button actions: Reload tab and Pin / unpin tab. They are extra dropdown options listed before Off; every default and every saved mapping is unchanged, no new permission is requested, and no storage migration runs.
+- Made trackpad and Magic Mouse switching distance-based. A swipe now switches one tab for every fixed distance the fingers cover (50 px at the default sensitivity) and keeps the remainder, with no cooldown inside a swipe, so the same travel moves the same number of tabs at any speed. The distance follows the existing Sensitivity setting (Precise about 63 px, Balanced 50 px, Fast about 37 px); Cooldown and Acceleration now apply to notched wheels only. One wheel event switches at most three tabs, so a clump of queued input on a busy page cannot fly through the tab strip.
+- Carried a swipe across the tab switch it causes. Each tab counts wheel distance on its own, so the distance the old tab had counted toward the next step used to be lost at every switch; it is now handed to the tab that takes over.
+- Trusted Chrome's inertia flag wherever it exists (Chrome 151+). Events it marks as not inertia are the user's own motion, so fingers easing off after a switch, and the first motion in a newly shown tab, now count. The momentum and arrival guards remain as the fallback on older Chrome.
+- Read each swipe on one axis from start to finish, chosen once it has travelled 10 px, so a diagonal swipe no longer partly cancels itself.
+- Timed wheel input by when it happened rather than when the page handled it, so a busy page that delivers wheel events late or in clumps no longer lets inertia switch extra tabs. A timestamp more than a second away from the page clock is ignored.
+- Fixed modifier + right click doing nothing on Windows. Windows fires the context-menu event after the release and auxclick, where macOS and Linux fire it on the press; the click session ended on auxclick, so the action never ran and the native context menu appeared. This affected the default Close current tab mapping.
+- Fixed modifier + left click doing nothing on macOS with Control as the modifier. Chrome turns Control + left click into a context menu and never fires click, so the action now runs on that context-menu event.
+- Fixed a click action swallowing a later keyboard-made click or context menu (Enter on a button, a form submit, the Menu key). Claims on a button now always expire, and an action that runs on its final event leaves none.
+- Fixed a slow click leaking to the page. Holding the button for more than 0.9 s expired the claim, so the release and click reached the page (modifier + click on a link could start a download) and the action never ran. A release now always belongs to its press.
+- Fixed a modified press whose closing event never arrived claiming the next, unmodified click and running the action on it. Every new press is judged fresh.
+- Fixed tabs going dead to TabWheel after the extension was disabled, removed, or replaced by another copy. The old copy's script kept running in every open tab and swallowed gestures it could no longer act on; it now removes itself the first time it would claim one.
+
 ## 4.2.0
 
 - Made TabWheel a Chrome-only extension. The Firefox and Zen (Manifest V2) build, its manifest, its packaging, and its compatibility code paths are removed; releases now produce the Chrome package and the source archive only. Settings and defaults are unchanged for Chrome users.

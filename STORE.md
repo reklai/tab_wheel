@@ -25,7 +25,7 @@ Alt / Option is the default modifier. You can change it to Ctrl / Control or Met
 - Modifier + left click opens the browser's New Tab page beside the current tab.
 - Modifier + middle click drags the current tab (hold and drag horizontally).
 - Modifier + right click uses Close current tab and returns to the most recent tab.
-- Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, or Off.
+- Every mouse button can be remapped to Browser new tab, Most recent tab, Close current tab, Duplicate tab, Drag current tab, Open settings, Mute / unmute tab, Go back, Go forward, Pin / unpin tab, Reload tab, or Off.
 - Drag current tab moves the active tab live as you drag horizontally, one slot at a time, while preserving pinned and tab-group boundaries. A Drag speed control sets how far you drag per slot (about 96 px by default).
 - Open the extension popup and select the settings icon to review or change every action.
 
@@ -34,7 +34,7 @@ WHEEL EXPERIENCE
 - Wheel cycling follows the visible tab strip from left to right.
 - Page-position restore takes you back to where you stopped reading.
 - One wheel notch switches one tab on Windows, Linux, and macOS alike.
-- On a trackpad or Magic Mouse, finger travel decides how many tabs you move, and the coasting after you lift your fingers never switches tabs.
+- On a trackpad or Magic Mouse, finger travel decides how many tabs you move: one tab for every fixed distance, at any speed, scaled by Sensitivity. The coasting after you lift your fingers never switches tabs.
 - Precise, Balanced, Fast, and Custom wheel feel support different mice and trackpads.
 - Cycling lands reliably on sleeping (unloaded) tabs and waits for them to wake before restoring your place.
 - Works immediately after install or update, even on tabs you already had open — no reload needed.
@@ -80,9 +80,9 @@ PRIVATE BY DESIGN
 
 No data is sent to TabWheel, its developer, or any developer-owned service. TabWheel has no telemetry, tracking, analytics, ads, remote code, account, or search feature. Settings, onboarding progress, recent-tab order, recent page positions, and page geometry are stored locally. URLs used to verify page-position restoration remain local. TabWheel does not request browser-history or bookmarks permissions.
 
-WHAT'S NEW IN 4.2.0
+WHAT'S NEW IN 4.5.0
 
-One wheel notch now switches one tab on macOS too, however slowly or quickly you turn the wheel. Trackpad and Magic Mouse swipes switch by finger travel, so the same swipe gives the same result every time and the coasting after you lift your fingers never switches extra tabs. Defaults are unchanged.
+Trackpad and Magic Mouse swipes now switch one tab for every fixed distance your fingers travel, so the same swipe moves the same number of tabs at any speed, and the Sensitivity setting scales that distance. Two new mouse-button actions: Reload tab and Pin / unpin tab. Modifier + right click now works on Windows, and Control + left click on macOS. Tabs no longer stop responding after the extension is disabled or replaced. Defaults are unchanged.
 
 ## Privacy
 
